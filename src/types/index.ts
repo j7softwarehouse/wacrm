@@ -271,6 +271,15 @@ export type WhatsAppProviderKind = 'meta' | 'uazapi';
 export interface WhatsAppChannel {
   id: string;
   account_id: string;
+  /**
+   * Coluna de auditoria NOT NULL desde a 001, mantida de propósito
+   * pela 017 (tenancy por conta) e pela 037 (rename para
+   * whatsapp_channels): é o admin que salvou a configuração. Serve de
+   * remetente-de-registro nos inserts de contacts/conversations feitos
+   * pela ingestão de mensagens recebidas, que não têm um "usuário que
+   * criou".
+   */
+  user_id: string;
   provider: WhatsAppProviderKind;
   /** Nome dado pelo usuário: "Recepção", "Financeiro". */
   label?: string;
