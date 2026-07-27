@@ -437,13 +437,23 @@ mensagem clara. Sem isso, o atendente escreve, "envia", e a mensagem some.
 
 ## 8. UI
 
-| Onde | O quê |
-|---|---|
-| Configurações | Lista de canais (rótulo, badge do provider, número, status); adicionar/remover; modal do QR; URL do webhook com botão de copiar |
-| Inbox | Badge do canal na conversa; aviso quando o canal está fora do ar |
-| Broadcasts | Seletor de canal, obrigatório |
-| Nova conversa | Seletor do número de origem — ponto de decisão que hoje não existe |
-| Templates | Escondidos em canais UAZAPI |
+| Onde | O quê | Entrega |
+|---|---|---|
+| Configurações | Lista de canais (rótulo, badge do provider, número, status); adicionar/remover; modal do QR; URL do webhook com botão de copiar | v1 |
+| Inbox | Badge do canal na conversa; aviso quando o canal está fora do ar | v1 |
+| Templates | Escondidos em canais UAZAPI | v1 |
+| Broadcasts | Seletor de canal | **adiado** |
+| Nova conversa | Seletor do número de origem | **adiado** |
+
+**Sobre os dois adiados.** O schema os suporta desde a migração 037; o que
+falta é a tela. Enquanto ela não existir, ambos usam o canal conectado mais
+antigo da conta.
+
+O corte é deliberado: o custo do multi-canal se concentra na UI, não no
+schema, e a UI é a única parte que se acrescenta depois **sem migração**.
+Adiá-la entrega os dois números operando meses antes, ao custo de o operador
+não escolher o número de saída em disparos — que, com dois números de
+finalidades distintas, é uma limitação real e deve ser dita ao usuário.
 
 ## 9. Testes
 

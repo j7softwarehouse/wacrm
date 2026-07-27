@@ -1739,9 +1739,10 @@ adiciona funcionalidade — ele muda a arquitetura por baixo dela.
 
 ## O que fica para a Parte B
 
-Cliente HTTP da UAZAPI, provider UAZAPI, rotas de canais (criar / conectar /
-status / remover), fluxo de QR Code, rota de webhook de entrada, UI de canais e
-seletores, e o tratamento do erro 463 nos broadcasts.
+Escrita e commitada: [`2026-07-27-uazapi-canal.md`](2026-07-27-uazapi-canal.md).
+Cliente HTTP da UAZAPI, provider, rotas de canal, fluxo de QR Code, webhook de
+entrada, tela de canais, tratamento do erro 463 e indicador de canal no inbox —
+oito tarefas.
 
 A Parte B **não está mais bloqueada**: as quatro lacunas de documentação foram
 fechadas a partir de `openapi-bundled.json`, a especificação OpenAPI completa da
