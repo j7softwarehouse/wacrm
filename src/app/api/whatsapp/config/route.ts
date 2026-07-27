@@ -86,7 +86,7 @@ export async function GET() {
     }
 
     const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .select('phone_number_id, access_token, status')
       .eq('account_id', accountId)
       .maybeSingle()
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     // account_id (not user_id) since teammates inside the same account
     // all share one config; the conflict is between accounts.
     const { data: claimed, error: claimedError } = await supabaseAdmin()
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .select('account_id')
       .eq('phone_number_id', phone_number_id)
       .neq('account_id', accountId)
@@ -273,7 +273,7 @@ export async function POST(request: Request) {
     // this number is already registered with Meta — if so we can skip
     // /register when the user didn't provide a PIN this time around.
     const { data: existing } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .select('id, registered_at, phone_number_id')
       .eq('account_id', accountId)
       .maybeSingle()
@@ -368,7 +368,7 @@ export async function POST(request: Request) {
 
     if (existing) {
       const { error: updateError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_channels')
         .update(baseRow)
         .eq('account_id', accountId)
 
@@ -385,7 +385,7 @@ export async function POST(request: Request) {
       // up-front), `user_id` is the audit column identifying which
       // member of the account saved the config.
       const { error: insertError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_channels')
         .insert({
           account_id: accountId,
           user_id: user.id,
@@ -460,7 +460,7 @@ export async function DELETE() {
     }
 
     const { error: deleteError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .delete()
       .eq('account_id', accountId)
 

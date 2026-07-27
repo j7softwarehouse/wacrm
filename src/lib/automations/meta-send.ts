@@ -132,7 +132,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
 
   const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', input.accountId)
     .single()

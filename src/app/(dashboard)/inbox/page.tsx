@@ -201,7 +201,7 @@ function InboxPageInner() {
       }
 
       const { data } = await supabase
-        .from("whatsapp_config")
+        .from("whatsapp_channels")
         .select("status")
         .eq("account_id", accountId)
         .maybeSingle();

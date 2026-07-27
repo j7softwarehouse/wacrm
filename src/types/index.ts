@@ -266,25 +266,38 @@ export interface MessageReaction {
   created_at: string;
 }
 
-export interface WhatsAppConfig {
+export type WhatsAppProviderKind = 'meta' | 'uazapi';
+
+export interface WhatsAppChannel {
   id: string;
-  user_id: string;
-  phone_number_id: string;
-  waba_id?: string;
-  access_token: string;
-  verify_token?: string;
-  status: 'connected' | 'disconnected';
+  account_id: string;
+  provider: WhatsAppProviderKind;
+  /** Nome dado pelo usuário: "Recepção", "Financeiro". */
+  label?: string;
+  /** Número conectado; preenchido após a conexão. */
+  phone_e164?: string;
+  status: 'connected' | 'disconnected' | 'connecting' | 'hibernated';
   connected_at?: string;
-  /**
-   * Set when POST /{phone_number_id}/register last succeeded. NULL
-   * means the number was saved but never actually subscribed for
-   * webhooks on Meta's side — inbound events will be silently lost.
-   */
+  last_error?: string;
+
+  // Meta — nulos quando provider === 'uazapi'
+  phone_number_id?: string;
+  waba_id?: string;
+  access_token?: string;
+  verify_token?: string;
   registered_at?: string;
-  /** Set when POST /{waba_id}/subscribed_apps last succeeded. */
   subscribed_apps_at?: string;
-  /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+
+  // UAZAPI — nulos quando provider === 'meta'
+  uazapi_base_url?: string;
+  uazapi_token?: string;
+  uazapi_instance_id?: string;
+  /** Segredo por canal; é a chave de roteamento do webhook de entrada. */
+  webhook_secret?: string;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

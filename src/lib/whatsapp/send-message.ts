@@ -249,7 +249,7 @@ export async function sendMessageToConversation(
 
   // WhatsApp config, account-scoped.
   const { data: config, error: configError } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', accountId)
     .single();
@@ -267,7 +267,7 @@ export async function sendMessageToConversation(
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
   if (isLegacyFormat(config.access_token)) {
     void db
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .update({ access_token: encrypt(accessToken) })
       .eq('id', config.id)
       .then(({ error }: { error: { message: string } | null }) => {

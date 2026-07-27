@@ -83,7 +83,7 @@ export async function engineSendText(
   }
 
   const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', args.accountId)
     .single()
@@ -193,7 +193,7 @@ export async function engineSendMedia(
   }
 
   const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', args.accountId)
     .single()
@@ -345,7 +345,7 @@ async function sendInteractiveViaMeta(
   }
 
   const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', input.accountId)
     .single()

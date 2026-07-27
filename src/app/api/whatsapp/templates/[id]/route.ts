@@ -139,7 +139,7 @@ export async function PATCH(
 
     if (!isDryRun()) {
       const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_channels')
         .select('*')
         .eq('account_id', accountId)
         .single()
@@ -279,7 +279,7 @@ export async function DELETE(
 
     if (existing.meta_template_id && !isDryRun()) {
       const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_channels')
         .select('*')
         .eq('account_id', accountId)
         .single()

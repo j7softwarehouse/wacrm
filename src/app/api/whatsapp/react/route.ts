@@ -110,7 +110,7 @@ export async function POST(request: Request) {
 
     // WhatsApp config + access token. Account-scoped post-multi-user.
     const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .select('phone_number_id, access_token')
       .eq('account_id', accountId)
       .single();

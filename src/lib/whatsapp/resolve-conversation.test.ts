@@ -66,7 +66,7 @@ function makeDb(script: Script): SupabaseClient {
       return Promise.resolve({ data, error: null });
     },
     maybeSingle: () => {
-      if (table === 'whatsapp_config')
+      if (table === 'whatsapp_channels')
         return Promise.resolve({ data: script.config ?? null, error: null });
       return Promise.resolve({ data: null, error: null });
     },

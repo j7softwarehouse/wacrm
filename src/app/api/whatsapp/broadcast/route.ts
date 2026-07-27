@@ -135,7 +135,7 @@ export async function POST(request: Request) {
     }
 
     const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_channels')
       .select('*')
       .eq('account_id', accountId)
       .single()

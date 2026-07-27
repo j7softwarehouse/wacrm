@@ -29,7 +29,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
+import type { WhatsAppChannel as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -104,7 +104,7 @@ export function WhatsAppConfig() {
       // on the table guarantees the .maybeSingle() return type
       // remains accurate.
       const { data, error } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_channels')
         .select('*')
         .eq('account_id', acctId)
         .maybeSingle();

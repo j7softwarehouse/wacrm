@@ -56,7 +56,7 @@ export async function GET() {
   }
 
   const { data: config } = await supabase
-    .from('whatsapp_config')
+    .from('whatsapp_channels')
     .select('*')
     .eq('account_id', accountId)
     .maybeSingle()
