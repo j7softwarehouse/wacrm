@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { getProviderForChannel } from '@/lib/whatsapp/providers/resolve'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import {
@@ -53,7 +52,8 @@ interface NewRecipient {
    * Structured per-send values (header text variable, media URL
    * override, URL/COPY_CODE button values). When set, takes
    * precedence over `params` for the body too — see
-   * sendTemplateMessage for the merge rules.
+   * `sendTemplateMessage` (meta-api.ts, called via the provider's
+   * `sendTemplate`) for the merge rules.
    */
   messageParams?: SendTimeParams
 }
@@ -134,13 +134,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
+    const { data: channelRow, error: channelError } = await supabase
       .from('whatsapp_channels')
-      .select('*')
+      .select('id')
       .eq('account_id', accountId)
       .single()
 
-    if (configError || !config) {
+    if (channelError || !channelRow) {
       return NextResponse.json(
         {
           error:
@@ -150,9 +150,9 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const provider = await getProviderForChannel(supabase, channelRow.id)
 
-    // Load the template row once so sendTemplateMessage can build
+    // Load the template row once so the provider's sendTemplate can build
     // header + button components on each iteration. Loading inside
     // the loop would N+1 against Supabase for every recipient.
     // Guard against a malformed local row crashing every send in
@@ -200,9 +200,7 @@ export async function POST(request: Request) {
 
       for (const variant of variants) {
         try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
+          const result = await provider.sendTemplate({
             to: variant,
             templateName: template_name,
             language: template_language || 'en_US',

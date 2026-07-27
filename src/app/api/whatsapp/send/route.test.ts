@@ -45,8 +45,10 @@ function makeSupabaseMock() {
         case 'whatsapp_channels':
           return {
             data: {
-              id: 'cfg-1',
+              id: 'chan-1',
               account_id: 'acct-1',
+              provider: 'meta',
+              status: 'connected',
               phone_number_id: 'PNID-1',
               access_token: 'enc-token',
             },
@@ -67,6 +69,7 @@ function makeSupabaseMock() {
               id: 'conv-new',
               account_id: 'acct-1',
               contact_id: 'contact-1',
+              channel_id: 'chan-1',
               contact: CONTACT,
             },
             error: null,
@@ -94,6 +97,7 @@ function makeSupabaseMock() {
           id: 'conv-new',
           account_id: 'acct-1',
           contact_id: 'contact-1',
+          channel_id: 'chan-1',
           contact: CONTACT,
         }
       }
@@ -227,6 +231,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       id: 'conv-existing',
       account_id: 'acct-1',
       contact_id: 'contact-1',
+      channel_id: 'chan-1',
       contact: CONTACT,
     }
 
