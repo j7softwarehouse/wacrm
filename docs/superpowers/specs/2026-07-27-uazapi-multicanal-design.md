@@ -257,8 +257,8 @@ Os dois `meta-send.ts` deixam de ser específicos da Meta, daí o rename.
 |---|---|
 | `sendText` | `POST /send/text` — `{ number, text, replyid, delay, mentions }` |
 | `sendMedia` | `POST /send/media` — `{ number, type, file, text, docName }` |
-| `sendInteractiveButtons` / `List` | "Enviar menu interativo" — schema pendente |
-| `sendReaction` | "Enviar reação a uma mensagem" — schema pendente |
+| `sendInteractiveButtons` / `List` | `POST /send/menu` — `{ number, type, text, choices, footerText, listButton, selectableCount, imageButton, replyid }`. `type` ∈ `button`, `list`, `poll`, `carousel`; o CRM usa `button` e `list`. |
+| `sendReaction` | `POST /message/react` — `{ number, id, text }`. **`text` é o emoji**; `id` é a mensagem-alvo. |
 | `sendTemplate` | não existe — lança `ProviderUnsupportedError` |
 
 Tipos de mídia: os quatro do CRM (`image`, `video`, `document`, `audio`) mapeiam
@@ -464,18 +464,32 @@ mensagem clara. Sem isso, o atendente escreve, "envia", e a mensagem some.
 | Número banido por insistir em 463 | Broadcast para no primeiro 463 |
 | Sessão UAZAPI cai sem ninguém notar | Evento `connection` + status na tela de canais + aviso no inbox |
 
-## 11. Lacunas de documentação em aberto
+## 11. Lacunas de documentação — **fechadas**
 
-Não bloqueiam a spec nem o início da implementação — o schema, a camada de
-provider e a extração do `ingest` são os primeiros passos e independem delas.
-Travam apenas a fiação final do inbound e dois métodos do adapter.
+As quatro pendências foram resolvidas a partir de `openapi-bundled.json`
+(132 paths, 11 schemas), a especificação OpenAPI completa da UAZAPI. Nenhuma
+lacuna resta.
 
-| Pendência | Impacto |
-|---|---|
-| Path do **"Configurar Webhook da Instância"** (POST, grupo *Webhooks e SSE*) | Registro automático do webhook. O corpo é assumido igual ao de `/globalwebhook`, que compartilha o schema `Webhook`. |
-| Schema **`WebhookEvent`** (formato do evento de entrada) | Normalizador do inbound UAZAPI |
-| **"Enviar menu interativo"** | `sendInteractiveButtons` / `sendInteractiveList` |
-| **"Enviar reação a uma mensagem"** | `sendReaction` |
+Três achados que teriam causado bugs silenciosos se assumidos por analogia:
+
+1. **O webhook da instância é `POST /webhook`**, não `/instance/webhook`. O
+   corpo é o mesmo de `/globalwebhook`, acrescido de `action`
+   (`add` / `update` / `delete`) e `id`; sem `action`, opera em modo simples
+   (webhook único), que é o que usamos.
+
+2. **O envelope usa `message` no singular; a assinatura usa `messages` no
+   plural.** `WebhookEvent.event` ∈ `message`, `status`, `presence`, `group`,
+   `connection` — enquanto `Webhook.events` aceita `messages`,
+   `messages_update`, `connection`, etc. São vocabulários diferentes para a
+   mesma coisa; trocá-los faz o roteamento falhar sem erro.
+
+3. **Em `POST /message/react`, o emoji vai no campo `text`**, e `id` é a
+   mensagem-alvo. Nomenclatura contra-intuitiva.
+
+`WebhookEvent.data` é `additionalProperties: true` — o schema não descreve o
+conteúdo. Para `event: "message"`, o payload é o schema `Message`, o mesmo que
+`/send/*` devolve no 200. A normalização deve tratar campos ausentes como
+opcionais em vez de confiar na forma.
 
 ## 12. Referências UAZAPI confirmadas
 
@@ -491,10 +505,28 @@ instância). Endpoints administrativos usam `admintoken` — **não usados aqui*
 - `POST /send/media` — `{ number, type, file, text, docName, thumbnail,
   mimetype, viewOnce, … }`. Tipos: `image`, `video`, `videoplay`, `document`,
   `audio`, `myaudio`, `ptt`, `ptv`, `sticker`.
-- `POST /globalwebhook` — schema `Webhook`: `{ url, events, excludeMessages,
-  addUrlEvents, addUrlTypesMessages }`.
-  - Eventos: `connection`, `history`, `messages`, `messages_update`, `call`,
-    `contacts`, `presence`, `groups`, `labels`, `chats`, `chat_labels`,
-    `blocks`, `sender`.
+- `POST /webhook` — webhook **da instância** (token da instância). Schema
+  `Webhook`: `{ url*, events, excludeMessages, addUrlEvents,
+  addUrlTypesMessages, action?, id?, enabled? }`. Sem `action`, modo simples
+  (webhook único) — é o que usamos. `GET /webhook` lê a configuração atual;
+  `GET /webhook/errors` lista as últimas falhas de entrega, útil para
+  diagnóstico na tela de canais.
+  - Eventos assináveis: `connection`, `history`, `messages`, `messages_update`,
+    `newsletter_messages`, `call`, `contacts`, `presence`, `groups`, `labels`,
+    `chats`, `chat_labels`, `blocks`, `sender`.
   - Filtros: `wasSentByApi`, `wasNotSentByApi`, `fromMeYes`, `fromMeNo`,
     `isGroupYes`, `isGroupNo`.
+- `POST /globalwebhook` — equivalente para o servidor inteiro; exige
+  `admintoken`. **Não usado.**
+- Schema `WebhookEvent` — `{ event*, instance*, data* }`, com `event` ∈
+  `message`, `status`, `presence`, `group`, `connection`.
+- Schema `Message` (o `data` de um evento `message`) — `id`, `messageid`,
+  `chatid`, `sender`, `senderName`, `isGroup`, `fromMe`, `messageType`,
+  `messageTimestamp`, `status`, `text`, `content`, `quoted`, `reaction`,
+  `buttonOrListid`, `fileURL`, `wasSentByApi`, `track_source`, `track_id`,
+  `sender_pn`, `sender_lid`.
+- `POST /send/menu` — `{ number*, type*, text*, choices*, footerText,
+  listButton, selectableCount, imageButton, replyid, mentions, delay }`.
+- `POST /message/react` — `{ number*, id*, text* }`.
+
+Fonte: `openapi-bundled.json` (132 paths, 11 schemas).

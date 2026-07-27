@@ -1743,8 +1743,12 @@ Cliente HTTP da UAZAPI, provider UAZAPI, rotas de canais (criar / conectar /
 status / remover), fluxo de QR Code, rota de webhook de entrada, UI de canais e
 seletores, e o tratamento do erro 463 nos broadcasts.
 
-A Parte B depende de quatro páginas de documentação da UAZAPI ainda não obtidas
-(ver §11 da spec): path do "Configurar Webhook da Instância", schema
-`WebhookEvent`, "Enviar menu interativo" e "Enviar reação a uma mensagem". Sem o
-`WebhookEvent` em especial, o normalizador do inbound não pode ser escrito sem
-placeholders.
+A Parte B **não está mais bloqueada**: as quatro lacunas de documentação foram
+fechadas a partir de `openapi-bundled.json`, a especificação OpenAPI completa da
+UAZAPI (ver §11 e §12 da spec).
+
+**Este plano continua sendo pré-requisito da Parte B, não uma alternativa a
+ela.** Não existe caminho para dois números UAZAPI que pule a tabela
+`whatsapp_channels`, o `channel_id` nas conversas ou o adapter — é exatamente
+disso que a Parte B se serve. Ao fim deste plano, nenhum número UAZAPI conecta
+ainda; o que existe é a arquitetura que torna a Parte B possível.
