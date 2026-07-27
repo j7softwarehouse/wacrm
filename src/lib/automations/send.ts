@@ -3,7 +3,10 @@ import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/send'
-import { getProviderForConversation } from '@/lib/whatsapp/providers/resolve'
+import {
+  getProviderForConversation,
+  NoChannelConfiguredError,
+} from '@/lib/whatsapp/providers/resolve'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -130,7 +133,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const provider = await getProviderForConversation(db, input.conversationId, input.accountId)
+  let provider
+  try {
+    provider = await getProviderForConversation(db, input.conversationId, input.accountId)
+  } catch (err) {
+    if (err instanceof NoChannelConfiguredError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {

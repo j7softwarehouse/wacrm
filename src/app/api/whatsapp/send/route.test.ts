@@ -64,14 +64,12 @@ function makeSupabaseMock() {
     const insertResult = () => {
       switch (table) {
         case 'conversations':
+          // No `channel_id` here on purpose: production's conversation
+          // INSERT (this route, and the public API's find-or-create)
+          // never sets it — getProviderForConversation must fall back
+          // to the account's one whatsapp_channels row.
           return {
-            data: {
-              id: 'conv-new',
-              account_id: 'acct-1',
-              contact_id: 'contact-1',
-              channel_id: 'chan-1',
-              contact: CONTACT,
-            },
+            data: createdConversation ?? existingConversation,
             error: null,
           }
         case 'messages':
@@ -93,11 +91,12 @@ function makeSupabaseMock() {
       didInsert = true
       if (table === 'conversations') {
         conversationInserts.push(payload)
+        // No `channel_id` here on purpose — see the comment on the
+        // `selectResult`/`insertResult` 'conversations' cases above.
         createdConversation = {
           id: 'conv-new',
           account_id: 'acct-1',
           contact_id: 'contact-1',
-          channel_id: 'chan-1',
           contact: CONTACT,
         }
       }
@@ -231,7 +230,6 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       id: 'conv-existing',
       account_id: 'acct-1',
       contact_id: 'contact-1',
-      channel_id: 'chan-1',
       contact: CONTACT,
     }
 

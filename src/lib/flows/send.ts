@@ -4,7 +4,10 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
-import { getProviderForConversation } from '@/lib/whatsapp/providers/resolve'
+import {
+  getProviderForConversation,
+  NoChannelConfiguredError,
+} from '@/lib/whatsapp/providers/resolve'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -78,7 +81,13 @@ export async function engineSendText(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const provider = await getProviderForConversation(db, args.conversationId, args.accountId)
+  let provider
+  try {
+    provider = await getProviderForConversation(db, args.conversationId, args.accountId)
+  } catch (err) {
+    if (err instanceof NoChannelConfiguredError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const attempt = async (phone: string): Promise<string> => {
     const r = await provider.sendText({
@@ -177,7 +186,13 @@ export async function engineSendMedia(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const provider = await getProviderForConversation(db, args.conversationId, args.accountId)
+  let provider
+  try {
+    provider = await getProviderForConversation(db, args.conversationId, args.accountId)
+  } catch (err) {
+    if (err instanceof NoChannelConfiguredError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const attempt = async (phone: string): Promise<string> => {
     const r = await provider.sendMedia({
@@ -318,7 +333,13 @@ async function sendInteractiveViaMeta(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const provider = await getProviderForConversation(db, input.conversationId, input.accountId)
+  let provider
+  try {
+    provider = await getProviderForConversation(db, input.conversationId, input.accountId)
+  } catch (err) {
+    if (err instanceof NoChannelConfiguredError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'buttons') {

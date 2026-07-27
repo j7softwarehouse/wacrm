@@ -27,7 +27,10 @@ import {
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
-import { getProviderForConversation } from '@/lib/whatsapp/providers/resolve';
+import {
+  getProviderForConversation,
+  NoChannelConfiguredError,
+} from '@/lib/whatsapp/providers/resolve';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -240,7 +243,19 @@ export async function sendMessageToConversation(
     );
   }
 
-  const provider = await getProviderForConversation(db, conversationId, accountId);
+  let provider;
+  try {
+    provider = await getProviderForConversation(db, conversationId, accountId);
+  } catch (err) {
+    if (err instanceof NoChannelConfiguredError) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
+  }
 
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getProviderForConversation } from '@/lib/whatsapp/providers/resolve';
+import {
+  getProviderForConversation,
+  NoChannelConfiguredError,
+} from '@/lib/whatsapp/providers/resolve';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
   checkRateLimit,
@@ -107,11 +110,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const provider = await getProviderForConversation(
-      supabase,
-      conversation.id,
-      accountId,
-    );
+    let provider;
+    try {
+      provider = await getProviderForConversation(
+        supabase,
+        conversation.id,
+        accountId,
+      );
+    } catch (err) {
+      if (err instanceof NoChannelConfiguredError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 },
+        );
+      }
+      throw err;
+    }
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {

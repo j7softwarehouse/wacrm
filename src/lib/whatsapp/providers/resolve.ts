@@ -41,8 +41,22 @@ export class ConversationHasNoChannelError extends Error {
   }
 }
 
+export class NoChannelConfiguredError extends Error {
+  readonly accountId: string;
+  constructor(accountId: string) {
+    super(`Nenhum canal de WhatsApp configurado para a conta ${accountId}.`);
+    this.name = "NoChannelConfiguredError";
+    this.accountId = accountId;
+  }
+}
+
 function buildProvider(channel: WhatsAppChannel): WhatsAppProvider {
-  if (channel.status !== "connected") {
+  // UAZAPI's `connected` reflects a live session; sending genuinely
+  // requires it. Meta's `status` (migração 015) is registration/webhook
+  // metadata, never a precondition for the Graph API accepting a send —
+  // gating Meta on it would be a real behavior change from the
+  // pre-multi-canal code, which only required a valid token.
+  if (channel.provider === "uazapi" && channel.status !== "connected") {
     throw new ProviderNotConnectedError(
       channel.provider,
       channel.id,
@@ -93,7 +107,28 @@ export async function getProviderForConversation(
     .maybeSingle();
 
   if (error || !data) throw new ChannelNotFoundError(conversationId);
-  if (!data.channel_id) throw new ConversationHasNoChannelError(conversationId);
 
-  return getProviderForChannel(db, data.channel_id as string);
+  let channelId = data.channel_id as string | null;
+
+  if (!channelId) {
+    // Conversations created before this conversation had a channel_id
+    // backfilled (migration 037), or created by a call site that
+    // doesn't set it explicitly (dashboard/public-API sends), fall back
+    // to the account's channel — the same "one config per account"
+    // resolution the pre-multi-canal code always used.
+    const { data: fallbackChannel, error: fallbackError } = await db
+      .from("whatsapp_channels")
+      .select("id")
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (fallbackError || !fallbackChannel) {
+      throw new NoChannelConfiguredError(accountId);
+    }
+    channelId = fallbackChannel.id as string;
+  }
+
+  return getProviderForChannel(db, channelId);
 }
