@@ -1,0 +1,64 @@
+// ============================================================
+// Provider em memória para testes.
+//
+// Existe para que send-message, broadcasts e flows possam ser
+// testados sem mockar `fetch` — que é como os testes atuais sofrem.
+// ============================================================
+
+import type {
+  SendInteractiveButtonsArgs,
+  SendInteractiveListArgs,
+  SendMediaArgs,
+  SendReactionArgs,
+  SendResult,
+  SendTemplateArgs,
+  SendTextArgs,
+  WhatsAppProvider,
+} from "./types";
+
+export interface FakeCall {
+  method: string;
+  args: unknown;
+}
+
+export interface FakeProvider extends WhatsAppProvider {
+  /** Toda chamada recebida, em ordem. */
+  readonly calls: FakeCall[];
+}
+
+export interface FakeProviderOptions {
+  /** Id devolvido por qualquer envio. Default: "fake-message-id". */
+  messageId?: string;
+  /** Se definido, todo envio rejeita com este erro. */
+  failWith?: Error;
+}
+
+export function createFakeProvider(
+  options: FakeProviderOptions = {},
+): FakeProvider {
+  const { messageId = "fake-message-id", failWith } = options;
+  const calls: FakeCall[] = [];
+
+  const record = async (method: string, args: unknown): Promise<SendResult> => {
+    calls.push({ method, args });
+    if (failWith) throw failWith;
+    return { messageId };
+  };
+
+  return {
+    kind: "meta",
+    calls,
+    sendText: (args: SendTextArgs) => record("sendText", args),
+    sendMedia: (args: SendMediaArgs) => record("sendMedia", args),
+    sendInteractiveButtons: (args: SendInteractiveButtonsArgs) =>
+      record("sendInteractiveButtons", args),
+    sendInteractiveList: (args: SendInteractiveListArgs) =>
+      record("sendInteractiveList", args),
+    sendReaction: (args: SendReactionArgs) => record("sendReaction", args),
+    sendTemplate: (args: SendTemplateArgs) => record("sendTemplate", args),
+    async resolveInboundMediaUrl(ref: string) {
+      calls.push({ method: "resolveInboundMediaUrl", args: ref });
+      return `/fake-media/${ref}`;
+    },
+  };
+}
