@@ -130,22 +130,26 @@ WHERE ch.account_id = b.account_id
 CREATE INDEX IF NOT EXISTS idx_broadcasts_channel ON broadcasts(channel_id);
 
 -- ─── 6. RLS ─────────────────────────────────────────────────
--- Espelha o padrão da 017: membros leem, admins+ escrevem.
+-- Espelha o padrão da 017: membros leem, admins+ escrevem — via o
+-- helper is_account_member(), o mesmo usado por toda política desde
+-- a 017. `profiles.role` é legado/não usado para tenancy (ver 017,
+-- linhas 31-32); a role real vive em `profiles.account_role`.
 ALTER TABLE whatsapp_channels ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can manage own config" ON whatsapp_channels;
 DROP POLICY IF EXISTS "members read channels"       ON whatsapp_channels;
 DROP POLICY IF EXISTS "admins write channels"       ON whatsapp_channels;
 
+-- As quatro políticas granulares da 017 sobrevivem ao RENAME (ligadas
+-- por OID, não por nome) e duplicariam a autorização abaixo — dropadas
+-- para restar exatamente uma política de leitura e uma de escrita.
+DROP POLICY IF EXISTS whatsapp_config_select ON whatsapp_channels;
+DROP POLICY IF EXISTS whatsapp_config_insert ON whatsapp_channels;
+DROP POLICY IF EXISTS whatsapp_config_update ON whatsapp_channels;
+DROP POLICY IF EXISTS whatsapp_config_delete ON whatsapp_channels;
+
 CREATE POLICY "members read channels" ON whatsapp_channels
-  FOR SELECT USING (
-    account_id IN (SELECT account_id FROM profiles WHERE user_id = auth.uid())
-  );
+  FOR SELECT USING (is_account_member(account_id));
 
 CREATE POLICY "admins write channels" ON whatsapp_channels
-  FOR ALL USING (
-    account_id IN (
-      SELECT account_id FROM profiles
-      WHERE user_id = auth.uid() AND role IN ('owner','admin')
-    )
-  );
+  FOR ALL USING (is_account_member(account_id, 'admin'));
