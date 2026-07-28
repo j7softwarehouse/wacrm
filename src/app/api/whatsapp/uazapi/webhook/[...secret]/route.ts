@@ -103,11 +103,29 @@ async function handleEvent(channel: WhatsAppChannel, body: unknown) {
 
   // Mídia recebida é baixada para o Storage — as URLs do WhatsApp
   // expiram e deixariam o histórico quebrado.
+  //
+  // getProviderForChannel/buildProvider recusa canais cujo status
+  // espelhado no banco não seja "connected" (guarda pensada para
+  // envios). Esse status é atualizado por um evento "connection"
+  // separado, sem garantia de ordem em relação a "messages" — então
+  // uma mensagem pode chegar durante uma oscilação breve de status.
+  // Como a resposta 200 já foi enviada antes do after() rodar, a
+  // UAZAPI não reentrega: deixar o erro subir aqui derrubaria a
+  // mensagem inteira (texto incluído), não só a mídia. Por isso o
+  // erro é contido localmente e a mídia degrada para undefined.
   let content = normalized.content;
   if (content.mediaUrl) {
-    const provider = await getProviderForChannel(supabaseAdmin(), channel.id);
-    const stored = await provider.resolveInboundMediaUrl(content.mediaUrl);
-    content = { ...content, mediaUrl: stored ?? undefined };
+    try {
+      const provider = await getProviderForChannel(supabaseAdmin(), channel.id);
+      const stored = await provider.resolveInboundMediaUrl(content.mediaUrl);
+      content = { ...content, mediaUrl: stored ?? undefined };
+    } catch (err) {
+      console.error(
+        "[uazapi/webhook] falha ao resolver mídia recebida:",
+        err instanceof Error ? err.message : err,
+      );
+      content = { ...content, mediaUrl: undefined };
+    }
   }
 
   await ingestInboundMessage(supabaseAdmin(), {
