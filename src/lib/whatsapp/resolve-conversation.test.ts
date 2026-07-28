@@ -56,6 +56,9 @@ function makeDb(script: Script): SupabaseClient {
     is: () => builder,
     order: () => builder,
     limit: () => {
+      // `resolveDefaultChannelId` chains `.limit(1).maybeSingle()`, so on
+      // whatsapp_channels `.limit()` is a pass-through, not a terminal.
+      if (table === 'whatsapp_channels') return builder;
       // Only the conversation lookup terminates on `.limit(1)`.
       if (table === 'conversations' && mode === 'select') {
         const row = script.existingConversationByCall

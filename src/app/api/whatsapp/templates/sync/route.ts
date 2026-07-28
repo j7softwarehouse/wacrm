@@ -150,11 +150,18 @@ export async function POST() {
       )
     }
 
+    // Templates are a Meta-only concept, so this resolves the account's
+    // Meta channel explicitly. A bare `.single()` scoped only by
+    // account_id errors (PGRST116) the moment a second channel — e.g. a
+    // UAZAPI one — exists, which would break template sync entirely.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_channels')
       .select('*')
       .eq('account_id', accountId)
-      .single()
+      .eq('provider', 'meta')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
 
     if (configError || !config) {
       return NextResponse.json(

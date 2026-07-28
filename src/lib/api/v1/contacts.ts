@@ -74,10 +74,17 @@ export async function resolveAuditUserId(
   db: SupabaseClient,
   accountId: string
 ): Promise<string> {
+  // Oldest channel (the account's default, same rule as
+  // `resolveDefaultChannelId`). `.maybeSingle()` alone errored on ≥2
+  // channels — silently, since only `data` is read — and every
+  // API-created row would have flipped attribution to the account owner
+  // the day a second channel was added.
   const { data: config } = await db
     .from('whatsapp_channels')
     .select('user_id')
     .eq('account_id', accountId)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle();
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;

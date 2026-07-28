@@ -85,10 +85,19 @@ export async function GET() {
       )
     }
 
+    // provider='meta' on EVERY query in this file: it is the pre-Part-B
+    // settings-form endpoint and must never see, update, or delete a
+    // UAZAPI row. Without the filter a second (UAZAPI) channel makes
+    // `.maybeSingle()` throw PGRST116, and the DELETE below would wipe
+    // channels this form never created. Ordered+limited so it degrades
+    // to "the oldest Meta channel" instead of erroring.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_channels')
       .select('phone_number_id, access_token, status')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle()
 
     if (configError) {
@@ -215,6 +224,7 @@ export async function POST(request: Request) {
       .select('account_id')
       .eq('phone_number_id', phone_number_id)
       .neq('account_id', accountId)
+      .limit(1)
       .maybeSingle()
 
     if (claimedError) {
@@ -272,10 +282,17 @@ export async function POST(request: Request) {
     // Look up any pre-existing row for this account so we know whether
     // this number is already registered with Meta — if so we can skip
     // /register when the user didn't provide a PIN this time around.
+    // Scoped to provider='meta' (see the GET handler): a UAZAPI channel
+    // on the same account must neither be matched here nor make this
+    // lookup ambiguous — and it is this row that decides insert-vs-update
+    // below, so a wrong match would overwrite the wrong channel.
     const { data: existing } = await supabase
       .from('whatsapp_channels')
       .select('id, registered_at, phone_number_id')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle()
 
     const sameNumber =
@@ -368,10 +385,15 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
+      // By id (not just account_id): the row we actually resolved above.
+      // The account-wide update stamped Meta credentials onto every
+      // channel row once a second (UAZAPI) channel existed.
       const { error: updateError } = await supabase
         .from('whatsapp_channels')
         .update(baseRow)
+        .eq('id', existing.id)
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -435,9 +457,14 @@ export async function POST(request: Request) {
 /**
  * DELETE /api/whatsapp/config
  *
- * Removes the authenticated user's WhatsApp configuration row.
+ * Removes the account's META WhatsApp configuration row.
  * Used by the "Reset Configuration" button to recover from a corrupted
  * encrypted token (mismatched ENCRYPTION_KEY across environments).
+ *
+ * The provider filter is not cosmetic: without it this deleted EVERY
+ * channel of the account, UAZAPI included, and every conversation of
+ * those channels was orphaned for good (the FK is ON DELETE SET NULL,
+ * so the history survives but can never be replied to again).
  */
 export async function DELETE() {
   try {
@@ -464,6 +491,7 @@ export async function DELETE() {
       .from('whatsapp_channels')
       .delete()
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

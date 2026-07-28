@@ -149,11 +149,17 @@ export async function POST(request: Request) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
+      // Meta-only concern — resolve the account's Meta channel, never
+      // "the account's single channel" (which errors once a UAZAPI
+      // channel is added alongside it).
       const { data: config, error: configError } = await supabase
         .from('whatsapp_channels')
         .select('*')
         .eq('account_id', accountId)
-        .single()
+        .eq('provider', 'meta')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
       if (configError || !config) {
         return NextResponse.json(
           {

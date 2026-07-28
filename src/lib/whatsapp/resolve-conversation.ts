@@ -24,6 +24,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { resolveDefaultChannelId } from '@/lib/whatsapp/providers/resolve';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -55,12 +56,13 @@ export async function resolveConversationByPhone(
 
   // Fail fast (and create nothing) when the account has no WhatsApp
   // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_channels')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (!config) {
+  //
+  // `resolveDefaultChannelId` (oldest channel by created_at) is the one
+  // definition of "the account's default channel", shared with the send
+  // resolver. A bare `.maybeSingle()` here threw PGRST116 — surfacing as
+  // `whatsapp_not_configured` — as soon as the account had two channels.
+  const channelId = await resolveDefaultChannelId(db, accountId);
+  if (!channelId) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -147,7 +149,7 @@ export async function resolveConversationByPhone(
     accountId,
     contactId,
     ownerUserId,
-    config.id as string
+    channelId
   );
 
   return { conversationId, contactId, contactCreated };

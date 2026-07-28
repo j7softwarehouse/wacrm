@@ -138,11 +138,17 @@ export async function PATCH(
     }
 
     if (!isDryRun()) {
+      // Meta-only concern — see the sync route: scoped to the account's
+      // Meta channel so a second (UAZAPI) channel doesn't make the
+      // lookup ambiguous.
       const { data: config, error: configError } = await supabase
         .from('whatsapp_channels')
         .select('*')
         .eq('account_id', accountId)
-        .single()
+        .eq('provider', 'meta')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
       if (configError || !config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured.' },
@@ -282,7 +288,10 @@ export async function DELETE(
         .from('whatsapp_channels')
         .select('*')
         .eq('account_id', accountId)
-        .single()
+        .eq('provider', 'meta')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },

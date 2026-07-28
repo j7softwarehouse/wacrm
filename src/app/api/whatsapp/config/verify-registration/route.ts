@@ -55,10 +55,17 @@ export async function GET() {
     })
   }
 
+  // Meta-only diagnostic (it checks /register + subscribed_apps), so it
+  // resolves the account's Meta channel. Same reason as the other Meta
+  // endpoints: a bare `.maybeSingle()` by account_id errors on ≥2 rows,
+  // which this handler would silently report as "no config saved yet".
   const { data: config } = await supabase
     .from('whatsapp_channels')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (!config) {

@@ -214,10 +214,16 @@ function InboxPageInner() {
         return;
       }
 
+      // The account's DEFAULT channel — oldest by created_at, the same
+      // rule `resolveDefaultChannelId` uses server-side. A bare
+      // `.maybeSingle()` errors on ≥2 rows, so an account with a second
+      // channel got a permanent "WhatsApp not connected" banner.
       const { data } = await supabase
         .from("whatsapp_channels")
         .select("status")
         .eq("account_id", accountId)
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
@@ -235,14 +241,20 @@ function InboxPageInner() {
         const res = await fetch("/api/whatsapp/channels");
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
-        const channels: PublicChannel[] = Array.isArray(data?.channels)
-          ? data.channels
-          : [];
+        if (!res.ok || !Array.isArray(data?.channels)) {
+          throw new Error(data?.error ?? "channel list unavailable");
+        }
+        const channels: PublicChannel[] = data.channels;
         setChannelsById(new Map(channels.map((c) => [c.id, c])));
+        // Only the success path marks the list loaded. Setting it in a
+        // `finally` used to fail CLOSED: one flaky request left the map
+        // empty *and* `channelsLoaded` true, so every conversation looked
+        // like it had a missing/disconnected channel and the whole inbox
+        // went read-only. Staying false means "we don't know yet", which
+        // the composer treats as "don't block sending".
+        if (!cancelled) setChannelsLoaded(true);
       } catch (err) {
         console.error("Failed to fetch WhatsApp channels:", err);
-      } finally {
-        if (!cancelled) setChannelsLoaded(true);
       }
     })();
     return () => {

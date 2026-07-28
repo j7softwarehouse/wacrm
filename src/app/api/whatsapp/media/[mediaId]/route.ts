@@ -48,12 +48,19 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
+    // Fetch and decrypt the account's META channel. This proxy exists to
+    // download media by a Meta media-id via the Graph API — UAZAPI media
+    // is mirrored into Storage at ingest time and never comes through
+    // here — so the lookup is provider-scoped rather than "the account's
+    // one channel", which errors once a second channel exists.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_channels')
       .select('*')
       .eq('account_id', accountId)
-      .single()
+      .eq('provider', 'meta')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
 
     if (configError || !config) {
       return NextResponse.json(

@@ -18,7 +18,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { getProviderForChannel } from '@/lib/whatsapp/providers/resolve';
+import {
+  getProviderForChannel,
+  resolveDefaultChannelId,
+} from '@/lib/whatsapp/providers/resolve';
 import { ProviderRateLimitError, type WhatsAppProvider } from '@/lib/whatsapp/providers/types';
 import {
   sanitizePhoneForMeta,
@@ -111,19 +114,21 @@ export async function createBroadcast(
   // Config (fail fast + provides the audit trail owner already resolved
   // by the caller). The provider is resolved once here and reused for
   // every recipient in deliverBroadcast.
-  const { data: channelRow, error: channelError } = await db
-    .from('whatsapp_channels')
-    .select('id')
-    .eq('account_id', accountId)
-    .single();
-  if (channelError || !channelRow) {
+  //
+  // Resolved through `resolveDefaultChannelId` (oldest channel by
+  // created_at) rather than a bare `.single()`: PostgREST's single/
+  // maybeSingle error on ≥2 matching rows, so every API broadcast would
+  // fail with "WhatsApp not configured" the moment the account added a
+  // second channel.
+  const channelId = await resolveDefaultChannelId(db, accountId);
+  if (!channelId) {
     throw new BroadcastError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
       400
     );
   }
-  const provider = await getProviderForChannel(db, channelRow.id);
+  const provider = await getProviderForChannel(db, channelId);
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -202,7 +207,7 @@ export async function createBroadcast(
       // row `provider` was built from above. Migration 037 added the
       // column and backfilled history, but nothing wrote it afterwards,
       // so every new broadcast landed with a NULL channel.
-      channel_id: channelRow.id,
+      channel_id: channelId,
       name: name || `API broadcast (${templateName})`,
       template_name: templateName,
       template_language: templateLanguage,
