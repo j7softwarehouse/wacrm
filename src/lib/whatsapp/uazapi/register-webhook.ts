@@ -21,6 +21,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { MARKETING_FALLBACK_BASE_URL } from "@/lib/http/base-url";
+
 import type { UazapiClient } from "./client";
 import { buildWebhookConfig } from "./connection";
 
@@ -55,6 +57,28 @@ export async function registerUazapiWebhook(
       "[uazapi] canal sem webhook_secret; registro impossível:",
       channel.id,
     );
+    return false;
+  }
+
+  // `getBaseUrl` cai nesse domínio de marketing quando não consegue
+  // derivar a origem real da requisição. Para um link de convite isso
+  // só gera um 404; aqui apontaria o webhook — e o segredo do canal —
+  // para um domínio de terceiros, e carimbaria sucesso sem nunca ter
+  // registrado nada de verdade. Trata como falha, não como sucesso.
+  if (baseUrl.replace(/\/+$/, "") === MARKETING_FALLBACK_BASE_URL) {
+    console.error(
+      "[uazapi] não foi possível determinar a URL pública da aplicação; registro de webhook adiado:",
+      channel.id,
+    );
+    await db
+      .from("whatsapp_channels")
+      .update({
+        last_error:
+          "Conectado, mas não foi possível determinar a URL pública desta " +
+          "aplicação para registrar o webhook automaticamente. Configure " +
+          "NEXT_PUBLIC_SITE_URL ou registre a URL manualmente no painel da UAZAPI.",
+      })
+      .eq("id", channel.id);
     return false;
   }
 

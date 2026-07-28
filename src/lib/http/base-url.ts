@@ -43,6 +43,15 @@
 //   original name so existing deployments don't have to change.
 // ============================================================
 
+/**
+ * The last-resort fallback `getBaseUrl` returns when it can't derive a
+ * trustworthy origin. Exported so callers that hand the result to an
+ * EXTERNAL system (not just render it in an email link) can detect this
+ * case and refuse to proceed, instead of publishing a third party's
+ * domain as if it were this deployment's.
+ */
+export const MARKETING_FALLBACK_BASE_URL = "https://wacrm.tech";
+
 export function parseAllowedHosts(): readonly string[] | null {
   const raw = process.env.ALLOWED_INVITE_HOSTS?.trim();
   if (!raw) return null;
@@ -102,5 +111,5 @@ export function getBaseUrl(request: Request): string {
       "[base-url] could not derive base URL from request; falling back to marketing domain",
     );
   }
-  return "https://wacrm.tech";
+  return MARKETING_FALLBACK_BASE_URL;
 }
