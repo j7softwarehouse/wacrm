@@ -319,17 +319,68 @@ async function findOrCreateContact(
 }
 
 /**
+ * Adota uma conversa órfã (channel_id NULL) para este canal.
+ *
+ * O `.is('channel_id', null)` deixa a operação idempotente e sem
+ * corrida: se outro writer já reivindicou a linha, o UPDATE não casa
+ * nada. Best-effort — falhar aqui só mantém o status quo (a linha segue
+ * órfã e a busca tolerante continua achando ela).
+ */
+async function adoptOrphanConversation(
+  db: SupabaseClient,
+  conversation: { id: string; channel_id?: string | null },
+  channelId: string,
+): Promise<void> {
+  if (conversation.channel_id) return;
+  const { error } = await db
+    .from("conversations")
+    .update({ channel_id: channelId })
+    .eq("id", conversation.id)
+    .is("channel_id", null);
+  if (error) {
+    console.error("Error backfilling conversation channel_id:", error.message);
+    return;
+  }
+  // Mantém o objeto em memória coerente com o banco para o restante da
+  // ingestão (e para o retorno ao chamador).
+  conversation.channel_id = channelId;
+}
+
+/**
  * Conversas SÃO escopadas por canal: o mesmo contato falando com dois
  * números da conta são duas conversas distintas. É o que a migração
  * 037 formalizou ao trocar a UNIQUE para
  * (account_id, contact_id, channel_id).
+ *
+ * Com uma tolerância deliberada: a busca também aceita `channel_id`
+ * NULL, e adota a linha órfã para este canal quando encontra uma.
+ *
+ * Por quê: os criadores de conversa do lado de SAÍDA (o composer do
+ * dashboard e a API pública) só conhecem a conta, e por isso criavam a
+ * conversa com channel_id NULL. Um filtro estritamente `.eq(channel.id)`
+ * nunca acha essa linha (NULL ≠ chan-1), então a primeira resposta do
+ * contato abriria uma SEGUNDA conversa — e o envio seguinte pelo
+ * dashboard esbarraria na fatia única `(conta, contato, NULL)` que a
+ * órfã já ocupa, virando 500 permanente. O mesmo vale para a órfã que o
+ * "Resetar configuração" produz: apagar o canal dispara
+ * ON DELETE SET NULL em toda conversa da conta.
+ *
+ * Aceitar-e-adotar converge os dois lados numa linha só, e cura o dado
+ * existente em vez de apenas parar de piorá-lo.
  */
 async function findOrCreateConversation(
   db: SupabaseClient,
   channel: WhatsAppChannel,
   contactId: string,
 ) {
-  // Procura uma conversa existente deste canal, mais antiga primeiro.
+  // `channel.id` é o UUID da linha de `whatsapp_channels` que a rota já
+  // resolveu (pelo phone_number_id / webhook_secret do provedor) — nunca
+  // texto vindo do payload — então interpolá-lo na gramática de filtro
+  // `or` do PostgREST é seguro.
+  const channelFilter = `channel_id.eq.${channel.id},channel_id.is.null`;
+
+  // Procura uma conversa existente deste canal — ou órfã, ver acima —
+  // mais antiga primeiro.
   //
   // Deliberadamente NÃO usamos `.single()` aqui. `.single()` dá erro
   // tanto com 0 linhas quanto com ≥2, e o código antigo tratava
@@ -349,7 +400,7 @@ async function findOrCreateConversation(
     .select("*")
     .eq("account_id", channel.account_id)
     .eq("contact_id", contactId)
-    .eq("channel_id", channel.id)
+    .or(channelFilter)
     .order("created_at", { ascending: true })
     .limit(1);
 
@@ -359,6 +410,7 @@ async function findOrCreateConversation(
   }
 
   if (existingRows && existingRows.length > 0) {
+    await adoptOrphanConversation(db, existingRows[0], channel.id);
     return { conversation: existingRows[0], created: false };
   }
 
@@ -383,17 +435,20 @@ async function findOrCreateConversation(
     //
     // O filtro por canal precisa estar aqui também: sem ele, uma
     // corrida num canal poderia resolver para a conversa de OUTRO
-    // canal do mesmo contato.
+    // canal do mesmo contato. Mesma tolerância a NULL da busca inicial —
+    // a corrida perdida pode ter sido justamente contra a fatia
+    // `(conta, contato, NULL)` de uma órfã.
     if (isUniqueViolation(createError)) {
       const { data: raced } = await db
         .from("conversations")
         .select("*")
         .eq("account_id", channel.account_id)
         .eq("contact_id", contactId)
-        .eq("channel_id", channel.id)
+        .or(channelFilter)
         .order("created_at", { ascending: true })
         .limit(1);
       if (raced && raced.length > 0) {
+        await adoptOrphanConversation(db, raced[0], channel.id);
         return { conversation: raced[0], created: false };
       }
     }

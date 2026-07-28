@@ -146,7 +146,8 @@ export async function resolveConversationByPhone(
     db,
     accountId,
     contactId,
-    ownerUserId
+    ownerUserId,
+    config.id as string
   );
 
   return { conversationId, contactId, contactCreated };
@@ -154,21 +155,38 @@ export async function resolveConversationByPhone(
 
 /**
  * Find (oldest-first) or create the single conversation for
- * `(accountId, contactId)`. Handles the unique-index race the same way
- * the inbound webhook does: on a 23505 from a concurrent create,
- * re-resolve the winning row rather than failing the send.
+ * `(accountId, contactId)` on `channelId`. Handles the unique-index race
+ * the same way the inbound webhook does: on a 23505 from a concurrent
+ * create, re-resolve the winning row rather than failing the send.
+ *
+ * Channel binding (migração 037): the lookup matches EITHER `channelId`
+ * or a NULL `channel_id`, and backfills the NULL on a hit. Conversations
+ * created by this path before 037 (and by the dashboard's own
+ * outbound-first path) landed with `channel_id` NULL, which the inbound
+ * webhook's strictly channel-scoped lookup can never match — so without
+ * the tolerant filter the same contact forks into two threads, and the
+ * next send hits the `(account, contact, NULL)` unique slot the orphan
+ * already occupies. Matching-then-healing converges both sides onto one
+ * row instead.
  */
 async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  ownerUserId: string
+  ownerUserId: string,
+  channelId: string
 ): Promise<string> {
+  // `channelId` is the UUID of a `whatsapp_channels` row this module
+  // just read for `accountId` — never caller-supplied text — so it is
+  // safe to interpolate into PostgREST's `or` filter grammar.
+  const channelFilter = `channel_id.eq.${channelId},channel_id.is.null`;
+
   const { data: existing, error: findErr } = await db
     .from('conversations')
-    .select('id')
+    .select('id, channel_id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .or(channelFilter)
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -178,6 +196,7 @@ async function findOrCreateConversationRow(
   }
 
   if (existing && existing.length > 0) {
+    await backfillChannelId(db, existing[0], channelId);
     return existing[0].id;
   }
 
@@ -187,6 +206,7 @@ async function findOrCreateConversationRow(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      channel_id: channelId,
     })
     .select('id')
     .single();
@@ -195,12 +215,14 @@ async function findOrCreateConversationRow(
     if (isUniqueViolation(convErr)) {
       const { data: raced } = await db
         .from('conversations')
-        .select('id')
+        .select('id, channel_id')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .or(channelFilter)
         .order('created_at', { ascending: true })
         .limit(1);
       if (raced && raced.length > 0) {
+        await backfillChannelId(db, raced[0], channelId);
         return raced[0].id;
       }
     }
@@ -209,4 +231,30 @@ async function findOrCreateConversationRow(
   }
 
   return newConv.id;
+}
+
+/**
+ * Claim an orphan conversation row for `channelId`.
+ * `.is('channel_id', null)` keeps it a no-op when a concurrent writer
+ * already claimed it. Best-effort: a failure here just means the row
+ * stays orphaned, which is the (still-working, tolerant-lookup) status
+ * quo rather than a new failure mode.
+ */
+async function backfillChannelId(
+  db: SupabaseClient,
+  row: { id: string; channel_id?: string | null },
+  channelId: string
+): Promise<void> {
+  if (row.channel_id) return;
+  const { error } = await db
+    .from('conversations')
+    .update({ channel_id: channelId })
+    .eq('id', row.id)
+    .is('channel_id', null);
+  if (error) {
+    console.error(
+      '[resolve-conversation] channel_id backfill failed:',
+      error.message
+    );
+  }
 }

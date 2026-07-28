@@ -64,10 +64,6 @@ function makeSupabaseMock() {
     const insertResult = () => {
       switch (table) {
         case 'conversations':
-          // No `channel_id` here on purpose: production's conversation
-          // INSERT (this route, and the public API's find-or-create)
-          // never sets it — getProviderForConversation must fall back
-          // to the account's one whatsapp_channels row.
           return {
             data: createdConversation ?? existingConversation,
             error: null,
@@ -82,17 +78,42 @@ function makeSupabaseMock() {
     const terminal = () =>
       Promise.resolve(didInsert ? insertResult() : selectResult())
 
+    // Awaiting the builder directly (no `.single()`/`.maybeSingle()`)
+    // is the LIST form — PostgREST returns an array there. The
+    // find-or-create conversation lookup is `.order().limit(1)` and
+    // reads `.length` / `[0]`, so a bare object would silently read as
+    // "not found" and mask a duplicate-insert regression.
+    const listTerminal = () => {
+      const r = didInsert ? insertResult() : selectResult()
+      if (r.error) return r
+      const d = r.data
+      return { data: d == null ? [] : Array.isArray(d) ? d : [d], error: null }
+    }
+
     const b: Record<string, unknown> = {}
     const chain = () => b
-    for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'delete']) {
+    for (const m of [
+      'select',
+      'eq',
+      'in',
+      'or',
+      'is',
+      'order',
+      'limit',
+      'update',
+      'delete',
+    ]) {
       b[m] = vi.fn(chain)
     }
     b.insert = vi.fn((payload: Record<string, unknown>) => {
       didInsert = true
       if (table === 'conversations') {
         conversationInserts.push(payload)
-        // No `channel_id` here on purpose — see the comment on the
-        // `selectResult`/`insertResult` 'conversations' cases above.
+        // Deliberately left WITHOUT `channel_id` even though the route
+        // now writes one: this keeps `getProviderForConversation`'s
+        // fallback (legacy/orphan rows created before migration 037)
+        // covered by the happy path. The assertion on
+        // `conversationInserts[0]` is what pins the new write.
         createdConversation = {
           id: 'conv-new',
           account_id: 'acct-1',
@@ -105,8 +126,7 @@ function makeSupabaseMock() {
     })
     b.single = vi.fn(terminal)
     b.maybeSingle = vi.fn(terminal)
-    b.then = (resolve: (v: unknown) => unknown) =>
-      resolve(didInsert ? insertResult() : selectResult())
+    b.then = (resolve: (v: unknown) => unknown) => resolve(listTerminal())
     return b
   }
 
@@ -198,11 +218,15 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(json.success).toBe(true)
     expect(json.whatsapp_message_id).toBe('wamid-1')
 
-    // A conversation was created for this contact.
+    // A conversation was created for this contact, bound to the
+    // account's channel. `channel_id` matters: a NULL there is a slot
+    // the inbound webhook's channel-scoped lookup can never match, so
+    // the contact's first reply would fork into a second thread.
     expect(conversationInserts).toHaveLength(1)
     expect(conversationInserts[0]).toMatchObject({
       account_id: 'acct-1',
       contact_id: 'contact-1',
+      channel_id: 'chan-1',
     })
 
     // The template was sent to the contact's number.

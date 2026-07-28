@@ -198,6 +198,11 @@ export async function createBroadcast(
     .insert({
       account_id: accountId,
       user_id: auditUserId,
+      // The channel this broadcast actually goes out through — the same
+      // row `provider` was built from above. Migration 037 added the
+      // column and backfilled history, but nothing wrote it afterwards,
+      // so every new broadcast landed with a NULL channel.
+      channel_id: channelRow.id,
       name: name || `API broadcast (${templateName})`,
       template_name: templateName,
       template_language: templateLanguage,

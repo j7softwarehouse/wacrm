@@ -81,6 +81,14 @@ export async function engineSendText(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
+  // Only `NoChannelConfiguredError` is remapped — "the account never
+  // connected WhatsApp" is an expected, user-actionable state worth a
+  // readable message. Everything else (notably `ChannelNotFoundError`,
+  // from a conversation/channel id that doesn't resolve) propagates on
+  // purpose: every caller of the engine senders is inside the flow
+  // runner, whose single public entry point `dispatchInboundToFlows`
+  // wraps the whole dispatch in try/catch — so it lands in a log and a
+  // `no_match` result, never an unhandled rejection.
   let provider
   try {
     provider = await getProviderForConversation(db, args.conversationId, args.accountId)

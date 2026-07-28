@@ -133,6 +133,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
+  // `NoChannelConfiguredError` is remapped because "the account never
+  // connected WhatsApp" is an expected, user-actionable state and
+  // deserves a readable step detail. Everything else (notably
+  // `ChannelNotFoundError`, from a conversation/channel id that doesn't
+  // resolve) propagates on purpose: the automations engine's own
+  // try/catch in `runAutomationsForTrigger` logs and swallows it, so an
+  // unresolvable id shows up as a failed step instead of a crash.
   let provider
   try {
     provider = await getProviderForConversation(db, input.conversationId, input.accountId)

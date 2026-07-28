@@ -50,6 +50,27 @@ export class NoChannelConfiguredError extends Error {
   }
 }
 
+/**
+ * The account's oldest channel, or null if it has none. Used wherever
+ * a conversation needs a channel_id but the caller only knows the
+ * account (outbound-initiated conversations, before Part B's UI lets
+ * an operator pick a channel explicitly).
+ */
+export async function resolveDefaultChannelId(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("whatsapp_channels")
+    .select("id")
+    .eq("account_id", accountId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
 function buildProvider(channel: WhatsAppChannel): WhatsAppProvider {
   // UAZAPI's `connected` reflects a live session; sending genuinely
   // requires it. Meta's `status` (migração 015) is registration/webhook
@@ -115,19 +136,14 @@ export async function getProviderForConversation(
     // backfilled (migration 037), or created by a call site that
     // doesn't set it explicitly (dashboard/public-API sends), fall back
     // to the account's channel — the same "one config per account"
-    // resolution the pre-multi-canal code always used.
-    const { data: fallbackChannel, error: fallbackError } = await db
-      .from("whatsapp_channels")
-      .select("id")
-      .eq("account_id", accountId)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (fallbackError || !fallbackChannel) {
+    // resolution the pre-multi-canal code always used. Shared with the
+    // outbound conversation creators via `resolveDefaultChannelId`, so
+    // "the account's default channel" has exactly one definition.
+    const fallbackChannelId = await resolveDefaultChannelId(db, accountId);
+    if (!fallbackChannelId) {
       throw new NoChannelConfiguredError(accountId);
     }
-    channelId = fallbackChannel.id as string;
+    channelId = fallbackChannelId;
   }
 
   return getProviderForChannel(db, channelId);
