@@ -142,7 +142,8 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "channelHint": "Recebida pelo canal {label}"
     },
     "messageThread": {
       "backToConversations": "Voltar para conversas",
@@ -166,7 +167,11 @@
       "selectConversation": "Selecione uma conversa",
       "selectConversationHint": "Escolha uma conversa à esquerda para começar a enviar mensagens",
       "today": "Hoje",
-      "yesterday": "Ontem"
+      "yesterday": "Ontem",
+      "channelRemovedBadge": "Canal removido",
+      "channelRemovedWarning": "O canal de origem desta conversa foi removido. Não é possível enviar mensagens por aqui.",
+      "channelDisconnectedWarning": "O canal \"{label}\" está desconectado. Reconecte-o em Configurações → Canais para enviar mensagens.",
+      "channelUnnamed": "sem nome"
     },
     "sessionTimer": {
       "expired": "Expirado",
@@ -182,6 +187,7 @@
       "sessionExpiredPlaceholder": "Sessão expirada - use um modelo",
       "typeMessagePlaceholder": "Digite uma mensagem... (Shift+Enter para nova linha)",
       "readOnlyTitle": "Somente leitura — seu papel não pode enviar mensagens",
+      "channelUnavailablePlaceholder": "Envio desabilitado — canal indisponível",
       "recording": "Gravando… {current} / {max}",
       "cancel": "Cancelar",
       "stopAndAttach": "Parar e anexar",

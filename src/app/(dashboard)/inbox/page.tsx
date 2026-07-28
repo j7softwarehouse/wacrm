@@ -9,6 +9,7 @@ import {
   normalizeConversation,
 } from "@/lib/inbox/conversations";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
@@ -51,6 +52,19 @@ function InboxPageInner() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  /**
+   * All of the account's WhatsApp channels, keyed by id — fetched once on
+   * mount (not per-conversation; with several channels possible per
+   * account, refetching for every open thread would be wasteful and
+   * would still race the list's own render). `channelsById` stays an
+   * empty map until the fetch resolves; `channelsLoaded` gates the
+   * "channel unavailable" composer warning below so a conversation whose
+   * channel simply hasn't loaded yet isn't mistaken for an orphaned one.
+   */
+  const [channelsById, setChannelsById] = useState<Map<string, PublicChannel>>(
+    new Map()
+  );
+  const [channelsLoaded, setChannelsLoaded] = useState(false);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -210,6 +224,30 @@ function InboxPageInner() {
     };
 
     checkConnection();
+  }, []);
+
+  // Load the account's channel list once, so the list and thread can look
+  // up a conversation's channel by id without a per-conversation fetch.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/whatsapp/channels");
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        const channels: PublicChannel[] = Array.isArray(data?.channels)
+          ? data.channels
+          : [];
+        setChannelsById(new Map(channels.map((c) => [c.id, c])));
+      } catch (err) {
+        console.error("Failed to fetch WhatsApp channels:", err);
+      } finally {
+        if (!cancelled) setChannelsLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Handle realtime message events
@@ -590,6 +628,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            channelsById={channelsById}
           />
         </div>
 
@@ -623,6 +662,8 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            channelsById={channelsById}
+            channelsLoaded={channelsLoaded}
           />
         </div>
 

@@ -22,6 +22,7 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -112,6 +113,20 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  /**
+   * True when the conversation's WhatsApp channel can't send right now —
+   * either it's not `connected`, or `channel_id` is null because the
+   * channel was removed from Settings. The parent tells us which case it
+   * is via `channelWarning`; we just fold this into the disabled state.
+   */
+  channelUnavailable: boolean;
+  /**
+   * Human-readable reason `channelUnavailable` is true, already
+   * localized by the parent (disconnected vs. removed are worded
+   * differently). `null`/`undefined` when the channel is fine — renders
+   * nothing.
+   */
+  channelWarning?: string | null;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -134,6 +149,8 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  channelUnavailable,
+  channelWarning,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -190,7 +207,11 @@ export function MessageComposer({
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
   // Media (like free-form text) is only allowed inside the 24h window.
-  const inputsDisabled = readOnly || sessionExpired;
+  // `channelUnavailable` folds in the two channel-level reasons sending
+  // can't happen — channel disconnected, or its channel_id was set to
+  // null because the channel was removed from Settings — on top of the
+  // existing role/session gates.
+  const inputsDisabled = readOnly || sessionExpired || channelUnavailable;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -222,7 +243,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (!trimmed || sending || sessionExpired || channelUnavailable) return;
 
     setSending(true);
     try {
@@ -234,7 +255,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, channelUnavailable, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -546,6 +567,17 @@ export function MessageComposer({
           />
         </div>
       )}
+      {/* Channel warning — disconnected vs. removed get different copy
+          (see MessageThread) so the agent knows whether to go reconnect
+          it or just accept the thread is read-only now. Shown above the
+          session-expired hint since it's the more severe blocker: even a
+          template send would fail here. */}
+      {channelWarning && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          <p className="text-xs text-red-400">{channelWarning}</p>
+        </div>
+      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -600,6 +632,7 @@ export function MessageComposer({
           draft={draft}
           busy={busy}
           readOnly={readOnly}
+          channelUnavailable={channelUnavailable}
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
@@ -702,7 +735,8 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            title={readOnly ? undefined : t("sendTemplate")}
+            disabled={channelUnavailable}
+            title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
             onClick={onOpenTemplates}
           >
@@ -714,8 +748,8 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={drafting}
-            title={readOnly ? undefined : t("draftWithAI")}
+            disabled={drafting || channelUnavailable}
+            title={readOnly ? undefined : channelWarning ?? t("draftWithAI")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
           >
@@ -734,19 +768,26 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                : channelUnavailable
+                  ? t("channelUnavailablePlaceholder")
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly}
+            disabled={inputsDisabled}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
-            // The placeholder text also surfaces the read-only state.
-            title={readOnly ? t("readOnlyTitle") : undefined}
+            // The placeholder text also surfaces the read-only /
+            // channel-unavailable state.
+            title={
+              readOnly
+                ? t("readOnlyTitle")
+                : channelWarning ?? undefined
+            }
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              inputsDisabled && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -754,7 +795,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || sessionExpired || channelUnavailable || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
@@ -825,6 +866,7 @@ function MediaDraftPreview({
   draft,
   busy,
   readOnly,
+  channelUnavailable,
   onCaptionChange,
   onDiscard,
   onSend,
@@ -833,6 +875,7 @@ function MediaDraftPreview({
   draft: MediaDraft;
   busy: boolean;
   readOnly: boolean;
+  channelUnavailable: boolean;
   onCaptionChange: (caption: string) => void;
   onDiscard: () => void;
   onSend: () => void;
@@ -893,7 +936,7 @@ function MediaDraftPreview({
           size="sm"
           canAct={!readOnly}
           gateReason="send messages"
-          disabled={busy}
+          disabled={busy || channelUnavailable}
           onClick={onSend}
           className={cn(
             "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",

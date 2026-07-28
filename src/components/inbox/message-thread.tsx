@@ -7,6 +7,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
+import { channelLabel } from "@/lib/inbox/conversations";
 import type {
   Conversation,
   Message,
@@ -17,6 +18,7 @@ import type {
   Profile,
   InteractiveMessagePayload,
 } from "@/types";
+import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
   ChevronDown,
@@ -27,6 +29,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Smartphone,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -109,6 +112,19 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * All of the account's WhatsApp channels, keyed by id — loaded once by
+   * the page. Used to show which number this conversation belongs to in
+   * the header, and to warn + disable sending when that channel isn't
+   * `connected` (or was removed, i.e. `conversation.channel_id` is null).
+   */
+  channelsById?: Map<string, PublicChannel>;
+  /**
+   * Whether `channelsById` has finished its initial load. Gates the
+   * "channel unavailable" warning below so a conversation whose channel
+   * simply hasn't loaded in yet isn't mistaken for an orphaned one.
+   */
+  channelsLoaded?: boolean;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -167,6 +183,8 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  channelsById,
+  channelsLoaded = false,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -858,6 +876,30 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone;
+
+  // Which channel this conversation came in on, and whether sending is
+  // currently possible on it. `channel_id === null` means the channel was
+  // removed from Settings (FK is `ON DELETE SET NULL`) — that's a
+  // permanent, read-only state, distinct from a channel that's merely
+  // disconnected right now. Both cases are gated on `channelsLoaded` so a
+  // conversation whose channel simply hasn't loaded in yet isn't briefly
+  // flashed as orphaned.
+  const channel = conversation.channel_id
+    ? channelsById?.get(conversation.channel_id)
+    : undefined;
+  const channelOrphaned = channelsLoaded && !conversation.channel_id;
+  const channelDisconnected =
+    channelsLoaded && !!conversation.channel_id && channel?.status !== "connected";
+  const channelUnavailable = channelOrphaned || channelDisconnected;
+  const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
+  const channelWarning = channelOrphaned
+    ? t("channelRemovedWarning")
+    : channelDisconnected
+      ? t("channelDisconnectedWarning", {
+          label: channel ? channelLabel(channel) ?? t("channelUnnamed") : t("channelUnnamed"),
+        })
+      : null;
+
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -913,6 +955,24 @@ export function MessageThread({
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
           </Badge>
+
+          {/* Which number the customer wrote to — critical once an
+              account has more than one WhatsApp channel connected, or
+              this channel is disconnected/removed. Hidden on the
+              narrowest phones like the session badge above. */}
+          {(channelDisplayLabel || channelUnavailable) && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                channelUnavailable ? "text-red-400" : "text-muted-foreground"
+              )}
+              title={channelWarning ?? undefined}
+            >
+              <Smartphone className="h-3 w-3" />
+              {channelDisplayLabel ?? t("channelRemovedBadge")}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1153,6 +1213,8 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        channelUnavailable={channelUnavailable}
+        channelWarning={channelWarning}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

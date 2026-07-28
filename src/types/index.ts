@@ -162,6 +162,15 @@ export interface Conversation {
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
+  /**
+   * Which WhatsApp channel this conversation belongs to (migration 037,
+   * Parte A). Nullable: the FK is `ON DELETE SET NULL`, so a channel
+   * removed from Settings orphans its conversations rather than deleting
+   * them — the inbox treats a null `channel_id` as read-only. Legacy
+   * conversations created before multi-channel support may also carry
+   * `null` here.
+   */
+  channel_id?: string | null;
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;

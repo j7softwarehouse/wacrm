@@ -1,4 +1,5 @@
 import type { Conversation, Contact, Tag } from "@/types";
+import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 
 /**
  * Conversation select that embeds the contact plus its tags, so the Inbox
@@ -68,4 +69,17 @@ export function matchesContactFilters(
   }
 
   return true;
+}
+
+/**
+ * Display label for a WhatsApp channel: its custom `label` when set,
+ * otherwise the phone number. Returns `undefined` when neither is
+ * available (e.g. a UAZAPI channel that's never connected), which
+ * callers should treat as "nothing to show" rather than rendering an
+ * empty chip.
+ */
+export function channelLabel(
+  channel: Pick<PublicChannel, "label" | "phone_e164">,
+): string | undefined {
+  return channel.label || channel.phone_e164 || undefined;
 }

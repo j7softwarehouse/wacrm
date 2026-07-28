@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  channelLabel,
   matchesContactFilters,
   normalizeConversation,
 } from "./conversations";
@@ -141,5 +142,23 @@ describe("normalizeConversation", () => {
     };
     // A contactless row passes through untouched (consumers use `?.`).
     expect(normalizeConversation(raw).contact).toBeNull();
+  });
+});
+
+describe("channelLabel", () => {
+  it("prefers the custom label over the phone number", () => {
+    expect(channelLabel({ label: "Suporte", phone_e164: "+551199998888" })).toBe(
+      "Suporte",
+    );
+  });
+
+  it("falls back to the phone number when there's no label", () => {
+    expect(channelLabel({ label: undefined, phone_e164: "+551199998888" })).toBe(
+      "+551199998888",
+    );
+  });
+
+  it("returns undefined when neither is set (never-connected channel)", () => {
+    expect(channelLabel({ label: undefined, phone_e164: undefined })).toBeUndefined();
   });
 });

@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
+  channelLabel,
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
+import { Search, ChevronDown, Smartphone, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -34,6 +36,12 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * All of the account's WhatsApp channels, keyed by id — loaded once by
+   * the page and passed down here so each conversation can show which
+   * number the customer messaged without a per-conversation fetch.
+   */
+  channelsById?: Map<string, PublicChannel>;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +60,7 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  channelsById,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -413,6 +422,9 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                channel={
+                  conv.channel_id ? channelsById?.get(conv.channel_id) : undefined
+                }
                 t={t}
               />
             ))}
@@ -427,6 +439,13 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /**
+   * The channel this conversation belongs to, already looked up by the
+   * parent from `channelsById`. `undefined` when `channel_id` is null
+   * (orphaned — the channel was removed) or hasn't loaded yet; either
+   * way there's nothing to look up, so the chip below is simply omitted.
+   */
+  channel?: PublicChannel;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -434,11 +453,13 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  channel,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
+  const label = channel ? channelLabel(channel) : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -487,6 +508,15 @@ function ConversationItem({
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}
+              </span>
+            )}
+            {label && (
+              <span
+                className="hidden max-w-24 items-center gap-1 truncate rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                title={t("channelHint", { label })}
+              >
+                <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{label}</span>
               </span>
             )}
             <span

@@ -142,7 +142,8 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "channelHint": "Received on channel {label}"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -166,7 +167,11 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "channelRemovedBadge": "Channel removed",
+      "channelRemovedWarning": "This conversation's channel was removed. You can't send messages here anymore.",
+      "channelDisconnectedWarning": "The \"{label}\" channel is disconnected. Reconnect it in Settings → Channels to send messages.",
+      "channelUnnamed": "unnamed"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -182,6 +187,7 @@
       "sessionExpiredPlaceholder": "Session expired - use a template",
       "typeMessagePlaceholder": "Type a message... (Shift+Enter for new line)",
       "readOnlyTitle": "Read-only — your role can't send messages",
+      "channelUnavailablePlaceholder": "Sending disabled — channel unavailable",
       "recording": "Recording… {current} / {max}",
       "cancel": "Cancel",
       "stopAndAttach": "Stop and attach",
