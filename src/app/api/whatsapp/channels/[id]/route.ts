@@ -14,17 +14,30 @@ export async function DELETE(
     const { supabase, accountId } = await getCurrentAccount();
     const { id } = await params;
 
-    const { error } = await supabase
+    // `.select()` no DELETE é o que distingue "apagou" de "a RLS
+    // bloqueou". A política `admins write channels` (037) não devolve
+    // erro para um membro comum: devolve zero linhas afetadas. Sem
+    // conferir isso, a UI dizia "removido" e o canal reaparecia no
+    // refresh seguinte.
+    const { data: deleted, error } = await supabase
       .from("whatsapp_channels")
       .delete()
       .eq("id", id)
-      .eq("account_id", accountId);
+      .eq("account_id", accountId)
+      .select("id");
 
     if (error) {
       console.error("[channels] falha ao remover:", error.message);
       return NextResponse.json(
         { error: "Não foi possível remover o canal." },
         { status: 500 },
+      );
+    }
+
+    if (!deleted || deleted.length === 0) {
+      return NextResponse.json(
+        { error: "Canal não encontrado ou você não tem permissão para removê-lo." },
+        { status: 404 },
       );
     }
 

@@ -114,6 +114,13 @@ interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
   /**
+   * False on UAZAPI channels: approved templates are a Meta-only
+   * concept and `providers/uazapi.ts#sendTemplate` always throws
+   * ProviderUnsupportedError, so the button is hidden rather than
+   * offered and then failing. Defaults to true (Meta).
+   */
+  templatesSupported?: boolean;
+  /**
    * True when the conversation's WhatsApp channel can't send right now —
    * either it's not `connected`, or `channel_id` is null because the
    * channel was removed from Settings. The parent tells us which case it
@@ -149,6 +156,7 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  templatesSupported = true,
   channelUnavailable,
   channelWarning,
   onSend,
@@ -583,15 +591,18 @@ export function MessageComposer({
           <p className="text-xs text-amber-400">
             {t("sessionExpiredHint")}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="mr-1 h-3 w-3" />
-            {t("templates")}
-          </Button>
+          {/* The escape hatch only exists where templates do. */}
+          {templatesSupported && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-amber-400 hover:text-amber-300"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="mr-1 h-3 w-3" />
+              {t("templates")}
+            </Button>
+          )}
         </div>
       )}
 
@@ -730,18 +741,20 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            disabled={channelUnavailable}
-            title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+          {templatesSupported && (
+            <GatedButton
+              variant="ghost"
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              disabled={channelUnavailable}
+              title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
+              className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </GatedButton>
+          )}
 
           <GatedButton
             variant="ghost"

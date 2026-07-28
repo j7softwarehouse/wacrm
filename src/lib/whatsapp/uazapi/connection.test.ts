@@ -1,5 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { buildWebhookConfig, mapInstanceStatus, phoneFromJid } from "./connection";
+import {
+  buildWebhookConfig,
+  mapInstanceStatus,
+  mapUazapiMessageStatus,
+  phoneFromJid,
+} from "./connection";
+
+describe("mapUazapiMessageStatus", () => {
+  it("traduz o vocabulário da UAZAPI para os cinco valores do CHECK da 001", () => {
+    // `messages.status` tem CHECK IN ('sending','sent','delivered','read',
+    // 'failed'). Gravar o valor cru violava a constraint — e como o
+    // webhook não conferia o erro do UPDATE, nenhum status avançava e
+    // ninguém percebia.
+    expect(mapUazapiMessageStatus("DELIVERY_ACK")).toBe("delivered");
+    expect(mapUazapiMessageStatus("SERVER_ACK")).toBe("sent");
+    expect(mapUazapiMessageStatus("PLAYED")).toBe("read");
+    expect(mapUazapiMessageStatus("READ")).toBe("read");
+    expect(mapUazapiMessageStatus("PENDING")).toBe("sending");
+    expect(mapUazapiMessageStatus("ERROR")).toBe("failed");
+  });
+
+  it("aceita os próprios valores do CRM (o webhook às vezes ecoa)", () => {
+    for (const s of ["sending", "sent", "delivered", "read", "failed"]) {
+      expect(mapUazapiMessageStatus(s)).toBe(s);
+    }
+  });
+
+  it("devolve null para o desconhecido em vez de arriscar a constraint", () => {
+    expect(mapUazapiMessageStatus("SOMETHING_NEW")).toBeNull();
+    expect(mapUazapiMessageStatus("")).toBeNull();
+    expect(mapUazapiMessageStatus(null)).toBeNull();
+    expect(mapUazapiMessageStatus(undefined)).toBeNull();
+  });
+});
 
 describe("mapInstanceStatus", () => {
   it("mapeia os quatro estados documentados", () => {

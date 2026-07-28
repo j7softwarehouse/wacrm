@@ -2,7 +2,11 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 import { ingestInboundMessage } from "@/lib/whatsapp/inbound/ingest";
-import { mapInstanceStatus } from "@/lib/whatsapp/uazapi/connection";
+import {
+  mapInstanceStatus,
+  mapUazapiMessageStatus,
+  type CrmMessageStatus,
+} from "@/lib/whatsapp/uazapi/connection";
 import { normalizeUazapiEvent } from "@/lib/whatsapp/uazapi/normalize";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import type { WhatsAppChannel } from "@/types";
@@ -73,6 +77,88 @@ export async function POST(
   return NextResponse.json({ ok: true });
 }
 
+/**
+ * Avança o status de UMA mensagem — e só se ela pertencer a este canal.
+ *
+ * O escopo é obrigatório: o `webhook_secret` é uma credencial que TODO
+ * tenant possui para o próprio canal (a UI de canais mostra a URL
+ * completa), diferente do HMAC server-side da Meta. Sem o filtro, um
+ * tenant poderia forjar um `messages_update` com o
+ * `provider_message_id` de outra conta e mexer no histórico alheio —
+ * `messages.message_id` não é único por conta e o UPDATE original
+ * casava por ele e mais nada.
+ *
+ * Duas etapas em vez de um embed (`conversations!inner(...)`): o embed
+ * depende do schema cache do PostgREST, que fica obsoleto logo após
+ * migrações e derruba a query inteira com PGRST200.
+ */
+async function applyMessageStatus(
+  channel: WhatsAppChannel,
+  messageId: string,
+  status: CrmMessageStatus,
+): Promise<void> {
+  const db = supabaseAdmin();
+
+  const { data: messages, error: findError } = await db
+    .from("messages")
+    .select("id, conversation_id")
+    .eq("message_id", messageId);
+
+  if (findError) {
+    console.error(
+      "[uazapi/webhook] falha ao localizar mensagem:",
+      findError.message,
+    );
+    return;
+  }
+  if (!messages || messages.length === 0) return;
+
+  const conversationIds = [
+    ...new Set(
+      messages
+        .map((m: { conversation_id: string | null }) => m.conversation_id)
+        .filter((id: string | null): id is string => Boolean(id)),
+    ),
+  ];
+  if (conversationIds.length === 0) return;
+
+  const { data: owned, error: convError } = await db
+    .from("conversations")
+    .select("id")
+    .in("id", conversationIds)
+    .eq("account_id", channel.account_id)
+    .eq("channel_id", channel.id);
+
+  if (convError) {
+    console.error(
+      "[uazapi/webhook] falha ao validar a conversa:",
+      convError.message,
+    );
+    return;
+  }
+
+  const ownedIds = new Set((owned ?? []).map((c: { id: string }) => c.id));
+  const targetIds = messages
+    .filter((m: { conversation_id: string | null }) =>
+      m.conversation_id ? ownedIds.has(m.conversation_id) : false,
+    )
+    .map((m: { id: string }) => m.id);
+
+  if (targetIds.length === 0) return;
+
+  const { error: updateError } = await db
+    .from("messages")
+    .update({ status })
+    .in("id", targetIds);
+
+  if (updateError) {
+    console.error(
+      "[uazapi/webhook] falha ao atualizar status da mensagem:",
+      updateError.message,
+    );
+  }
+}
+
 async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   const eventName = (body as { event?: string } | null)?.event;
 
@@ -88,12 +174,11 @@ async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   if (eventName === "messages_update" || eventName === "status") {
     const d = (body as { data?: Record<string, unknown> }).data ?? {};
     const messageId = typeof d.messageid === "string" ? d.messageid : null;
-    const status = typeof d.status === "string" ? d.status : null;
+    const status = mapUazapiMessageStatus(
+      typeof d.status === "string" ? d.status : null,
+    );
     if (messageId && status) {
-      await supabaseAdmin()
-        .from("messages")
-        .update({ status })
-        .eq("message_id", messageId);
+      await applyMessageStatus(channel, messageId, status);
     }
     return;
   }

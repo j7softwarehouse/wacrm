@@ -27,6 +27,55 @@ export function mapInstanceStatus(raw: string | undefined): ChannelStatus {
   return "disconnected";
 }
 
+/** Vocabulário aceito por `messages.status` (CHECK da migração 001). */
+export type CrmMessageStatus =
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
+
+/**
+ * Status de mensagem da UAZAPI → vocabulário do CRM.
+ *
+ * Allowlist explícita, e não repasse direto: `messages.status` tem um
+ * CHECK de cinco valores (migração 001) e a UAZAPI usa outro
+ * vocabulário (`DELIVERY_ACK`, `PLAYED`, `SERVER_ACK`…). Gravar o valor
+ * cru viola a constraint, e como o webhook nunca checava o erro do
+ * UPDATE, isso falhava em silêncio: nenhum status jamais avançava.
+ *
+ * Devolve `null` para qualquer coisa não reconhecida — o chamador pula
+ * a atualização em vez de arriscar a constraint.
+ */
+export function mapUazapiMessageStatus(
+  raw: string | null | undefined,
+): CrmMessageStatus | null {
+  if (!raw) return null;
+  switch (raw.trim().toUpperCase()) {
+    case "PENDING":
+    case "SENDING":
+      return "sending";
+    case "SENT":
+    case "SERVER_ACK":
+    case "SERVERACK":
+      return "sent";
+    case "DELIVERED":
+    case "DELIVERY_ACK":
+    case "DELIVERYACK":
+      return "delivered";
+    case "READ":
+    case "PLAYED":
+      // `PLAYED` (áudio ouvido) implica lido e não tem estado próprio
+      // no CRM.
+      return "read";
+    case "FAILED":
+    case "ERROR":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
 /** `5511999999999:12@s.whatsapp.net` → `5511999999999`. */
 export function phoneFromJid(jid: string | null | undefined): string | null {
   if (!jid) return null;

@@ -244,8 +244,37 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
+  /**
+   * The channel this conversation came in on. Resolved here (not further
+   * down, next to the render) because the session-window rule below is
+   * provider-specific and lives in a hook, which must run before the
+   * component's early returns.
+   */
+  const threadChannel = useMemo(
+    () =>
+      conversation?.channel_id
+        ? channelsById?.get(conversation.channel_id)
+        : undefined,
+    [conversation?.channel_id, channelsById],
+  );
+
+  /**
+   * Approved templates are Meta-only; `providers/uazapi.ts#sendTemplate`
+   * always throws ProviderUnsupportedError. Offering the button on a
+   * UAZAPI thread promises something that can never work.
+   */
+  const templatesSupported = threadChannel?.provider !== "uazapi";
+
+  // 24-hour session timer — a META Cloud API rule (outside the free-form
+  // window only templates are allowed). UAZAPI is WhatsApp-Web-style and
+  // has no such window; the server-side send path has no 24h check
+  // either. Applying it there was a purely client-side self-inflicted
+  // block — and a permanent one, since the UI's only offered escape is
+  // "use a template", which UAZAPI can't do at all.
   const sessionInfo = useMemo(() => {
+    if (threadChannel?.provider === "uazapi") {
+      return { expired: false, remaining: "" };
+    }
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -269,7 +298,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, threadChannel?.provider]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -884,12 +913,20 @@ export function MessageThread({
   // disconnected right now. Both cases are gated on `channelsLoaded` so a
   // conversation whose channel simply hasn't loaded in yet isn't briefly
   // flashed as orphaned.
-  const channel = conversation.channel_id
-    ? channelsById?.get(conversation.channel_id)
-    : undefined;
+  const channel = threadChannel;
   const channelOrphaned = channelsLoaded && !conversation.channel_id;
+  // Only UAZAPI is gated on `status`. This mirrors the server-side rule in
+  // `providers/resolve.ts`: a UAZAPI `connected` is a live session and
+  // sending genuinely requires it, while Meta's `status` is registration
+  // bookkeeping — `config/route.ts` writes `disconnected` when the
+  // /register step fails or is skipped, with a perfectly valid Graph API
+  // token. Blocking the composer there would disable sends the server
+  // would happily accept.
   const channelDisconnected =
-    channelsLoaded && !!conversation.channel_id && channel?.status !== "connected";
+    channelsLoaded &&
+    !!conversation.channel_id &&
+    channel?.provider === "uazapi" &&
+    channel.status !== "connected";
   const channelUnavailable = channelOrphaned || channelDisconnected;
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
   const channelWarning = channelOrphaned
@@ -1213,6 +1250,7 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        templatesSupported={templatesSupported}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
         onSend={handleSend}
