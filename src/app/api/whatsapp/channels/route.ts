@@ -89,7 +89,7 @@ interface CreateChannelBody {
 
 export async function POST(request: Request) {
   try {
-    const { supabase, accountId } = await getCurrentAccount();
+    const { supabase, accountId, userId } = await getCurrentAccount();
     const body = (await request.json()) as CreateChannelBody;
 
     if (body.provider !== "uazapi") {
@@ -139,6 +139,10 @@ export async function POST(request: Request) {
       .from("whatsapp_channels")
       .insert({
         account_id: accountId,
+        // NOT NULL audit column since 001/017 — identifica qual membro
+        // da conta cadastrou o canal (mesmo papel que config/route.ts
+        // já preenche para canais Meta).
+        user_id: userId,
         provider: "uazapi",
         label: body.label ?? null,
         uazapi_base_url: baseUrl,
