@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
+import { ChannelsManager } from './channels-manager';
 import {
   Accordion,
   AccordionItem,
@@ -372,22 +373,27 @@ export function WhatsAppConfig() {
 
   if (loading) {
     return (
-      <section className="animate-in fade-in-50 duration-200">
-        <SettingsPanelHead
-          title={t("title")}
-          description={t("description")}
-        />
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
-        </div>
-      </section>
+      <div className="space-y-8">
+        <ChannelsManager />
+        <section className="animate-in fade-in-50 duration-200">
+          <SettingsPanelHead
+            title={t("title")}
+            description={t("description")}
+          />
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="size-6 animate-spin text-primary" />
+          </div>
+        </section>
+      </div>
     );
   }
 
   const showResetBanner = resetReason === 'token_corrupted';
 
   return (
-    <section className="animate-in fade-in-50 duration-200">
+    <div className="space-y-8">
+      <ChannelsManager />
+      <section className="animate-in fade-in-50 duration-200">
       <SettingsPanelHead
         title={t("title")}
         description={t("description")}
@@ -835,5 +841,6 @@ export function WhatsAppConfig() {
       </div>
     </div>
     </section>
+    </div>
   );
 }
