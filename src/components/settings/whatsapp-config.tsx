@@ -14,7 +14,6 @@ import {
   AlertTriangle,
   RotateCcw,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -29,7 +28,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type { WhatsAppChannel as WhatsAppConfigType } from '@/types';
+import type { PublicChannel } from '@/app/api/whatsapp/channels/route';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -38,7 +37,6 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
-  const supabase = createClient();
   // After multi-user, whatsapp_config is one-row-per-account, not
   // one-row-per-user. We pull `accountId` straight off the auth
   // context and key every read off it — so a teammate who just
@@ -51,7 +49,7 @@ export function WhatsAppConfig() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [config, setConfig] = useState<PublicChannel | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -94,24 +92,25 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (acctId: string) => {
+  // The account scoping now happens server-side inside
+  // /api/whatsapp/channels (via getCurrentAccount), so this no longer
+  // takes an account id — callers still gate on `accountId` being
+  // present before invoking it.
+  const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB).
-      // Switched from `user_id` (which would only match the row's
-      // original author) to `account_id` so every member of the
-      // account sees the same saved configuration. UNIQUE(account_id)
-      // on the table guarantees the .maybeSingle() return type
-      // remains accurate.
-      const { data, error } = await supabase
-        .from('whatsapp_channels')
-        .select('*')
-        .eq('account_id', acctId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Failed to load config row:', error);
-      }
+      // Load form values through the server-side channels API instead
+      // of reading whatsapp_channels straight from the browser — that
+      // used to ship token columns (encrypted, but still) to the
+      // client on every account with a configured channel. This
+      // component is Meta-only, so pick the account's 'meta' channel
+      // out of the list; UAZAPI channels (if any) are surfaced
+      // elsewhere.
+      const res = await fetch('/api/whatsapp/channels');
+      const { channels } = await res.json();
+      const data = (channels as { provider: string }[] | undefined)?.find(
+        (c) => c.provider === 'meta',
+      ) as PublicChannel | undefined;
 
       if (data) {
         setConfig(data);
@@ -136,8 +135,8 @@ export function WhatsAppConfig() {
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
         try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-          const payload = await res.json();
+          const healthRes = await fetch('/api/whatsapp/config', { method: 'GET' });
+          const payload = await healthRes.json();
 
           if (payload.connected) {
             setConnectionStatus('connected');
@@ -163,7 +162,7 @@ export function WhatsAppConfig() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     // Need both the auth session (`!authLoading`) AND the profile
@@ -179,7 +178,7 @@ export function WhatsAppConfig() {
     }
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
-    fetchConfig(accountId);
+    fetchConfig();
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleSave() {
@@ -268,7 +267,7 @@ export function WhatsAppConfig() {
         setPin('');
       }
 
-      if (accountId) await fetchConfig(accountId);
+      if (accountId) await fetchConfig();
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -324,7 +323,7 @@ export function WhatsAppConfig() {
           { duration: 8000 },
         );
       }
-      if (accountId) await fetchConfig(accountId);
+      if (accountId) await fetchConfig();
     } catch (err) {
       console.error('verify-registration failed:', err);
       toast.error('Could not reach the verification endpoint.');
