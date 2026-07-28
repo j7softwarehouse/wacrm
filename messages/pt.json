@@ -622,7 +622,8 @@
       "delivered": "Entregue",
       "read": "Lido",
       "replied": "Respondido",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "pausedProviderLimit": "Pausado - limite do provedor"
     },
     "detail": {
       "backToBroadcasts": "Voltar para Broadcasts",

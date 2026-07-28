@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getProviderForChannel } from '@/lib/whatsapp/providers/resolve'
+import {
+  getProviderForChannel,
+  resolveDefaultChannelId,
+} from '@/lib/whatsapp/providers/resolve'
+import { ProviderRateLimitError } from '@/lib/whatsapp/providers/types'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import {
@@ -134,13 +138,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: channelRow, error: channelError } = await supabase
-      .from('whatsapp_channels')
-      .select('id')
-      .eq('account_id', accountId)
-      .single()
+    // Provider-agnostic path: resolve the account's DEFAULT channel
+    // (oldest by created_at) through the shared helper instead of a
+    // bare `.single()`, which errors as soon as the account has a
+    // second channel — the exact scenario multi-channel support
+    // creates. Same v1 fallback rule every other send path uses.
+    const channelId = await resolveDefaultChannelId(supabase, accountId)
 
-    if (channelError || !channelRow) {
+    if (!channelId) {
       return NextResponse.json(
         {
           error:
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const provider = await getProviderForChannel(supabase, channelRow.id)
+    const provider = await getProviderForChannel(supabase, channelId)
 
     // Load the template row once so the provider's sendTemplate can build
     // header + button components on each iteration. Loading inside
@@ -178,6 +183,10 @@ export async function POST(request: Request) {
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
+    // Set when the provider refuses on rate/quality grounds (WhatsApp
+    // 463 WHATSAPP_REACHOUT_TIMELOCK). Everything stops — see the catch
+    // below — and the client is told to stop batching too.
+    let providerLimitMessage: string | null = null
 
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
@@ -212,6 +221,15 @@ export async function POST(request: Request) {
           lastError = null
           break
         } catch (error) {
+          if (error instanceof ProviderRateLimitError) {
+            // Hard stop, same rule as broadcast-core's deliverBroadcast:
+            // continuing — even just moving to the next recipient —
+            // burns the number's reputation and escalates to a ban,
+            // which is permanent. No variant retry, no next recipient.
+            providerLimitMessage = error.providerMessage ?? error.message
+            lastError = providerLimitMessage
+            break
+          }
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error'
           if (!isRecipientNotAllowedError(errorMessage)) {
@@ -242,6 +260,11 @@ export async function POST(request: Request) {
         })
         failedCount++
       }
+
+      // Stop the fan-out entirely. Recipients after this one get no
+      // result row at all; the caller marks the broadcast
+      // `paused_provider_limit` rather than retrying them.
+      if (providerLimitMessage) break
     }
 
     return NextResponse.json({
@@ -250,6 +273,12 @@ export async function POST(request: Request) {
       sent: sentCount,
       failed: failedCount,
       results,
+      // Present only when the provider hard-stopped the send. The
+      // dashboard hook flips the broadcast to `paused_provider_limit`
+      // and stops sending further batches when it sees this.
+      ...(providerLimitMessage
+        ? { provider_limit: true, provider_limit_message: providerLimitMessage }
+        : {}),
     })
   } catch (error) {
     console.error('Error in WhatsApp broadcast POST:', error)

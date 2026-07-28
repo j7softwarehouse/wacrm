@@ -440,6 +440,13 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       let failedCount = 0;
       const totalRecipients = recipients.length;
+      /**
+       * Set when the send API reports the provider hard-stopped us
+       * (WhatsApp 463). The broadcast is parked in
+       * `paused_provider_limit` and no further batch is sent — pushing
+       * more messages after a reachout timelock escalates to a ban.
+       */
+      let providerLimitMessage: string | null = null;
 
       // Media-header templates (image/video/document) require a media
       // URL on every send. Collected in the personalize step and applied
@@ -490,6 +497,13 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             throw new Error(data.error || 'Broadcast API request failed');
           }
 
+          if (data.provider_limit) {
+            providerLimitMessage =
+              typeof data.provider_limit_message === 'string'
+                ? data.provider_limit_message
+                : 'O provedor interrompeu o envio por limite.';
+          }
+
           const resultsByPhone = new Map<string, BroadcastApiResult>();
           for (const r of (data.results ?? []) as BroadcastApiResult[]) {
             resultsByPhone.set(r.phone, r);
@@ -500,6 +514,11 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             const result = phone ? resultsByPhone.get(phone) : undefined;
 
             if (!result) {
+              // After a provider hard-stop the API returns no result for
+              // the recipients it never attempted. They stay `pending` —
+              // they weren't tried, so calling them failed would be a lie
+              // and would poison the failed_count the UI shows.
+              if (providerLimitMessage) continue;
               failedCount++;
               await supabase
                 .from('broadcast_recipients')
@@ -549,6 +568,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           30 + Math.round(((i + batch.length) / totalRecipients) * 60);
         setProgress(progressPct);
 
+        // Do NOT queue another batch after a provider hard-stop.
+        if (providerLimitMessage) break;
+
         if (i + SEND_BATCH_SIZE < recipients.length) {
           await sleep(SEND_BATCH_DELAY_MS);
         }
@@ -558,11 +580,25 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       // Aggregate counts are maintained by the DB trigger (migration
       // 003); we only flip the final status here.
       setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
-      await supabase
-        .from('broadcasts')
-        .update({ status: finalStatus })
-        .eq('id', broadcast.id);
+      if (providerLimitMessage) {
+        // Terminal-for-now, but deliberately NOT 'failed': the send was
+        // stopped on purpose and waits for a human decision (migração
+        // 041). `provider_limit_message` is what the broadcasts UI shows
+        // to explain why.
+        await supabase
+          .from('broadcasts')
+          .update({
+            status: 'paused_provider_limit',
+            provider_limit_message: providerLimitMessage,
+          })
+          .eq('id', broadcast.id);
+      } else {
+        const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
+        await supabase
+          .from('broadcasts')
+          .update({ status: finalStatus })
+          .eq('id', broadcast.id);
+      }
 
       setProgress(100);
       return broadcast.id;

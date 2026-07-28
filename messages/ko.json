@@ -615,7 +615,8 @@
       "delivered": "전달됨",
       "read": "읽음",
       "replied": "응답함",
-      "unknown": "알 수 없음"
+      "unknown": "알 수 없음",
+      "pausedProviderLimit": "일시중지 - 공급자 제한"
     },
     "detail": {
       "backToBroadcasts": "브로드캐스트로 돌아가기",

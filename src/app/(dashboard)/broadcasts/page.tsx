@@ -266,6 +266,10 @@ export default function BroadcastsPage() {
                     <TableCell>
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
+                        // Only `paused_provider_limit` rows carry one —
+                        // the provider's own wording for why the send
+                        // stopped, shown in full on the detail page.
+                        title={broadcast.provider_limit_message ?? undefined}
                       >
                         {status.pulse && (
                           <span className="relative flex h-1.5 w-1.5">

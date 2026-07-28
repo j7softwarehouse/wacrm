@@ -27,6 +27,7 @@ import {
   CheckCheck,
   Eye,
   AlertCircle,
+  AlertTriangle,
   MessageCircle,
   Filter,
   Download,
@@ -347,6 +348,20 @@ export default function BroadcastDetailPage() {
           </Button>
         )}
       </div>
+
+      {/* Why the send stopped. Only `paused_provider_limit` carries this
+          message (migration 041) — the operator needs the provider's own
+          wording to decide whether to resume, so the badge alone isn't
+          enough. */}
+      {broadcast.status === 'paused_provider_limit' &&
+        broadcast.provider_limit_message && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-sm text-amber-400">
+              {broadcast.provider_limit_message}
+            </p>
+          </div>
+        )}
 
       {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

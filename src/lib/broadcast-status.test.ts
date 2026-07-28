@@ -18,6 +18,16 @@ describe("getBroadcastStatus", () => {
     expect(getBroadcastStatus("sent").pulse).toBeFalsy();
   });
 
+  it("gives paused_provider_limit its own entry instead of falling back to draft", () => {
+    // Migration 041 added the status; without an entry here a stopped
+    // broadcast rendered as "Draft", which reads as "never sent" —
+    // the opposite of "we sent until the provider cut us off".
+    const paused = getBroadcastStatus("paused_provider_limit");
+    expect(paused).toBe(broadcastStatusConfig.paused_provider_limit);
+    expect(paused).not.toBe(broadcastStatusConfig.draft);
+    expect(paused.pulse).toBeFalsy();
+  });
+
   it("falls back to draft on an unknown status string", () => {
     expect(getBroadcastStatus("not-a-real-status")).toBe(
       broadcastStatusConfig.draft,

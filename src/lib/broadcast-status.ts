@@ -45,6 +45,15 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
     label: "failed",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
   },
+  // Amber, not red: the send was stopped deliberately (migration 041),
+  // it did not error. `provider_limit_message` carries the reason and is
+  // rendered next to the badge.
+  paused_provider_limit: {
+    // `label` is a translation key under `Broadcasts.status`, not a
+    // display string — the pages render it through `tStatus(...)`.
+    label: "pausedProviderLimit",
+    classes: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  },
 };
 
 export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {

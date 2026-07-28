@@ -622,7 +622,8 @@
       "delivered": "Delivered",
       "read": "Read",
       "replied": "Replied",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "pausedProviderLimit": "Paused - provider limit"
     },
     "detail": {
       "backToBroadcasts": "Back to Broadcasts",
