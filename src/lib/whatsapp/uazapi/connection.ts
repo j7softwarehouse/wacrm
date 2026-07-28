@@ -87,6 +87,7 @@ export function phoneFromJid(jid: string | null | undefined): string | null {
 
 export interface UazapiWebhookConfig {
   url: string;
+  enabled: boolean;
   events: string[];
   excludeMessages: string[];
   addUrlEvents: boolean;
@@ -96,6 +97,11 @@ export interface UazapiWebhookConfig {
 export function buildWebhookConfig(url: string): UazapiWebhookConfig {
   return {
     url,
+    // Sem isso a UAZAPI cria o webhook DESABILITADO por padrão — o
+    // registro parece ter funcionado (POST /webhook responde OK,
+    // GET /webhook devolve a config com a URL certa) mas nada é
+    // entregue. Só descoberto testando contra uma instância real.
+    enabled: true,
     // Nomes no PLURAL — a assinatura usa vocabulário diferente do
     // envelope do evento, que chega no singular ("message").
     events: ["messages", "messages_update", "connection"],

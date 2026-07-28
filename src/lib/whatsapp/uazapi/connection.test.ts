@@ -92,4 +92,12 @@ describe("buildWebhookConfig", () => {
     expect(config.addUrlEvents).toBe(false);
     expect(config.addUrlTypesMessages).toBe(false);
   });
+
+  it("habilita o webhook explicitamente", () => {
+    // Sem isso a UAZAPI cria o webhook desabilitado por padrão — o
+    // registro parece bem-sucedido (POST /webhook responde OK,
+    // webhook_registered_at é carimbado) mas nada chega. Só
+    // descoberto testando contra uma instância real.
+    expect(config.enabled).toBe(true);
+  });
 });
