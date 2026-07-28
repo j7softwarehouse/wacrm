@@ -16,7 +16,6 @@ import { createMetaProvider } from "./meta";
 import { createUazapiProvider } from "./uazapi";
 import {
   ProviderNotConnectedError,
-  ProviderUnsupportedError,
   type WhatsAppProvider,
 } from "./types";
 
@@ -91,21 +90,13 @@ function buildProvider(channel: WhatsAppChannel): WhatsAppProvider {
       phoneNumberId: channel.phone_number_id!,
       accessToken: decrypt(channel.access_token!),
     });
-  }
-
-  if (channel.provider === "uazapi") {
+  } else {
     return createUazapiProvider({
       baseUrl: channel.uazapi_base_url!,
       token: decrypt(channel.uazapi_token!),
       accountId: channel.account_id,
     });
   }
-
-  // Inalcançável: `WhatsAppProviderKind` só tem "meta" | "uazapi", e
-  // ambos retornam acima. Mantido porque o TypeScript não consegue
-  // provar a exaustão entre dois `if` (em vez de um `switch`), então
-  // sem isto a função "não retorna em todos os caminhos".
-  throw new ProviderUnsupportedError(channel.provider, "createProvider");
 }
 
 export async function getProviderForChannel(
