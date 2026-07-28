@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { getBaseUrl } from "@/lib/http/base-url";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { createUazapiClient } from "@/lib/whatsapp/uazapi/client";
 import { mapInstanceStatus } from "@/lib/whatsapp/uazapi/connection";
+import { registerUazapiWebhook } from "@/lib/whatsapp/uazapi/register-webhook";
 
 interface ConnectResponse {
   instance?: { qrcode?: string; paircode?: string; status?: string };
@@ -16,7 +18,7 @@ interface ConnectResponse {
  * apenas nesta resposta. A UI o exibe e o renova via /status.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -49,15 +51,25 @@ export async function POST(
     // de pareamento. É essa omissão que define o modo de conexão.
     const result = await client.post<ConnectResponse>("/instance/connect", {});
 
+    const alreadyConnected =
+      mapInstanceStatus(result.instance?.status) === "connected";
+
     await supabase
       .from("whatsapp_channels")
       .update({
-        status: mapInstanceStatus(result.instance?.status) === "connected"
-          ? "connected"
-          : "connecting",
+        status: alreadyConnected ? "connected" : "connecting",
         last_error: null,
       })
       .eq("id", id);
+
+    // Caminho de onboarding mais comum: o operador conecta a instância
+    // no painel da UAZAPI, pega o token e só então cadastra aqui. O
+    // /instance/connect já responde "connected" e o /status seguinte
+    // nunca verá transição alguma — se não registrarmos o webhook AQUI,
+    // ninguém registra e o canal fica mudo para entrada.
+    if (alreadyConnected && !channel.webhook_registered_at) {
+      await registerUazapiWebhook(supabase, client, channel, getBaseUrl(request));
+    }
 
     return NextResponse.json({ qrcode: result.instance?.qrcode ?? null });
   } catch (err) {

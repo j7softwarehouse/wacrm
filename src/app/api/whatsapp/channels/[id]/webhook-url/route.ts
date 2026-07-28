@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { getBaseUrl } from "@/lib/http/base-url";
+import { buildInboundWebhookUrl } from "@/lib/whatsapp/uazapi/register-webhook";
 
 /**
  * Devolve a URL do webhook de entrada para diagnóstico manual.
@@ -10,14 +12,19 @@ import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
  * Meta faz com HMAC). Esta rota é a única exceção deliberada: o
  * próprio admin da conta pode precisar colar a URL no painel da
  * UAZAPI quando o registro automático falha (`last_error`
- * preenchido). Só o dono do canal (mesma conta) consegue chamá-la.
+ * preenchido).
+ *
+ * Exige `admin`, não só pertencer à conta: a URL CARREGA o segredo, e
+ * escrever canais já é privilégio de admin pela RLS da 037 — deixar um
+ * membro comum ler a credencial de entrada seria uma brecha por baixo
+ * dessa mesma política.
  */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { supabase, accountId } = await getCurrentAccount();
+    const { supabase, accountId } = await requireRole("admin");
     const { id } = await params;
 
     const { data: channel, error } = await supabase
@@ -37,8 +44,17 @@ export async function GET(
       );
     }
 
-    const origin = new URL(request.url).origin;
-    const webhookUrl = `${origin}/api/whatsapp/uazapi/webhook/${channel.webhook_secret}`;
+    if (!channel.webhook_secret) {
+      return NextResponse.json(
+        { error: "Este canal não tem segredo de webhook." },
+        { status: 409 },
+      );
+    }
+
+    const webhookUrl = buildInboundWebhookUrl(
+      getBaseUrl(request),
+      channel.webhook_secret,
+    );
 
     return NextResponse.json({ webhookUrl });
   } catch (err) {

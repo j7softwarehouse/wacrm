@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { getBaseUrl } from "@/lib/http/base-url";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { createUazapiClient } from "@/lib/whatsapp/uazapi/client";
-import {
-  buildWebhookConfig,
-  mapInstanceStatus,
-  phoneFromJid,
-} from "@/lib/whatsapp/uazapi/connection";
+import { mapInstanceStatus, phoneFromJid } from "@/lib/whatsapp/uazapi/connection";
+import { registerUazapiWebhook } from "@/lib/whatsapp/uazapi/register-webhook";
 
 interface StatusResponse {
   instance?: { qrcode?: string; status?: string; profileName?: string };
@@ -20,8 +18,9 @@ interface StatusResponse {
  * Serve a duas coisas ao mesmo tempo: detectar a conexão e devolver o
  * QR renovado, que a UAZAPI rotaciona durante o processo.
  *
- * Quando a conexão se completa, registra o webhook — é o único momento
- * em que sabemos que a instância está pronta para receber eventos.
+ * Sempre que vê a instância conectada e ainda sem `webhook_registered_at`,
+ * registra o webhook de entrada — o mesmo faz a rota /connect, porque
+ * qualquer uma das duas pode ser a primeira a observar a conexão.
  */
 export async function GET(
   request: Request,
@@ -51,28 +50,13 @@ export async function GET(
     const status = mapInstanceStatus(result.instance?.status);
     const justConnected = status === "connected" && channel.status !== "connected";
 
-    if (justConnected) {
-      const origin = new URL(request.url).origin;
-      const webhookUrl = `${origin}/api/whatsapp/uazapi/webhook/${channel.webhook_secret}`;
-      try {
-        await client.post("/webhook", buildWebhookConfig(webhookUrl));
-      } catch (err) {
-        // Não derruba a conexão: o canal está conectado e pode enviar.
-        // O que falha é o recebimento — a UI mostra o aviso e oferece
-        // a URL para configuração manual.
-        console.error(
-          "[uazapi] falha ao registrar webhook:",
-          err instanceof Error ? err.message : err,
-        );
-        await supabase
-          .from("whatsapp_channels")
-          .update({
-            last_error:
-              "Conectado, mas o registro automático do webhook falhou. " +
-              "Configure a URL manualmente no painel da UAZAPI.",
-          })
-          .eq("id", id);
-      }
+    // Gatilho do registro: "conectado e nunca registrado" — NÃO "houve
+    // transição agora". A rota /connect também grava `status`, então uma
+    // instância que já chegou conectada nunca produz transição aqui e o
+    // webhook jamais era registrado (migração 042). `registerUazapiWebhook`
+    // carimba `webhook_registered_at`, o que torna isto idempotente.
+    if (status === "connected" && !channel.webhook_registered_at) {
+      await registerUazapiWebhook(supabase, client, channel, getBaseUrl(request));
     }
 
     await supabase

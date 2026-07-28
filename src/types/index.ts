@@ -313,6 +313,14 @@ export interface WhatsAppChannel {
   uazapi_instance_id?: string;
   /** Segredo por canal; é a chave de roteamento do webhook de entrada. */
   webhook_secret?: string;
+  /**
+   * Quando o webhook de entrada foi registrado na UAZAPI (migração
+   * 042). Nulo = nunca registrado; é o gatilho do registro automático,
+   * que precisa ser idempotente e não depender de ter observado a
+   * transição de status (ver a migração para o caso de onboarding que
+   * quebrava).
+   */
+  webhook_registered_at?: string;
 
   created_at?: string;
   updated_at?: string;
@@ -409,7 +417,19 @@ export interface Deal {
   assignee?: Profile;
 }
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
+/**
+ * `paused_provider_limit` (migração 041): o provedor recusou por limite
+ * de envio (WhatsApp 463 / reachout timelock) e o disparo parou de
+ * propósito. Não é `failed` — não há retentativa automática; espera
+ * decisão humana.
+ */
+export type BroadcastStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'paused_provider_limit';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
 export interface Broadcast {
@@ -422,6 +442,11 @@ export interface Broadcast {
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;
   status: BroadcastStatus;
+  /**
+   * Mensagem do provedor que interrompeu o disparo (migração 041).
+   * Preenchida junto com `status: 'paused_provider_limit'`.
+   */
+  provider_limit_message?: string | null;
   total_recipients: number;
   sent_count: number;
   delivered_count: number;
