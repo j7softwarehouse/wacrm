@@ -19,7 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getProviderForChannel } from '@/lib/whatsapp/providers/resolve';
-import type { WhatsAppProvider } from '@/lib/whatsapp/providers/types';
+import { ProviderRateLimitError, type WhatsAppProvider } from '@/lib/whatsapp/providers/types';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -287,6 +287,33 @@ export async function deliverBroadcast(
         lastError = null;
         break;
       } catch (error) {
+        if (error instanceof ProviderRateLimitError) {
+          // Hard stop: the provider is refusing on rate/quality grounds
+          // (e.g. WhatsApp's 463 WHATSAPP_REACHOUT_TIMELOCK). Continuing
+          // — even just moving on to the next recipient — burns the
+          // number's reputation and escalates to a ban, which is a
+          // permanent loss. The whole broadcast stops here; there is no
+          // "retry the next one."
+          const providerMessage = error.providerMessage ?? error.message;
+          await db
+            .from('broadcast_recipients')
+            .update({
+              status: 'failed',
+              error_message: providerMessage,
+            })
+            .eq('id', recipient.recipientRowId);
+          await db
+            .from('broadcasts')
+            .update({
+              status: 'paused_provider_limit',
+              provider_limit_message: providerMessage,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', plan.broadcastId);
+          // Return (not break): the trailing sent/failed update below
+          // must never run, or it would overwrite paused_provider_limit.
+          return;
+        }
         const message = error instanceof Error ? error.message : 'Unknown error';
         lastError = message;
         // Only a "recipient not allowed" error is worth another variant.
