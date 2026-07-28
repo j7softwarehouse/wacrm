@@ -1,6 +1,10 @@
+import crypto from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { encrypt } from "@/lib/whatsapp/encryption";
+import { createUazapiClient, normalizeBaseUrl } from "@/lib/whatsapp/uazapi/client";
 import type { WhatsAppChannel, WhatsAppProviderKind } from "@/types";
 
 /**
@@ -66,6 +70,103 @@ export async function GET() {
     return NextResponse.json({
       channels: (data ?? []).map((row) => toPublicChannel(row as WhatsAppChannel)),
     });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+/** 32 bytes aleatórios em hex. É a chave de roteamento do inbound. */
+export function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+interface CreateChannelBody {
+  provider: "uazapi";
+  label?: string;
+  baseUrl: string;
+  token: string;
+}
+
+export async function POST(request: Request) {
+  try {
+    const { supabase, accountId } = await getCurrentAccount();
+    const body = (await request.json()) as CreateChannelBody;
+
+    if (body.provider !== "uazapi") {
+      return NextResponse.json(
+        { error: "Apenas canais UAZAPI podem ser criados por aqui." },
+        { status: 400 },
+      );
+    }
+    if (!body.baseUrl || !body.token) {
+      return NextResponse.json(
+        { error: "Informe o subdomínio e o token da instância." },
+        { status: 400 },
+      );
+    }
+
+    let baseUrl: string;
+    try {
+      baseUrl = normalizeBaseUrl(body.baseUrl);
+    } catch {
+      return NextResponse.json(
+        { error: "Subdomínio ou URL da UAZAPI inválido." },
+        { status: 400 },
+      );
+    }
+
+    // Valida a credencial ANTES de gravar. Credencial errada falha
+    // aqui, com mensagem clara, e não deixa linha morta no banco.
+    let instanceId: string | undefined;
+    try {
+      const client = createUazapiClient({ baseUrl, token: body.token });
+      const status = await client.get<{ instance?: { id?: string } }>(
+        "/instance/status",
+      );
+      instanceId = status.instance?.id;
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error:
+            "Não foi possível falar com a instância UAZAPI. Confira o subdomínio e o token. " +
+            (err instanceof Error ? err.message : ""),
+        },
+        { status: 400 },
+      );
+    }
+
+    const { data, error } = await supabase
+      .from("whatsapp_channels")
+      .insert({
+        account_id: accountId,
+        provider: "uazapi",
+        label: body.label ?? null,
+        uazapi_base_url: baseUrl,
+        uazapi_token: encrypt(body.token),
+        uazapi_instance_id: instanceId ?? null,
+        webhook_secret: generateWebhookSecret(),
+        status: "disconnected",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // 23505 = violação de índice único. Aqui só pode ser a instância
+      // já reivindicada por outra conta.
+      if ((error as { code?: string }).code === "23505") {
+        return NextResponse.json(
+          { error: "Esta instância UAZAPI já está vinculada a outra conta." },
+          { status: 409 },
+        );
+      }
+      console.error("[channels] falha ao criar:", error.message);
+      return NextResponse.json(
+        { error: "Não foi possível salvar o canal." },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ channel: toPublicChannel(data as WhatsAppChannel) });
   } catch (err) {
     return toErrorResponse(err);
   }
