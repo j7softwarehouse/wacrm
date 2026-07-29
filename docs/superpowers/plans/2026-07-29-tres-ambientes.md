@@ -17,7 +17,7 @@
 - A `ENCRYPTION_KEY` de produção **não muda** — ela decifra tokens UAZAPI já gravados. Dev e homologação recebem chaves novas e distintas.
 - `NEXT_PUBLIC_SITE_URL` fica **vazio** no ambiente Preview da Vercel; `getBaseUrl` resolve pelo cabeçalho `x-forwarded-host`.
 - A `SUPABASE_SERVICE_ROLE_KEY` de um ambiente nunca é usada em outro.
-- Produção só é tocada a partir da Task 6. As Tasks 1–5 não têm risco sobre ela.
+- Produção só é tocada a partir da Task 6. As Tasks 0–5 não têm risco sobre ela.
 - Toda operação destrutiva em produção exige o dump da Task 6 concluído antes.
 - Nenhum dado de seed é criado: os ambientes começam vazios por decisão explícita.
 
@@ -35,6 +35,75 @@ Estas etapas não podem ser executadas por um agente e estão sinalizadas dentro
 | Fazer o primeiro cadastro em produção (vira proprietário) | 7 |
 
 **Sobre `$VERCEL_TOKEN`:** os comandos das Tasks 4 e 7 usam essa variável. Ela é o token da Vercel, e deve ser exportada na sessão do shell antes de rodá-los (`export VERCEL_TOKEN=<token>`), nunca escrita em arquivo versionado. O mesmo vale para as chaves `service_role` — elas aparecem apenas como argumento de comando, jamais commitadas.
+
+---
+
+### Task 0: Descartar os resíduos da tentativa de deploy no Cloudflare
+
+O working tree carrega arquivos de uma tentativa abandonada de deploy via
+Cloudflare Workers. Nada disso está commitado, e a Task 4 cria branches a partir
+do HEAD — mas enquanto o resíduo estiver solto, um `git add -A` distraído em
+qualquer tarefa posterior o levaria para dentro de `production`.
+
+O estado commitado já foi verificado e é consistente: `package.json` e
+`package-lock.json` no HEAD concordam em `next@16.2.12`, então `npm ci` funciona
+a partir de um checkout limpo.
+
+**Files:**
+- Delete: `wrangler.jsonc`, `open-next.config.ts`, `public/_headers`
+- Restore: `.gitignore`, `package.json`, `package-lock.json`
+
+**Interfaces:**
+- Produces: working tree limpo. Todas as tarefas seguintes assumem isso.
+
+- [ ] **Step 1: Conferir o que está solto**
+
+```bash
+git status --short
+```
+
+Esperado: `.gitignore`, `package.json` e `package-lock.json` modificados, mais
+`open-next.config.ts`, `public/_headers` e `wrangler.jsonc` não rastreados.
+
+Se aparecer qualquer outro arquivo, **parar e investigar** antes de descartar —
+pode ser trabalho legítimo ainda não commitado.
+
+- [ ] **Step 2: Remover os arquivos não rastreados**
+
+```bash
+rm -f wrangler.jsonc open-next.config.ts public/_headers
+```
+
+- [ ] **Step 3: Restaurar os arquivos modificados ao estado commitado**
+
+```bash
+git checkout -- .gitignore package.json package-lock.json
+```
+
+Isso remove do `package.json` as dependências `@opennextjs/cloudflare` e
+`wrangler` e os scripts `preview`/`deploy`/`upload`/`cf-typegen`, que só serviam
+ao Cloudflare.
+
+- [ ] **Step 4: Confirmar que o working tree está limpo**
+
+```bash
+git status --short
+```
+
+Esperado: nenhuma saída.
+
+- [ ] **Step 5: Confirmar que o projeto ainda constrói a partir do estado limpo**
+
+```bash
+npm ci
+npm run build
+```
+
+Esperado: build concluído sem erro. Isso prova que o HEAD é deployável por si só
+— o que importa porque, a partir da Task 4, a Vercel passa a construir a partir
+do Git, e não mais do upload do diretório local.
+
+Não há commit nesta tarefa: ela apenas descarta o que nunca foi versionado.
 
 ---
 
