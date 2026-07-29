@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "CRM Whatsapp J7",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -1752,5 +1752,16 @@
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
     }
+  },
+  "Notifications": {
+    "title": "Notifications",
+    "subtitle": "Conversations other teammates assign to you show up here.",
+    "markAllRead": "Mark all as read",
+    "emptyTitle": "No notifications yet",
+    "emptySubtitle": "You will see an alert here when someone assigns you a conversation.",
+    "retry": "Retry",
+    "unread": "Unread",
+    "markReadFailed": "Failed to mark notification as read",
+    "markAllReadFailed": "Failed to mark all as read"
   }
 }
