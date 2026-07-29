@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { mergeOrphanedConversations } from "@/lib/whatsapp/merge-orphaned-conversations";
 
 /**
  * Remove um canal. As conversas dele **não** são apagadas: a FK usa
@@ -13,6 +14,13 @@ export async function DELETE(
   try {
     const { supabase, accountId } = await getCurrentAccount();
     const { id } = await params;
+
+    // Sem isso, um contato com conversa órfã de um canal já removido
+    // e conversa ativa neste canal colidiria em
+    // idx_conversations_account_contact_channel assim que o ON DELETE
+    // SET NULL zerasse o channel_id desta última — 500 visto em
+    // produção ao remover o segundo canal de teste de um mesmo contato.
+    await mergeOrphanedConversations(supabase, accountId, id);
 
     // `.select()` no DELETE é o que distingue "apagou" de "a RLS
     // bloqueou". A política `admins write channels` (037) não devolve
