@@ -7,7 +7,7 @@ import {
   mapUazapiMessageStatus,
   type CrmMessageStatus,
 } from "@/lib/whatsapp/uazapi/connection";
-import { normalizeUazapiEvent } from "@/lib/whatsapp/uazapi/normalize";
+import { extractEventType, normalizeUazapiEvent } from "@/lib/whatsapp/uazapi/normalize";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import type { WhatsAppChannel } from "@/types";
 
@@ -160,10 +160,27 @@ async function applyMessageStatus(
 }
 
 async function handleEvent(channel: WhatsAppChannel, body: unknown) {
-  const eventName = (body as { event?: string } | null)?.event;
+  if (!body || typeof body !== "object") return;
+  const envelope = body as Record<string, unknown>;
+  const eventName = extractEventType(envelope);
+
+  // Nem "connection" nem "messages_update" foram capturados ao vivo
+  // ainda (só "messages" — ver normalize.ts). Tolera tanto `data`
+  // quanto `message` como o campo que carrega o corpo do evento, já
+  // que o evento real de "messages" usa `message`, não `data`, e não
+  // há motivo pra assumir que os outros dois sigam o vocabulário
+  // antigo só porque a doc dizia isso.
+  const payload =
+    (envelope.data && typeof envelope.data === "object"
+      ? (envelope.data as Record<string, unknown>)
+      : null) ??
+    (envelope.message && typeof envelope.message === "object"
+      ? (envelope.message as Record<string, unknown>)
+      : null) ??
+    {};
 
   if (eventName === "connection") {
-    const raw = (body as { data?: { status?: string } }).data?.status;
+    const raw = typeof payload.status === "string" ? payload.status : undefined;
     await supabaseAdmin()
       .from("whatsapp_channels")
       .update({ status: mapInstanceStatus(raw) })
@@ -172,10 +189,9 @@ async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   }
 
   if (eventName === "messages_update" || eventName === "status") {
-    const d = (body as { data?: Record<string, unknown> }).data ?? {};
-    const messageId = typeof d.messageid === "string" ? d.messageid : null;
+    const messageId = typeof payload.messageid === "string" ? payload.messageid : null;
     const status = mapUazapiMessageStatus(
-      typeof d.status === "string" ? d.status : null,
+      typeof payload.status === "string" ? payload.status : null,
     );
     if (messageId && status) {
       await applyMessageStatus(channel, messageId, status);

@@ -1,7 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { normalizeUazapiEvent } from "./normalize";
 
-const eventoTexto = {
+// Capturado de uma entrega real em produção (2026-07-29) — a doc da
+// UAZAPI nunca bateu com isso (ver comentário no topo de normalize.ts).
+// `EventType`/`message`, não `event`/`data`; `sender` é um @lid opaco,
+// não o telefone; `messageTimestamp` vem em milissegundos.
+const eventoReal = {
+  BaseUrl: "https://exemplo.uazapi.com",
+  EventType: "messages",
+  chat: { id: "chat-1", name: "Contato" },
+  chatSource: "updated",
+  instanceName: "inst-1",
+  owner: "5511888888888",
+  token: "tok",
+  message: {
+    buttonOrListid: "",
+    chatid: "5511888888888@s.whatsapp.net",
+    chatlid: "192268724080890@lid",
+    content: "bom dia",
+    fromMe: false,
+    id: "5511888888888:3EB0ABC",
+    isGroup: false,
+    mediaType: "",
+    messageTimestamp: 1785287848000,
+    messageType: "Conversation",
+    messageid: "3EB0ABC",
+    quoted: "",
+    sender: "192268724080890@lid",
+    senderName: "Maria",
+    sender_pn: "5511888888888@s.whatsapp.net",
+    source: "android",
+    text: "bom dia",
+    wasSentByApi: false,
+  },
+};
+
+// Formato antigo, nunca confirmado com evento real — mantido como
+// fallback (ver extractEventType/extractMessageData) e testado por
+// segurança, não porque a UAZAPI realmente o envie.
+const eventoLegado = {
   event: "message",
   instance: "inst-1",
   data: {
@@ -18,43 +55,108 @@ const eventoTexto = {
   },
 };
 
-describe("normalizeUazapiEvent", () => {
-  it("extrai remetente, nome, id e texto", () => {
-    const result = normalizeUazapiEvent(eventoTexto);
+describe("normalizeUazapiEvent — formato real (EventType/message)", () => {
+  it("extrai remetente pelo sender_pn, nome, id e texto", () => {
+    const result = normalizeUazapiEvent(eventoReal);
     expect(result).not.toBeNull();
     expect(result!.from).toBe("5511888888888");
     expect(result!.pushName).toBe("Maria");
     expect(result!.providerMessageId).toBe("3EB0ABC");
-    expect(result!.timestamp).toBe(1700000000);
     expect(result!.content).toEqual({ type: "text", text: "bom dia" });
   });
 
+  it("prioriza sender_pn sobre sender quando sender é um @lid", () => {
+    // sender_pn é o JID baseado em telefone; sender sozinho pode vir
+    // como @lid (identificador opaco, não-telefônico). Sem essa
+    // prioridade, o contato criado teria o número do LID no lugar do
+    // telefone real.
+    const semSenderPn = {
+      ...eventoReal,
+      message: { ...eventoReal.message, sender_pn: undefined },
+    };
+    // Sem sender_pn, cai pra chatid (telefone real neste evento) —
+    // nunca pro sender em @lid.
+    expect(normalizeUazapiEvent(semSenderPn)!.from).toBe("5511888888888");
+  });
+
+  it("converte messageTimestamp de milissegundos pra segundos", () => {
+    const result = normalizeUazapiEvent(eventoReal);
+    expect(result!.timestamp).toBe(1785287848);
+  });
+
   it("descarta mensagens de grupo", () => {
-    // O CRM não tem conceito de grupo; sem este filtro cada grupo
-    // viraria um "contato" com o JID no lugar do telefone.
-    const grupo = { ...eventoTexto, data: { ...eventoTexto.data, isGroup: true } };
+    const grupo = {
+      ...eventoReal,
+      message: { ...eventoReal.message, isGroup: true },
+    };
     expect(normalizeUazapiEvent(grupo)).toBeNull();
   });
 
   it("descarta o eco das próprias mensagens", () => {
-    // Redundante com o filtro wasSentByApi da assinatura, de propósito:
-    // se alguém reconfigurar o webhook no painel da UAZAPI, o histórico
-    // não duplica.
-    const eco = { ...eventoTexto, data: { ...eventoTexto.data, wasSentByApi: true } };
+    const eco = {
+      ...eventoReal,
+      message: { ...eventoReal.message, wasSentByApi: true },
+    };
     expect(normalizeUazapiEvent(eco)).toBeNull();
 
-    const meu = { ...eventoTexto, data: { ...eventoTexto.data, fromMe: true } };
+    const meu = {
+      ...eventoReal,
+      message: { ...eventoReal.message, fromMe: true },
+    };
     expect(normalizeUazapiEvent(meu)).toBeNull();
   });
 
   it("descarta evento que não é de mensagem", () => {
-    expect(normalizeUazapiEvent({ event: "connection", instance: "i", data: {} })).toBeNull();
+    expect(
+      normalizeUazapiEvent({ EventType: "connection", instanceName: "i" }),
+    ).toBeNull();
   });
 
-  it("aceita a forma alternativa documentada no SSE", () => {
-    // A doc do SSE usa `from` e `timestamp`; o schema Message usa
-    // `sender` e `messageTimestamp`. Aceitar as duas evita depender de
-    // qual delas o servidor realmente envia.
+  it("reconhece mídia pelo fileURL", () => {
+    const imagem = {
+      ...eventoReal,
+      message: {
+        ...eventoReal.message,
+        messageType: "imageMessage",
+        text: "olha isso",
+        content: "olha isso",
+        fileURL: "https://mmg.whatsapp.net/abc",
+      },
+    };
+    const result = normalizeUazapiEvent(imagem);
+    expect(result!.content.type).toBe("image");
+    expect(result!.content.mediaUrl).toBe("https://mmg.whatsapp.net/abc");
+    expect(result!.content.text).toBe("olha isso");
+  });
+
+  it("guarda o botão tocado como resposta interativa", () => {
+    const toque = {
+      ...eventoReal,
+      message: { ...eventoReal.message, buttonOrListid: "Sim" },
+    };
+    const result = normalizeUazapiEvent(toque);
+    expect(result!.content.interactiveReplyId).toBe("Sim");
+  });
+
+  it("devolve null em payload malformado sem lançar", () => {
+    // Webhook não pode responder 500 por payload estranho: o provedor
+    // reentrega em loop.
+    expect(normalizeUazapiEvent(null)).toBeNull();
+    expect(normalizeUazapiEvent({})).toBeNull();
+    expect(normalizeUazapiEvent({ EventType: "messages", message: {} })).toBeNull();
+  });
+});
+
+describe("normalizeUazapiEvent — formato legado (event/data), fallback", () => {
+  it("ainda funciona se algum caminho de entrega usar o vocabulário antigo", () => {
+    const result = normalizeUazapiEvent(eventoLegado);
+    expect(result).not.toBeNull();
+    expect(result!.from).toBe("5511888888888");
+    expect(result!.providerMessageId).toBe("3EB0ABC");
+    expect(result!.timestamp).toBe(1700000000);
+  });
+
+  it("aceita a forma alternativa com from/timestamp", () => {
     const alternativo = {
       event: "message",
       instance: "inst-1",
@@ -68,38 +170,5 @@ describe("normalizeUazapiEvent", () => {
     const result = normalizeUazapiEvent(alternativo);
     expect(result!.from).toBe("5511777777777");
     expect(result!.providerMessageId).toBe("3EB0XYZ");
-  });
-
-  it("reconhece mídia pelo fileURL", () => {
-    const imagem = {
-      ...eventoTexto,
-      data: {
-        ...eventoTexto.data,
-        messageType: "imageMessage",
-        text: "olha isso",
-        fileURL: "https://mmg.whatsapp.net/abc",
-      },
-    };
-    const result = normalizeUazapiEvent(imagem);
-    expect(result!.content.type).toBe("image");
-    expect(result!.content.mediaUrl).toBe("https://mmg.whatsapp.net/abc");
-    expect(result!.content.text).toBe("olha isso");
-  });
-
-  it("guarda o botão tocado como resposta interativa", () => {
-    const toque = {
-      ...eventoTexto,
-      data: { ...eventoTexto.data, buttonOrListid: "Sim" },
-    };
-    const result = normalizeUazapiEvent(toque);
-    expect(result!.content.interactiveReplyId).toBe("Sim");
-  });
-
-  it("devolve null em payload malformado sem lançar", () => {
-    // Webhook não pode responder 500 por payload estranho: o provedor
-    // reentrega em loop.
-    expect(normalizeUazapiEvent(null)).toBeNull();
-    expect(normalizeUazapiEvent({})).toBeNull();
-    expect(normalizeUazapiEvent({ event: "message", data: {} })).toBeNull();
   });
 });

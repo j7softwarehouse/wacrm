@@ -1,13 +1,18 @@
 // ============================================================
 // WebhookEvent da UAZAPI → InboundContent do CRM.
 //
-// Defensivo por necessidade: `WebhookEvent.data` é
-// `additionalProperties: true` no schema, e a documentação diverge
-// entre a página do SSE e o schema `Message`. Todo campo é tratado
-// como opcional e há fallback entre os dois vocabulários.
+// O envelope real (capturado de uma entrega de produção, 2026-07-29 —
+// a doc nunca bateu com isso) é:
+//   { EventType: "messages", chat: {...}, message: {...}, ... }
+// — não `{ event: "message"|"messages", data: {...} }` como a Parte B
+// original assumiu a partir só da doc (que a própria doc já avisava
+// ser inconsistente). Mantemos o formato antigo como fallback barato
+// — não custa nada e cobre a hipótese de outro modo de entrega usar o
+// vocabulário antigo — mas o real é o que rege.
 //
-// Nunca lança: devolve null para qualquer coisa que não seja uma
-// mensagem aproveitável. Webhook que responde 500 é reentregue em
+// Defensivo por necessidade: campo é tratado como opcional em todo
+// lugar. Nunca lança: devolve null para qualquer coisa que não seja
+// uma mensagem aproveitável. Webhook que responde 500 é reentregue em
 // loop pelo provedor.
 // ============================================================
 
@@ -31,6 +36,26 @@ function phoneFromJid(jid: unknown): string | null {
   return phone || null;
 }
 
+/** Nome do evento, nos dois vocabulários possíveis — `EventType` é o confirmado. */
+export function extractEventType(event: Record<string, unknown>): string | undefined {
+  if (typeof event.EventType === "string") return event.EventType;
+  if (typeof event.event === "string") return event.event;
+  return undefined;
+}
+
+/** Onde os campos da mensagem moram, nos dois vocabulários possíveis. */
+function extractMessageData(
+  event: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (event.message && typeof event.message === "object") {
+    return event.message as Record<string, unknown>;
+  }
+  if (event.data && typeof event.data === "object") {
+    return event.data as Record<string, unknown>;
+  }
+  return null;
+}
+
 /**
  * `imageMessage`, `image`, `videoMessage`… → o tipo do CRM.
  * Qualquer coisa não reconhecida com fileURL cai em `document`.
@@ -52,21 +77,33 @@ function mapContentType(
 export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
   if (!event || typeof event !== "object") return null;
 
-  const e = event as { event?: unknown; data?: unknown };
+  const e = event as Record<string, unknown>;
 
-  // O envelope usa "message" no SINGULAR, enquanto a assinatura usa
-  // "messages" no plural. Aceitar os dois evita depender de qual
-  // vocabulário o servidor emprega neste evento.
-  if (e.event !== "message" && e.event !== "messages") return null;
-  if (!e.data || typeof e.data !== "object") return null;
+  // "message" no singular vs "messages" no plural: aceitar os dois
+  // evita depender de qual vocabulário o servidor emprega neste evento.
+  const eventType = extractEventType(e);
+  if (eventType !== "message" && eventType !== "messages") return null;
 
-  const d = e.data as Record<string, unknown>;
+  const d = extractMessageData(e);
+  if (!d) return null;
 
   if (d.isGroup === true) return null;
   if (d.wasSentByApi === true) return null;
   if (d.fromMe === true) return null;
 
-  const from = phoneFromJid(d.sender) ?? phoneFromJid(d.from) ?? phoneFromJid(d.chatid);
+  // `sender_pn` é o JID baseado em TELEFONE do remetente — confirmado
+  // com evento real. `sender` sozinho pode vir no formato @lid (o
+  // identificador opaco e não-telefônico que o WhatsApp usa cada vez
+  // mais por privacidade), que não é um número utilizável. Por isso
+  // `sender_pn` e `chatid` (o JID da conversa 1:1, equivalente aqui já
+  // que grupo foi descartado acima) vêm ANTES de `sender` — na ordem
+  // errada, toda mensagem vira um "contato" com o número de LID em vez
+  // do telefone real.
+  const from =
+    phoneFromJid(d.sender_pn) ??
+    phoneFromJid(d.chatid) ??
+    phoneFromJid(d.sender) ??
+    phoneFromJid(d.from);
   if (!from) return null;
 
   const providerMessageId =
@@ -75,14 +112,25 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
     "";
   if (!providerMessageId) return null;
 
+  // Confirmado com evento real: `messageTimestamp` vem em
+  // MILISSEGUNDOS, não segundos — um valor tratado como segundos
+  // aterrissaria décadas no futuro. Qualquer valor maior que ~ano-2286
+  // em segundos (1e12) só pode ser milissegundos.
   const rawTimestamp = d.messageTimestamp ?? d.timestamp;
   const timestamp =
     typeof rawTimestamp === "number" && Number.isFinite(rawTimestamp)
-      ? rawTimestamp
+      ? rawTimestamp > 1e12
+        ? Math.floor(rawTimestamp / 1000)
+        : rawTimestamp
       : Math.floor(Date.now() / 1000);
 
   const fileURL = typeof d.fileURL === "string" && d.fileURL ? d.fileURL : undefined;
-  const text = typeof d.text === "string" && d.text ? d.text : undefined;
+  // `text` e `content` vieram idênticos no evento real capturado;
+  // aceitar os dois é barato e não custa nada de precisão.
+  const text =
+    (typeof d.text === "string" && d.text) ||
+    (typeof d.content === "string" && d.content) ||
+    undefined;
 
   const content: InboundContent = {
     type: mapContentType(d.messageType, Boolean(fileURL)),
