@@ -18,7 +18,10 @@
 - `NEXT_PUBLIC_SITE_URL` fica **vazio** no ambiente Preview da Vercel; `getBaseUrl` resolve pelo cabeçalho `x-forwarded-host`.
 - A `SUPABASE_SERVICE_ROLE_KEY` de um ambiente nunca é usada em outro.
 - Produção só é tocada a partir da Task 6. As Tasks 0–5 não têm risco sobre ela.
-- Toda operação destrutiva em produção exige o dump da Task 6 concluído antes.
+- **Produção está em operação real desde 2026-07-29**, com conversas de pais do Instituto Emanuel. Nenhuma tarefa apaga dado de produção — as Tasks 6, 7 e 8 foram reescritas em 2026-07-30 para serem aditivas ou de verificação. Se alguma instrução mandar truncar tabela, apagar usuário ou remover canal em produção, **é texto obsoleto: parar e reportar**.
+- O canal `553189891123` ("Instituto Emanuel") não pode ser removido nem recadastrado: removê-lo orfana as conversas reais em andamento.
+- Toda operação em produção exige os dumps da Task 6 concluídos antes.
+- Nenhuma tarefa roda `npm run dev` antes da Task 2: até lá o `.env.local` aponta para o banco de produção, e o dev local escreveria na base viva do cliente.
 - Nenhum dado de seed é criado: os ambientes começam vazios por decisão explícita.
 
 ## Ações que exigem o usuário
@@ -519,15 +522,32 @@ Se a instância de produção tiver perdido o webhook, alguma credencial foi rea
 
 ---
 
-### Task 6: Dump de segurança, limpeza de produção e `migration repair`
+### Task 6: Dump de segurança e `migration repair` em produção
 
-Primeira tarefa que toca produção. O banco contém apenas dados de teste e será zerado por completo, incluindo contas de usuário.
+> ⚠️ **ESTA TAREFA FOI REESCRITA EM 2026-07-30. NÃO EXECUTE A VERSÃO ANTERIOR.**
+>
+> A versão original apagava o banco de produção por completo (`TRUNCATE` em
+> todas as tabelas de `public` + `DELETE FROM auth.users`), porque quando o
+> plano foi escrito produção continha **apenas dados de teste**.
+>
+> **Isso deixou de ser verdade.** Em 2026-07-29 o canal "Instituto Emanuel"
+> (`553189891123`) entrou em operação real: existem conversas de pais sobre
+> matrícula, uniforme, materiais e pagamento, e o cliente já validou o sistema.
+> Executar a limpeza original **destruiria a operação real em andamento**.
+>
+> A limpeza dos dados de teste **já foi feita manualmente** pelo administrador
+> antes da entrada em operação, então o objetivo original desta tarefa está
+> cumprido. O que resta é o que nunca foi feito: o dump de segurança e o
+> alinhamento do histórico de migrations com a CLI.
+
+Primeira tarefa que toca produção — e agora ela é **não-destrutiva por
+construção**: nenhum passo apaga dado.
 
 **Files:** nenhum arquivo do repositório é alterado. O dump é gravado fora do repositório.
 
 **Interfaces:**
 - Consumes: as migrations renomeadas da Task 1.
-- Produces: banco de produção vazio, com schema intacto e histórico de migrations reconhecido pela CLI. As Tasks 7 e 8 dependem disso.
+- Produces: um dump restaurável do estado atual e o histórico de migrations reconhecido pela CLI, sem alterar uma única linha de dado. As Tasks 7 e 8 dependem do `repair`.
 
 > **AÇÃO DO USUÁRIO:** fornecer a senha do banco de produção (projeto `jynplnaslifzftyhasna`).
 
@@ -537,18 +557,25 @@ Primeira tarefa que toca produção. O banco contém apenas dados de teste e ser
 npx supabase link --project-ref jynplnaslifzftyhasna
 ```
 
-- [ ] **Step 2: Gerar o dump de segurança antes de qualquer escrita**
+- [ ] **Step 2: Gerar o dump de segurança da operação real**
 
-O plano free não oferece backup restaurável; este arquivo é a única rede de proteção.
+O plano free não oferece backup restaurável, e produção agora carrega conversas
+reais do cliente. Este arquivo é a única rede de proteção que existe.
+
+O dump precisa incluir os dados, não apenas o schema — `--data-only` gera um
+segundo arquivo com o conteúdo das tabelas:
 
 ```bash
-npx supabase db dump --linked -f ~/wacrm-producao-antes-da-limpeza.sql
-ls -lh ~/wacrm-producao-antes-da-limpeza.sql
+npx supabase db dump --linked -f ~/wacrm-prod-schema-$(date +%Y%m%d).sql
+npx supabase db dump --linked --data-only -f ~/wacrm-prod-dados-$(date +%Y%m%d).sql
+ls -lh ~/wacrm-prod-*-$(date +%Y%m%d).sql
 ```
 
-Esperado: arquivo criado com tamanho maior que zero. **Se o dump falhar, não prosseguir.**
+Esperado: os dois arquivos criados, ambos com tamanho maior que zero, e o de
+dados contendo as conversas reais. **Se qualquer um falhar, não prosseguir** —
+sem backup, nenhum passo seguinte contra produção se justifica.
 
-- [ ] **Step 3: Registrar o estado anterior para conferência posterior**
+- [ ] **Step 3: Registrar o estado atual — a linha de base a ser preservada**
 
 No SQL Editor de produção:
 
@@ -561,55 +588,24 @@ SELECT
   (SELECT count(*) FROM messages)           AS mensagens;
 ```
 
-Anotar os números — o Step 6 confere que todos foram a zero.
+Anotar os números. Em 2026-07-29 o estado era 1 usuário, 1 conta, 1 canal e
+conversas reais em andamento; as contagens de conversas e mensagens **crescem**
+com o uso do cliente.
 
-- [ ] **Step 4: Apagar os dados de `public`**
+Ao contrário da versão original desta tarefa, estes números **não devem ir a
+zero** — o Step 5 confere que continuam iguais ou maiores.
 
-`accounts.owner_user_id` usa `ON DELETE RESTRICT` (`supabase/migrations/017_account_sharing.sql:66`), então apagar `auth.users` primeiro falharia. O truncamento de `public` vem antes, por isso.
+- [ ] **Step 4: Nenhuma escrita — confirmar que o `repair` não altera dado**
 
-O comando é dinâmico para não depender de uma lista manual de tabelas, que ficaria desatualizada:
+Não há passo de limpeza nesta tarefa. O único comando que resta (`migration
+repair`, no Step 5) escreve exclusivamente na tabela de controle
+`supabase_migrations.schema_migrations`, que registra quais migrations já
+rodaram. Ele não toca em nenhuma tabela de `public` nem em `auth.users`.
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-  LOOP
-    EXECUTE format('TRUNCATE TABLE public.%I CASCADE', r.tablename);
-  END LOOP;
-END $$;
-```
+Antes de prosseguir, conferir que o dump do Step 2 existe e tem tamanho maior
+que zero. **Se não existir, parar aqui.**
 
-Isso preserva tabelas, colunas, triggers e políticas de RLS — apenas as linhas saem.
-
-- [ ] **Step 5: Apagar os usuários e a mídia órfã**
-
-Com `public` vazio, nada mais referencia `auth.users` e o `RESTRICT` deixa de bloquear:
-
-```sql
-DELETE FROM auth.users;
-
-DELETE FROM storage.objects
-WHERE bucket_id IN ('avatars', 'flow-media', 'chat-media');
-```
-
-Os três buckets em si são preservados: eles são criados pelas migrations 008, 016 e 023 e continuam existindo, apenas sem arquivos.
-
-- [ ] **Step 6: Confirmar que o banco está vazio e o schema intacto**
-
-```sql
-SELECT
-  (SELECT count(*) FROM auth.users)         AS usuarios,
-  (SELECT count(*) FROM accounts)           AS contas,
-  (SELECT count(*) FROM whatsapp_channels)  AS canais,
-  (SELECT count(*) FROM conversations)      AS conversas,
-  (SELECT count(*) FROM messages)           AS mensagens,
-  (SELECT count(*) FROM pg_tables WHERE schemaname='public') AS tabelas;
-```
-
-Esperado: todas as contagens de dados em `0`, e `tabelas` com o mesmo número de antes da limpeza — schema preservado.
-
-- [ ] **Step 7: Registrar as 43 migrations como já aplicadas**
+- [ ] **Step 5: Registrar as 43 migrations como já aplicadas**
 
 O schema foi construído por colagem manual no SQL Editor, então o histórico da CLI está vazio e um `db push` tentaria reaplicar tudo.
 
@@ -617,24 +613,62 @@ O schema foi construído por colagem manual no SQL Editor, então o histórico d
 npx supabase migration repair --status applied $(ls supabase/migrations | sed 's/_.*//' | tr '\n' ' ')
 ```
 
-- [ ] **Step 8: Confirmar que a CLI e o banco concordam**
+- [ ] **Step 6: Confirmar que a CLI e o banco concordam**
 
 ```bash
 npx supabase migration list --linked
 npx supabase db push --dry-run
 ```
 
-Esperado: as 43 aparecem como aplicadas em ambos os lados, e o `--dry-run` informa que **não há nada pendente**. Se ele ainda listar migrations a aplicar, o `repair` não pegou e reaplicá-las sobre um schema existente causaria erro.
+Esperado: as 43 aparecem como aplicadas em ambos os lados, e o `--dry-run` informa que **não há nada pendente**.
+
+Este é o passo mais importante da tarefa. Se o `--dry-run` ainda listar migrations
+a aplicar, o `repair` não pegou — e um `db push` futuro tentaria recriar tabelas
+que já existem **e que agora contêm dados reais do cliente**. Não prosseguir para
+as tarefas seguintes até que o `--dry-run` venha limpo.
+
+- [ ] **Step 7: Confirmar que nada foi perdido**
+
+Repetir a consulta do Step 3 e comparar com os números anotados:
+
+```sql
+SELECT
+  (SELECT count(*) FROM auth.users)         AS usuarios,
+  (SELECT count(*) FROM accounts)           AS contas,
+  (SELECT count(*) FROM whatsapp_channels)  AS canais,
+  (SELECT count(*) FROM conversations)      AS conversas,
+  (SELECT count(*) FROM messages)           AS mensagens;
+```
+
+Esperado: valores **iguais ou maiores** que os do Step 3 (podem ter crescido se
+o cliente recebeu mensagens durante a tarefa). Qualquer contagem menor indica
+perda de dado e exige restauração imediata a partir do dump do Step 2.
 
 ---
 
-### Task 7: Deploy da branch `production` e primeiro cadastro
+### Task 7: Migrar o deploy de produção para a branch `production`
+
+> ⚠️ **REESCRITA EM 2026-07-30.** A versão original criava a conta proprietária
+> num banco vazio. Isso **já aconteceu**: a conta `ramon.p.paula@gmail.com`
+> existe como `owner` e o sistema está em operação.
+>
+> O que resta é diferente e mais delicado: o deploy que está no ar hoje foi
+> feito por **upload direto do diretório local** (`vercel deploy --prod`), sem
+> nenhuma branch de git associada — confirmado via `vercel inspect`. A partir da
+> Task 4 a Vercel passa a construir a partir do Git, e é preciso provar que o
+> build a partir da branch `production` produz o mesmo resultado que está
+> servindo o cliente agora.
 
 **Files:** nenhum arquivo do repositório é alterado.
 
 **Interfaces:**
-- Consumes: banco de produção limpo da Task 6; branch `production` da Task 4.
-- Produces: produção no ar com uma conta proprietária. A Task 8 depende dessa conta para cadastrar os canais.
+- Consumes: a branch `production` da Task 4; o `migration repair` da Task 6.
+- Produces: produção servida a partir da branch `production`, com paridade comprovada em relação ao deploy atual.
+
+> ⚠️ **JANELA DE BAIXO MOVIMENTO.** Esta tarefa republica produção enquanto o
+> cliente usa o sistema. Mesmo que o código seja idêntico, um deploy troca as
+> instâncias que atendem as requisições. Executar preferencialmente fora do
+> horário de atendimento da escola, e nunca durante uma apresentação.
 
 - [ ] **Step 1: Confirmar as variáveis de produção**
 
@@ -661,11 +695,10 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" https://wacrm-ramonppaula-5619s-pr
 
 Esperado: `HTTP 200`. Um `302` para `vercel.com/sso-api` indicaria proteção de deploy reativada, o que bloquearia também o webhook da UAZAPI.
 
-> **AÇÃO DO USUÁRIO:** acessar `/signup` em produção e criar a conta. Quem fizer este cadastro torna-se **proprietário** da conta — o papel `owner` não pode ser concedido por convite (`supabase/migrations/017_account_sharing.sql:94`), apenas por este cadastro inicial ou por transferência posterior via `/api/account/transfer-ownership`.
+- [ ] **Step 4: Confirmar que a conta proprietária segue intacta**
 
-- [ ] **Step 4: Confirmar que conta e perfil foram criados**
-
-No SQL Editor de produção:
+O cadastro do proprietário já foi feito. Este passo apenas verifica que o deploy
+não afetou nada. No SQL Editor de produção:
 
 ```sql
 SELECT u.email, p.account_role, a.name AS conta
@@ -674,36 +707,80 @@ JOIN profiles p ON p.user_id = u.id
 JOIN accounts  a ON a.id = p.account_id;
 ```
 
-Esperado: uma linha, com `account_role = 'owner'`.
+Esperado: uma linha, `ramon.p.paula@gmail.com` com `account_role = 'owner'`.
 
----
+A transferência de propriedade para a escola fica para o momento da entrega, via
+`/api/account/transfer-ownership` — o papel `owner` não pode ser concedido por
+convite (`supabase/migrations/017_account_sharing.sql:94`).
 
-### Task 8: Reconectar as instâncias UAZAPI de produção
+- [ ] **Step 5: Confirmar que o canal em operação não foi afetado**
 
-**Files:** nenhum arquivo do repositório é alterado.
-
-**Interfaces:**
-- Consumes: a conta proprietária da Task 7.
-- Produces: produção recebendo mensagens nos dois números do cliente. Encerra o plano.
-
-> **AÇÃO DO USUÁRIO:** confirmar no painel da UAZAPI as **duas** instâncias de produção (uma delas é a que já atendia o número +553183839660). Nenhuma delas pode ser a instância de homologação da Task 5.
-
-- [ ] **Step 1: Cadastrar o primeiro canal**
-
-Em produção, acessar *Configurações → WhatsApp → Adicionar canal*, informar URL base e token da primeira instância e conectar por QR Code.
-
-- [ ] **Step 2: Cadastrar o segundo canal**
-
-Repetir o processo com a segunda instância. O suporte a múltiplos canais por conta é justamente o que os 38 commits de customização entregaram.
-
-- [ ] **Step 3: Confirmar o registro do webhook nos dois**
+Um deploy não deveria mexer no canal, mas é o ativo mais crítico e a verificação
+custa nada:
 
 ```sql
 SELECT label, phone_e164, status, webhook_registered_at, last_error
 FROM whatsapp_channels;
 ```
 
-Esperado: duas linhas, ambas `connected`, ambas com `webhook_registered_at` preenchido e `last_error` nulo.
+Esperado: o canal "Instituto Emanuel" (`553189891123`) segue `connected`, com
+`webhook_registered_at` preenchido e `last_error` nulo. Em seguida, pedir ao
+cliente uma mensagem de teste, ou enviar uma de um número próprio, e confirmar
+que ela chega no inbox.
+
+---
+
+### Task 8: Adicionar o segundo canal UAZAPI de produção
+
+> ⚠️ **REESCRITA EM 2026-07-30.** A versão original conectava dois canais num
+> ambiente zerado. **O primeiro canal já está conectado e em operação real:**
+> "Instituto Emanuel" (`553189891123`), recebendo mensagens de pais.
+>
+> **NÃO remover, reconectar ou recadastrar o canal existente.** Remover um canal
+> dispara `mergeOrphanedConversations` e transforma as conversas em histórico
+> órfão (`channel_id` nulo). A tarefa agora é puramente aditiva.
+
+**Files:** nenhum arquivo do repositório é alterado.
+
+**Interfaces:**
+- Consumes: a conta proprietária confirmada na Task 7.
+- Produces: produção atendendo os dois números do cliente. Encerra o plano.
+
+> **AÇÃO DO USUÁRIO:** criar no painel da UAZAPI a **segunda** instância de
+> produção, com o segundo número da escola. Ela não pode ser a instância de
+> homologação da Task 5, nem a que já atende `553189891123`.
+>
+> Se o segundo número ainda não existir, **esta tarefa pode ser adiada sem
+> bloquear nada** — o plano se encerra funcionalmente na Task 7, e o segundo
+> canal entra quando o cliente disponibilizar a linha.
+
+- [ ] **Step 1: Registrar o estado antes de mexer**
+
+```sql
+SELECT id, label, phone_e164, status, webhook_registered_at
+FROM whatsapp_channels;
+```
+
+Esperado: uma linha, o canal em operação. Anotar o `id` — ele **não pode**
+mudar até o fim da tarefa.
+
+- [ ] **Step 2: Cadastrar apenas o segundo canal**
+
+Em produção, acessar *Configurações → WhatsApp → Adicionar canal*, informar URL
+base e token da **segunda** instância e conectar por QR Code. Não encostar no
+canal já existente.
+
+- [ ] **Step 3: Confirmar que agora há dois, e que o primeiro está intacto**
+
+```sql
+SELECT id, label, phone_e164, status, webhook_registered_at, last_error
+FROM whatsapp_channels
+ORDER BY webhook_registered_at;
+```
+
+Esperado: duas linhas, ambas `connected`, ambas com `webhook_registered_at`
+preenchido e `last_error` nulo — e o `id` anotado no Step 1 presente e
+inalterado.
 
 - [ ] **Step 4: Validar o recebimento em ambos os números**
 
@@ -722,23 +799,42 @@ Esperado: as duas mensagens aparecem, cada uma associada ao seu respectivo canal
 
 - [ ] **Step 5: Reconfirmar o isolamento na direção oposta**
 
-Enviar uma mensagem para o número de **homologação** e verificar que ela **não** chega em produção:
+Anotar a contagem atual de mensagens em produção, enviar uma mensagem para o
+número de **homologação** e verificar que ela não chega em produção:
 
 ```sql
 SELECT count(*) FROM messages;
 ```
 
-Esperado: contagem inalterada em produção. Somada ao Step 5 da Task 5, esta verificação fecha os dois sentidos do isolamento.
+Esperado: nenhuma mensagem nova **atribuível ao teste de homologação**. Atenção:
+produção está em operação real, então a contagem pode ter crescido por mensagens
+legítimas de pais no intervalo. A conferência correta é pelo conteúdo:
+
+```sql
+SELECT ch.label, m.content_text, m.created_at
+FROM messages m
+JOIN conversations c ON c.id = m.conversation_id
+LEFT JOIN whatsapp_channels ch ON ch.id = c.channel_id
+WHERE m.created_at > now() - interval '10 minutes'
+ORDER BY m.created_at DESC;
+```
+
+Esperado: a mensagem de teste enviada a homologação **não** aparece nesta lista.
+Somada ao Step 5 da Task 5, fecha os dois sentidos do isolamento.
 
 - [ ] **Step 6: Registrar o procedimento de backup manual**
 
-O plano free não oferece backup restaurável. Executar um dump e guardá-lo fora da plataforma:
+O plano free não oferece backup restaurável, e produção agora carrega dado real.
+Executar os dois dumps e guardá-los fora da plataforma:
 
 ```bash
-npx supabase db dump --linked -f ~/wacrm-producao-$(date +%Y%m%d).sql
+npx supabase db dump --linked -f ~/wacrm-prod-schema-$(date +%Y%m%d).sql
+npx supabase db dump --linked --data-only -f ~/wacrm-prod-dados-$(date +%Y%m%d).sql
 ```
 
-Repetir antes de cada migration futura em produção e periodicamente durante a operação, conforme a §8 do spec.
+Repetir antes de cada migration futura em produção e periodicamente durante a
+operação, conforme a §8 do spec. Enquanto o projeto estiver no plano free, este
+é o único caminho de restauração que existe.
 
 ---
 
@@ -770,11 +866,13 @@ cada nova sessão de trabalho — motivo pelo qual isso não vira rotina fixa.
 
 ## Verificação final — critérios de aceitação do spec
 
-Rodar após a Task 8 e conferir cada item:
+Rodar ao fim do plano (a Task 8 pode ficar pendente se o segundo número não existir ainda) e conferir cada item:
 
 - [ ] Mensagem enviada à instância de homologação aparece no banco de homologação e **não** em produção (Task 5 Step 5, Task 8 Step 5)
-- [ ] Mensagem enviada às instâncias de produção chega em produção mesmo após deploy em `staging` (Task 8 Step 4)
+- [ ] O canal em operação (`553189891123`) segue recebendo mensagens reais após todo deploy e após qualquer publicação em `staging` (Task 7 Step 5, Task 8 Step 3)
 - [ ] `npx supabase db reset` no local recria as 43 migrations sem erro (Task 2 Step 3)
-- [ ] `npx supabase db push` aplica migration nova em um ambiente sem afetar os demais (Tasks 3 e 6)
-- [ ] Deploy em `production` preserva os dados existentes (Task 7 Step 2, conferido no Step 4)
-- [ ] Primeiro cadastro em produção cria conta e perfil, e o acesso funciona (Task 7 Step 4)
+- [ ] `npx supabase db push --dry-run` em produção informa que não há nada pendente (Task 6 Step 6)
+- [ ] `npx supabase db push` aplica migration nova em homologação sem afetar produção (Task 3)
+- [ ] Nenhuma contagem de dado em produção diminuiu ao longo do plano (Task 6 Step 7, Task 7 Step 4)
+- [ ] `.env.local` aponta para o Supabase local, não para produção (Task 2 Step 5)
+- [ ] Existem dumps de schema e de dados de produção guardados fora da plataforma (Task 6 Step 2)
