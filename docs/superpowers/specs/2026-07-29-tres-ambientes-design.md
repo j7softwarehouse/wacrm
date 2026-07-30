@@ -1,7 +1,21 @@
 # Separação em três ambientes (dev, homologação, produção)
 
-**Data:** 2026-07-29
+**Data:** 2026-07-29 (revisado em 2026-07-30)
 **Status:** aprovado, pronto para plano de implementação
+
+> **Revisão de 2026-07-30:** dev e homologação passam a compartilhar o mesmo
+> projeto Supabase na nuvem, em vez de dev usar um Supabase local via Docker.
+> Motivo: o plano free do Supabase permite 2 projetos ativos por organização, e
+> a organização já tinha 1 ativo (produção) + 1 pausado (`j7-biolink`, de outro
+> produto, não conta para o limite). Um projeto novo preenche exatamente a
+> segunda vaga — sem Docker, sem infraestrutura local para manter. O
+> `j7-biolink` fica pausado por enquanto; reativá-lo exigiria pausar um dos
+> projetos do wacrm ou assinar o plano Pro.
+>
+> Isso reduz o isolamento entre dev e homologação (testes locais passam a usar
+> o mesmo banco que valida antes de produção), mas dado que hoje é um único
+> desenvolvedor operando, o risco é baixo — vira relevante se a equipe crescer.
+> Produção continua isolada dos dois, que é o que importa de verdade.
 
 ## 1. Objetivo
 
@@ -24,7 +38,8 @@ instâncias sim.
 
 ### Incluído
 
-- Três ambientes com bancos Supabase isolados.
+- Três ambientes; produção com banco Supabase isolado, dev e homologação
+  compartilhando um segundo projeto Supabase.
 - Três branches com papéis distintos e deploy correspondente na Vercel.
 - Quatro instâncias UAZAPI (2 produção, 1 homologação, 1 dev).
 - Supabase CLI como mecanismo de aplicação de migrations, substituindo o
@@ -46,11 +61,11 @@ instâncias sim.
 
 | | **Dev** | **Homologação** | **Produção** |
 |---|---|---|---|
-| Banco | Supabase local (Docker) | Projeto novo na nuvem | Projeto atual (`jynplnaslifzftyhasna`), zerado |
+| Banco | *mesmo projeto que Homologação* → | Projeto novo na nuvem | Projeto atual (`jynplnaslifzftyhasna`), zerado |
 | Branch | qualquer, local | `staging` | `production` |
 | URL | `localhost:3000` | URL de branch da Vercel (estável) | URL de produção da Vercel |
-| UAZAPI | 1 instância + túnel Cloudflare | 1 instância | 2 instâncias (números do cliente) |
-| Plano Supabase | local, gratuito | free | free (risco assumido — ver §8) |
+| UAZAPI | 1 instância + túnel Cloudflare (sob demanda) | 1 instância | 2 instâncias (números do cliente) |
+| Plano Supabase | free, compartilhado com Homologação | free | free (risco assumido — ver §8) |
 
 `main` permanece como espelho do projeto open-source upstream
 (`ArnasDon/wacrm`) e **nunca é a origem do deploy de produção** — a Vercel pode
@@ -99,17 +114,22 @@ Sequência:
 1. **Renomear as 43 migrations** para timestamps sintéticos que preservem a
    ordem atual (`001_initial_schema.sql` → `20250101000001_initial_schema.sql`,
    e assim por diante). Commit único e mecânico.
-2. **`supabase db reset` no banco local**, que recria do zero e roda as 43 em
-   sequência. Este é o teste de validade: se alguma migration não roda limpa a
-   partir de um banco vazio, o problema aparece aqui, sem risco.
-3. **`supabase migration repair --status applied`** nos bancos remotos,
-   marcando as 43 como já aplicadas.
+2. **`supabase db push` contra o projeto novo de homologação-e-dev**, vazio por
+   ser recém-criado. Isso já é o teste de validade: se alguma migration não
+   roda limpa a partir de um banco vazio, o problema aparece aqui, contra um
+   banco real e descartável, e não em produção.
+3. **`supabase migration repair --status applied`** em produção, marcando as 43
+   como já aplicadas ali (o projeto de homologação-e-dev não precisa de
+   `repair` — as migrations foram aplicadas por ele mesmo via `db push`, então
+   seu histórico já nasce correto).
 
 Daí em diante, cada mudança de schema é uma migration nova aplicada com
 `db push`, um ambiente por vez, seguindo a ordem de promoção.
 
-**Regra permanente:** `supabase db reset` é destrutivo e só pode ser executado
-contra o banco **local**. Nunca contra homologação ou produção.
+**Regra permanente:** nenhum comando destrutivo (`db reset` ou equivalente)
+roda contra homologação ou produção — ambos carregam dado que alguém depende
+de preservar, ainda que homologação seja descartável com mais folga que
+produção.
 
 ## 6. Limpeza do banco de produção
 
@@ -169,10 +189,12 @@ recomendado quando a escola entrar em operação real.
 Produção é a última coisa tocada, e tudo que acontece nela já terá sido
 ensaiado antes.
 
-1. Docker ativo, Supabase local no ar, migrations renomeadas, `db reset`
-   validando as 43 do zero. *Risco zero: nada remoto é tocado.*
-2. Criar o projeto de homologação, aplicar migrations, validar o fluxo de
-   cadastro. *Risco zero: banco novo e descartável.*
+1. Renomear as migrations para o formato da CLI. *Risco zero: nada remoto é
+   tocado.*
+2. Criar o projeto de homologação-e-dev, aplicar as migrations via `db push`
+   (isso já valida que rodam limpas a partir de um banco vazio), apontar o
+   `.env.local` para ele e validar o fluxo de cadastro. *Risco zero: banco novo
+   e descartável.*
 3. Configurar a Vercel — variáveis por ambiente, branches `staging` e
    `production`. *Risco zero: produção segue servindo o que já serve.*
 4. Fazer o dump de segurança, limpar produção e rodar `migration repair`.
@@ -187,7 +209,8 @@ ensaiado antes.
   homologação e **não** aparece em produção.
 - Uma mensagem enviada às instâncias de produção continua chegando em produção
   depois de qualquer deploy em `staging`.
-- `supabase db reset` no ambiente local recria as 43 migrations sem erro.
+- `supabase db push` aplica as 43 migrations sem erro num projeto novo
+  (homologação-e-dev).
 - `supabase db push` aplica uma migration nova em um ambiente sem afetar os
   demais.
 - Um deploy em `production` preserva integralmente os dados existentes.
