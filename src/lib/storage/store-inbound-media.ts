@@ -10,6 +10,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 import { isDeliverableUrl } from "@/lib/webhooks/ssrf";
+import {
+  decryptWhatsAppMedia,
+  type WhatsAppMediaType,
+} from "@/lib/whatsapp/uazapi/media-crypto";
 
 import { buildMediaPath } from "./upload-media";
 
@@ -19,13 +23,13 @@ const BUCKET = "chat-media";
 const MAX_INBOUND_BYTES = 16 * 1024 * 1024;
 
 /**
- * `sourceUrl` vem do campo `fileURL` de um evento de webhook — ou seja,
- * de quem quer que conheça o `webhook_secret` do canal, o que inclui
- * TODO tenant para o próprio canal (a URL completa é exibida na UI de
- * canais). Sem validação isto seria um SSRF com exfiltração embutida: o
- * atacante aponta `fileURL` para um serviço interno (o endpoint de
- * metadados da nuvem, por exemplo), nós baixamos com a rede do servidor
- * e republicamos os bytes num bucket PÚBLICO, cuja URL esta função
+ * `sourceUrl` vem de um evento de webhook — ou seja, de quem quer que
+ * conheça o `webhook_secret` do canal, o que inclui TODO tenant para o
+ * próprio canal (a URL completa é exibida na UI de canais). Sem
+ * validação isto seria um SSRF com exfiltração embutida: o atacante
+ * aponta a URL para um serviço interno (o endpoint de metadados da
+ * nuvem, por exemplo), nós baixamos com a rede do servidor e
+ * republicamos os bytes num bucket PÚBLICO, cuja URL esta função
  * devolve.
  *
  * Duas barreiras: só https (o token/o conteúdo não podem trafegar em
@@ -85,6 +89,44 @@ async function fetchValidated(url: string): Promise<Response | null> {
   return null;
 }
 
+/** Sobe bytes já prontos (decifrados, se for o caso) pro bucket público. */
+async function uploadBytes(
+  accountId: string,
+  bytes: Uint8Array,
+  filename: string,
+  contentType: string,
+): Promise<string | null> {
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_INBOUND_BYTES) {
+    console.warn(
+      `[store-inbound-media] tamanho fora do aceitável: ${bytes.byteLength} bytes`,
+    );
+    return null;
+  }
+
+  // `buildMediaPath` já produz o caminho `account-<id>/…` que as
+  // políticas RLS do bucket esperam (migração 023).
+  const path = buildMediaPath(accountId, filename);
+
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const { error } = await admin.storage
+    .from(BUCKET)
+    .upload(path, bytes, { contentType, upsert: false, cacheControl: "3600" });
+  if (error) {
+    console.error("[store-inbound-media] upload falhou:", error.message);
+    return null;
+  }
+
+  const {
+    data: { publicUrl },
+  } = admin.storage.from(BUCKET).getPublicUrl(path);
+  return publicUrl;
+}
+
+/** Mídia já em texto claro na origem — sem chave, sem descriptografia. */
 export async function storeInboundMedia(
   accountId: string,
   sourceUrl: string,
@@ -94,41 +136,47 @@ export async function storeInboundMedia(
     if (!response || !response.ok) return null;
 
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_INBOUND_BYTES) {
-      console.warn(
-        `[store-inbound-media] tamanho fora do aceitável: ${bytes.byteLength} bytes`,
-      );
-      return null;
-    }
-
     const contentType =
       response.headers.get("content-type") ?? "application/octet-stream";
-
-    // `buildMediaPath` já produz o caminho `account-<id>/…` que as
-    // políticas RLS do bucket esperam (migração 023).
     const filename = new URL(sourceUrl).pathname.split("/").pop() || "media";
-    const path = buildMediaPath(accountId, filename);
 
-    const admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    );
-
-    const { error } = await admin.storage
-      .from(BUCKET)
-      .upload(path, bytes, { contentType, upsert: false, cacheControl: "3600" });
-    if (error) {
-      console.error("[store-inbound-media] upload falhou:", error.message);
-      return null;
-    }
-
-    const {
-      data: { publicUrl },
-    } = admin.storage.from(BUCKET).getPublicUrl(path);
-    return publicUrl;
+    return await uploadBytes(accountId, bytes, filename, contentType);
   } catch (err) {
     console.error(
       "[store-inbound-media] erro ao baixar mídia:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
+ * Mídia do WhatsApp: o CDN (`encryptedUrl`) serve o arquivo CIFRADO — o
+ * WhatsApp criptografa toda mídia ponta-a-ponta. Baixa, descriptografa
+ * com a `mediaKey` do próprio evento (ver `media-crypto.ts`) e só então
+ * guarda no Storage. Um MAC que não confere é tratado como qualquer
+ * outra falha de mídia: loga e devolve `null`, nunca lança — a mensagem
+ * (texto incluído) já foi confirmada ao provedor antes deste ponto.
+ */
+export async function storeEncryptedInboundMedia(
+  accountId: string,
+  encryptedUrl: string,
+  mediaKeyBase64: string,
+  mediaType: WhatsAppMediaType,
+  mimetype: string,
+): Promise<string | null> {
+  try {
+    const response = await fetchValidated(encryptedUrl);
+    if (!response || !response.ok) return null;
+
+    const encrypted = new Uint8Array(await response.arrayBuffer());
+    const plaintext = decryptWhatsAppMedia(encrypted, mediaKeyBase64, mediaType);
+
+    const ext = mimetype.split("/")[1]?.split(";")[0] || "bin";
+    return await uploadBytes(accountId, plaintext, `media.${ext}`, mimetype);
+  } catch (err) {
+    console.error(
+      "[store-inbound-media] erro ao descriptografar mídia:",
       err instanceof Error ? err.message : err,
     );
     return null;

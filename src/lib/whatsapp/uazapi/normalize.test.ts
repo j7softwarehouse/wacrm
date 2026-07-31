@@ -112,21 +112,47 @@ describe("normalizeUazapiEvent — formato real (EventType/message)", () => {
     ).toBeNull();
   });
 
-  it("reconhece mídia pelo fileURL", () => {
+  it("reconhece mídia por message.content.URL/mediaKey e empacota pra descriptografia", () => {
+    // Estrutura confirmada com evento real de imagem capturado em
+    // 2026-07-30: `content` vira objeto (URL/mediaKey/mimetype), não a
+    // string plana das mensagens de texto. `fileURL` no topo do evento
+    // nunca existiu de verdade — era suposição da doc.
     const imagem = {
       ...eventoReal,
       message: {
         ...eventoReal.message,
-        messageType: "imageMessage",
+        messageType: "ImageMessage",
+        mediaType: "image",
         text: "olha isso",
-        content: "olha isso",
-        fileURL: "https://mmg.whatsapp.net/abc",
+        content: {
+          URL: "https://mmg.whatsapp.net/abc",
+          mediaKey: "chaveBase64==",
+          mimetype: "image/jpeg",
+        },
       },
     };
     const result = normalizeUazapiEvent(imagem);
     expect(result!.content.type).toBe("image");
-    expect(result!.content.mediaUrl).toBe("https://mmg.whatsapp.net/abc");
     expect(result!.content.text).toBe("olha isso");
+    expect(JSON.parse(result!.content.mediaUrl!)).toEqual({
+      url: "https://mmg.whatsapp.net/abc",
+      mediaKey: "chaveBase64==",
+      mediaType: "image",
+      mimetype: "image/jpeg",
+    });
+  });
+
+  it("ignora mídia sem mediaKey — não há como descriptografar sem ela", () => {
+    const semChave = {
+      ...eventoReal,
+      message: {
+        ...eventoReal.message,
+        messageType: "ImageMessage",
+        content: { URL: "https://mmg.whatsapp.net/abc", mimetype: "image/jpeg" },
+      },
+    };
+    const result = normalizeUazapiEvent(semChave);
+    expect(result!.content.mediaUrl).toBeUndefined();
   });
 
   it("guarda o botão tocado como resposta interativa", () => {

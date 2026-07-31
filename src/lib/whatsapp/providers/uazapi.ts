@@ -9,7 +9,11 @@
 // ============================================================
 
 import { createUazapiClient } from "@/lib/whatsapp/uazapi/client";
-import { storeInboundMedia } from "@/lib/storage/store-inbound-media";
+import type { EncryptedMediaReference } from "@/lib/whatsapp/uazapi/normalize";
+import {
+  storeEncryptedInboundMedia,
+  storeInboundMedia,
+} from "@/lib/storage/store-inbound-media";
 
 import {
   ProviderUnsupportedError,
@@ -120,11 +124,33 @@ export function createUazapiProvider(
     },
 
     async resolveInboundMediaUrl(ref: string): Promise<string | null> {
-      // A UAZAPI entrega `fileURL` pronto, mas URLs de mídia do
-      // WhatsApp expiram — guardar o link cru deixaria o histórico
-      // quebrado em poucas horas. Baixa uma vez e guarda no Storage.
+      // O WhatsApp criptografa toda mídia ponta-a-ponta: `ref` é a
+      // referência empacotada por `normalize.ts`
+      // (`EncryptedMediaReference` — URL do CDN + mediaKey + tipo +
+      // mimetype), nunca uma URL crua utilizável direto. Além disso,
+      // URLs de mídia do WhatsApp expiram — guardar o link cru deixaria
+      // o histórico quebrado em poucas horas de qualquer forma, então
+      // baixamos, descriptografamos e guardamos no Storage uma vez.
       if (!ref) return null;
-      return storeInboundMedia(config.accountId, ref);
+
+      let parsed: EncryptedMediaReference;
+      try {
+        parsed = JSON.parse(ref) as EncryptedMediaReference;
+      } catch {
+        // Não deveria acontecer — `normalize.ts` só produz o formato
+        // empacotado — mas um `ref` que não é o JSON esperado degrada
+        // pro caminho antigo (sem descriptografia) em vez de derrubar a
+        // mensagem inteira.
+        return storeInboundMedia(config.accountId, ref);
+      }
+
+      return storeEncryptedInboundMedia(
+        config.accountId,
+        parsed.url,
+        parsed.mediaKey,
+        parsed.mediaType,
+        parsed.mimetype,
+      );
     },
   };
 }

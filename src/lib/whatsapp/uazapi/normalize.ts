@@ -17,6 +17,32 @@
 // ============================================================
 
 import type { InboundContent } from "@/lib/whatsapp/inbound/ingest";
+import type { WhatsAppMediaType } from "./media-crypto";
+
+/**
+ * Tudo que a descriptografia de mídia (`media-crypto.ts`) precisa,
+ * empacotado como JSON dentro de `InboundContent.mediaUrl`. O CDN do
+ * WhatsApp (`content.URL`) serve o arquivo CIFRADO — sem `mediaKey` os
+ * bytes baixados não abrem como imagem/vídeo/áudio nenhum.
+ */
+export interface EncryptedMediaReference {
+  url: string;
+  mediaKey: string;
+  mediaType: WhatsAppMediaType;
+  mimetype: string;
+}
+
+const FILE_BEARING_TYPES: readonly string[] = [
+  "image",
+  "video",
+  "audio",
+  "document",
+  "sticker",
+];
+
+function isFileBearingType(t: InboundContent["type"]): t is WhatsAppMediaType {
+  return FILE_BEARING_TYPES.includes(t);
+}
 
 export interface NormalizedInbound {
   from: string;
@@ -124,18 +150,57 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
         : rawTimestamp
       : Math.floor(Date.now() / 1000);
 
-  const fileURL = typeof d.fileURL === "string" && d.fileURL ? d.fileURL : undefined;
-  // `text` e `content` vieram idênticos no evento real capturado;
-  // aceitar os dois é barato e não custa nada de precisão.
+  // Confirmado com evento real de imagem capturado em 2026-07-30: para
+  // mensagens de mídia, `d.content` é um OBJETO com `URL`/`mediaKey`/
+  // `mimetype` — não a string plana que carrega texto em mensagens de
+  // texto (`d.content` também é usado como fallback de `text` abaixo).
+  // `fileURL` no topo do evento nunca existiu; era um campo assumido a
+  // partir da doc, nunca confirmado ao vivo.
+  const mediaContent =
+    d.content && typeof d.content === "object"
+      ? (d.content as Record<string, unknown>)
+      : null;
+  const mediaUrlRaw =
+    mediaContent && typeof mediaContent.URL === "string" && mediaContent.URL
+      ? mediaContent.URL
+      : undefined;
+  const mediaKey =
+    mediaContent && typeof mediaContent.mediaKey === "string" && mediaContent.mediaKey
+      ? mediaContent.mediaKey
+      : undefined;
+  const mimetype =
+    mediaContent && typeof mediaContent.mimetype === "string"
+      ? mediaContent.mimetype
+      : "application/octet-stream";
+
+  // `text` e `content` vieram idênticos no evento real de TEXTO
+  // capturado; aceitar os dois é barato e não custa nada de precisão.
+  // Quando `content` é objeto (mensagem de mídia), o guard de tipo já
+  // descarta essa alternativa aqui.
   const text =
     (typeof d.text === "string" && d.text) ||
     (typeof d.content === "string" && d.content) ||
     undefined;
 
+  const contentType = mapContentType(d.messageType, Boolean(mediaUrlRaw));
+
+  // O WhatsApp criptografa toda mídia ponta-a-ponta: sem `mediaKey` os
+  // bytes do CDN são inúteis, então só empacota a referência quando as
+  // duas partes existem — ver media-crypto.ts para o porquê.
+  const mediaUrl: string | undefined =
+    mediaUrlRaw && mediaKey && isFileBearingType(contentType)
+      ? JSON.stringify({
+          url: mediaUrlRaw,
+          mediaKey,
+          mediaType: contentType,
+          mimetype,
+        } satisfies EncryptedMediaReference)
+      : undefined;
+
   const content: InboundContent = {
-    type: mapContentType(d.messageType, Boolean(fileURL)),
+    type: contentType,
     text,
-    mediaUrl: fileURL,
+    mediaUrl,
   };
 
   // `buttonOrListid` carrega o título do botão/linha tocado — é o que
