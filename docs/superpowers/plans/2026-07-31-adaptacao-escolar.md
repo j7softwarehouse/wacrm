@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Trabalho acontece na branch `staging`. Nada é commitado direto em `production` — a promoção é `staging → production` após validação, conforme regra definida em 2026-07-31.
+- Trabalho acontece na branch `feat/adaptacao-escolar`. A promoção é `feat/… → staging → production`, conforme regra definida em 2026-07-31. Nada é commitado direto em `staging` nem em `production`.
 - Migrations seguem o formato da Supabase CLI: `<timestamp de 14 dígitos>_nome.sql`, idempotentes (`IF NOT EXISTS` / `DROP ... IF EXISTS`).
 - `supabase db push` é aplicado primeiro no projeto de homologação-e-dev (`mpwjlshxfxfvysoeyyzy`), nunca direto em produção.
 - Nenhum comando destrutivo roda contra homologação ou produção.
