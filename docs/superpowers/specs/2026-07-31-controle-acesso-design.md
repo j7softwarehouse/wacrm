@@ -135,7 +135,7 @@ a ter a lista de canais que atende.
 
 | Menu | viewer | agent | admin / owner |
 |---|---|---|---|
-| Dashboard | ✗ | ✓ | ✓ |
+| Dashboard | ✓ | ✓ | ✓ |
 | Caixa de entrada | ✓ | ✓ | ✓ |
 | Notificações | ✓ | ✓ | ✓ |
 | Contatos | ✓ | ✓ | ✓ |
@@ -146,10 +146,9 @@ a ter a lista de canais que atende.
 | Agentes IA | ✗ | ✓ | ✓ |
 | Configurações | parcial — ver abaixo | parcial | ✓ |
 
-**Inferência a confirmar na revisão:** o Dashboard não constava da lista de acessos
-do `viewer` ("caixa de entrada, notificações, contatos"), então está marcado como
-oculto, e a tela inicial do `viewer` passa a ser a Caixa de entrada. Se a intenção
-era que ele visse o Dashboard, é só dizer.
+O Dashboard é visível ao `viewer` — confirmado pelo cliente em 2026-07-31, depois
+de eu tê-lo marcado como oculto por não constar da lista original ("caixa de
+entrada, notificações, contatos").
 
 ### ⚠ Configurações não pode ser tudo-ou-nada
 
@@ -182,6 +181,11 @@ bloqueio de rota — sem eles, basta digitar a URL. As três camadas são
 implementadas: política, rota e menu.
 
 ## 7. Ordem de implementação
+
+> **Este spec inteiro vem depois da adaptação escolar**
+> (`2026-07-31-adaptacao-escolar-design.md`), por decisão do cliente em
+> 2026-07-31: primeiro as configurações e ajustes de operação, a hierarquia por
+> último.
 
 | # | Etapa | Razão |
 |---|---|---|
