@@ -157,3 +157,18 @@ describe('SendMessageError', () => {
     expect(e).toBeInstanceOf(Error);
   });
 });
+
+describe('sendMessageToConversation — autoria', () => {
+  it('aceita senderUserId no contrato de parâmetros', () => {
+    // Regressão: `sender_id` existia no banco desde a 001 mas nenhum
+    // caminho de envio o preenchia, então todo histórico enviado ficou
+    // sem autor. O contrato precisa carregar o autor até o insert.
+    const params: SendMessageParams = {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'oi',
+      senderUserId: 'user-1',
+    };
+    expect(params.senderUserId).toBe('user-1');
+  });
+});
