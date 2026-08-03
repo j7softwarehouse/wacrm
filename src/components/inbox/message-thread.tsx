@@ -198,9 +198,6 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
-  // id -> nome do autor, para estampar no balão quando o operador muda
-  // (ver `message-author.ts`). Recalculado a cada refetch de mensagens.
-  const [authorNames, setAuthorNames] = useState<Record<string, string>>({});
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -344,33 +341,6 @@ export function MessageThread({
         console.error("Failed to fetch messages:", error);
       } else {
         onMessagesLoadedRef.current(data ?? []);
-
-        // Nomes dos autores para estampar no balão. A política
-        // `profiles_select` (migração 017) já permite a qualquer membro ler o
-        // perfil dos colegas da mesma conta, então uma consulta direta basta.
-        const authorIds = [
-          ...new Set(
-            (data ?? [])
-              .filter((m) => m.sender_type === "agent" && m.sender_id)
-              .map((m) => m.sender_id as string),
-          ),
-        ];
-
-        if (authorIds.length > 0) {
-          const { data: authorProfiles } = await supabase
-            .from("profiles")
-            .select("user_id, full_name, email")
-            .in("user_id", authorIds);
-          if (!cancelled) {
-            const names: Record<string, string> = {};
-            for (const p of authorProfiles ?? []) {
-              names[p.user_id] = p.full_name || p.email || "";
-            }
-            setAuthorNames(names);
-          }
-        } else if (!cancelled) {
-          setAuthorNames({});
-        }
       }
 
       if (!cancelled) setLoading(false);
@@ -804,6 +774,22 @@ export function MessageThread({
     messages.forEach((m, i) => map.set(m.id, i > 0 ? messages[i - 1] : null));
     return map;
   }, [messages]);
+
+  // id -> nome, derivado do `profiles` já carregado (todos os membros da
+  // conta, ver efeito acima) em vez de uma consulta escopada aos
+  // `sender_id` do snapshot de mensagens. Uma consulta escopada ficaria
+  // presa ao momento do fetch: uma mensagem nova chegando ao vivo via
+  // realtime (INSERT tratado no componente pai) de um operador que ainda
+  // não tinha mandado nada nessa conversa cairia sempre no fallback
+  // "Sistema" até o próximo refetch completo — justamente na mensagem que
+  // deveria acender o nome por causa da troca de operador.
+  const authorNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of profiles) {
+      map[p.user_id] = p.full_name || p.email || "";
+    }
+    return map;
+  }, [profiles]);
 
   // `sender_type` da mensagem inclui 'bot' (automação/Flow), que para fins
   // de agrupamento de autor conta como agente — a distinção que importa
