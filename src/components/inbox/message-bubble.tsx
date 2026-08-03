@@ -28,6 +28,12 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** De `shouldShowAuthor` — true só quando o operador muda em relação
+   * à mensagem anterior (ver `message-author.ts`). */
+  showAuthor?: boolean;
+  /** Nome do autor a estampar; ausente (automação/broadcast/API) cai
+   * no rótulo "Sistema". */
+  authorName?: string;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -264,6 +270,8 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  showAuthor,
+  authorName,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -293,6 +301,11 @@ export function MessageBubble({
             preview={reply.preview}
             onPrimary={isAgent}
           />
+        )}
+        {showAuthor && (
+          <span className="mb-0.5 block text-[11px] font-medium opacity-70">
+            {authorName || t('systemSender')}
+          </span>
         )}
         <MessageContent message={message} t={t} />
         <div
