@@ -9,7 +9,12 @@ import { SendMessageError } from './send-message';
 // (like/maybeSingle/single) resolve to configured data; the builder
 // itself is thenable so an awaited `update().eq()` resolves cleanly.
 // ------------------------------------------------------------
-type ContactRow = { id: string; phone: string; name?: string | null };
+type ContactRow = {
+  id: string;
+  phone: string;
+  name?: string | null;
+  source?: string;
+};
 
 interface Script {
   /** whatsapp_channels.maybeSingle. `id` is threaded into the
@@ -29,7 +34,13 @@ interface Script {
   existingConversationByCall?: (({ id: string } | null))[];
   insertedConversationId?: string; // conversations insert -> single
   insertConversationError?: { code?: string } | null;
+  /** When provided, every `.insert()`/`.update()` payload on any table
+   *  is pushed here — lets a test assert on what was actually written
+   *  (e.g. `source`) without every existing test needing to care. */
+  captureWrites?: CapturedWrite[];
 }
+
+type CapturedWrite = { table: string; op: 'insert' | 'update'; payload: unknown };
 
 function makeDb(script: Script): SupabaseClient {
   let table = '';
@@ -39,12 +50,14 @@ function makeDb(script: Script): SupabaseClient {
 
   const builder: Record<string, unknown> = {
     select: () => builder,
-    insert: () => {
+    insert: (payload: unknown) => {
       mode = 'insert';
+      script.captureWrites?.push({ table, op: 'insert', payload });
       return builder;
     },
-    update: () => {
+    update: (payload: unknown) => {
       mode = 'update';
+      script.captureWrites?.push({ table, op: 'update', payload });
       return builder;
     },
     eq: () => builder,
@@ -217,5 +230,72 @@ describe('resolveConversationByPhone', () => {
       contactId: 'c1',
       contactCreated: false,
     });
+  });
+
+  it('marca a origem manual ao criar um contato via API (mesmo criterio de lib/api/v1/contacts.ts)', async () => {
+    const writes: CapturedWrite[] = [];
+    const db = makeDb({
+      config: { id: 'chan-1', user_id: 'owner-1' },
+      contactCandidates: [],
+      insertedContactId: 'c2',
+      existingConversation: null,
+      insertedConversationId: 'cv2',
+      captureWrites: writes,
+    });
+    await resolveConversationByPhone(db, 'acct', '+14155550199', 'Jane');
+
+    const contactInsert = writes.find(
+      (w) => w.table === 'contacts' && w.op === 'insert'
+    );
+    expect(contactInsert?.payload).toMatchObject({ source: 'manual' });
+  });
+
+  it('promove um contato whatsapp para manual quando o nome muda via API', async () => {
+    const writes: CapturedWrite[] = [];
+    const db = makeDb({
+      config: { id: 'chan-1', user_id: 'owner-1' },
+      contactCandidates: [
+        { id: 'c1', phone: '14155550123', name: 'old', source: 'whatsapp' },
+      ],
+      existingConversation: { id: 'cv1' },
+      captureWrites: writes,
+    });
+    await resolveConversationByPhone(
+      db,
+      'acct',
+      '+1 (415) 555-0123',
+      'Nova Maria'
+    );
+
+    const contactUpdate = writes.find(
+      (w) => w.table === 'contacts' && w.op === 'update'
+    );
+    expect(contactUpdate?.payload).toMatchObject({
+      name: 'Nova Maria',
+      source: 'manual',
+    });
+  });
+
+  it('nao promove um contato ja identificado (import/manual) ao renomear via API', async () => {
+    const writes: CapturedWrite[] = [];
+    const db = makeDb({
+      config: { id: 'chan-1', user_id: 'owner-1' },
+      contactCandidates: [
+        { id: 'c1', phone: '14155550123', name: 'old', source: 'manual' },
+      ],
+      existingConversation: { id: 'cv1' },
+      captureWrites: writes,
+    });
+    await resolveConversationByPhone(
+      db,
+      'acct',
+      '+1 (415) 555-0123',
+      'Nova Maria'
+    );
+
+    const contactUpdate = writes.find(
+      (w) => w.table === 'contacts' && w.op === 'update'
+    );
+    expect(contactUpdate?.payload).not.toHaveProperty('source');
   });
 });

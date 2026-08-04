@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -264,6 +265,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         account_id: accountId,
         phone,
         name: uniqueByPhone.get(phone)?.name ?? null,
+        // Mesmo dado semântico que import-modal.tsx: lista trazida de
+        // fora, não um contato que escreveu nem um cadastro manual.
+        source: CONTACT_SOURCE.IMPORT,
       }));
 
     const INSERT_CHUNK = 200;

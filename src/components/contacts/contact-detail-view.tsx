@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -204,15 +205,27 @@ export function ContactDetailView({
     }
 
     setSavingDetails(true);
+    const trimmedName = editName.trim() || null;
+    const patch: Record<string, unknown> = {
+      name: trimmedName,
+      phone: editPhone.trim(),
+      email: editEmail.trim() || null,
+      company: editCompany.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    // Mesma regra do formulário de cadastro (contact-form.tsx): nomear
+    // um contato que chegou por mensagem é o ato de identificá-lo. Este
+    // painel é o caminho de edição mais usado da tela (abre ao clicar
+    // na linha), então precisa da mesma promoção.
+    if (
+      contact?.source === CONTACT_SOURCE.WHATSAPP &&
+      trimmedName !== (contact?.name ?? null)
+    ) {
+      patch.source = CONTACT_SOURCE.MANUAL;
+    }
     const { error } = await supabase
       .from('contacts')
-      .update({
-        name: editName.trim() || null,
-        phone: editPhone.trim(),
-        email: editEmail.trim() || null,
-        company: editCompany.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq('id', contactId);
 
     if (error) {
