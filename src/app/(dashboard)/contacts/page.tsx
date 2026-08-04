@@ -157,16 +157,13 @@ export default function ContactsPage() {
         setLoading(false);
         return;
       }
+      // Tag filter and unidentified-only are mutually exclusive (enforced
+      // in toggleTagFilter/toggleUnidentifiedOnly below), so this branch
+      // never needs to also filter by source: the RPC's total_count is
+      // always the true count of what's rendered. A combined filter would
+      // need a source parameter on the RPC (migration, out of scope here).
       const rows = (data ?? []) as { contact: Contact; total_count: number }[];
-      // The RPC has no source parameter (adding one is a migration change,
-      // out of scope here), so the unidentified-only filter is applied
-      // client-side on the page already fetched. Combining it with a tag
-      // filter is a rare case; total_count then reflects the tag match
-      // only, not the post-filter row count.
-      const visible = unidentifiedOnly
-        ? rows.filter((r) => isUnidentified(r.contact.source))
-        : rows;
-      contactRows = visible.map((r) => r.contact);
+      contactRows = rows.map((r) => r.contact);
       count = rows.length > 0 ? Number(rows[0].total_count) : 0;
     } else {
       let query = supabase
@@ -351,6 +348,10 @@ export default function ContactsPage() {
         ? prev.filter((id) => id !== tagId)
         : [...prev, tagId]
     );
+    // Mutually exclusive with unidentifiedOnly — see fetchContacts for why:
+    // the RPC total_count has no source filter, so both active at once
+    // would desync the header count/pagination from the visible rows.
+    setUnidentifiedOnly(false);
     setPage(0);
   }
 
@@ -360,6 +361,8 @@ export default function ContactsPage() {
   }
 
   function toggleUnidentifiedOnly() {
+    // Mutually exclusive with the tag filter — see fetchContacts for why.
+    if (!unidentifiedOnly) setSelectedTagIds([]);
     setUnidentifiedOnly((prev) => !prev);
     setPage(0);
   }
