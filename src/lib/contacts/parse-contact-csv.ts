@@ -40,13 +40,21 @@ export interface ParseContactCsvResult {
 }
 
 export function parseContactCsv(text: string): ParseContactCsvResult {
-  const lines = text.trim().split(/\r?\n/);
+  // O Excel em português salva CSV com ';' e prefixa BOM. Sem tratar os
+  // dois, o arquivo vira uma coluna só e os acentos se perdem — a
+  // importação falhava inteira e parecia erro do usuário.
+  const clean = text.replace(/^﻿/, '');
+  const lines = clean.trim().split(/\r?\n/);
   if (lines.length < 2) {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
+  // Vence o separador que produz mais colunas no cabeçalho.
+  const delimiter =
+    lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
+
   const headers = lines[0]
-    .split(',')
+    .split(delimiter)
     .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
 
   const phoneIdx = headers.indexOf('phone');
@@ -65,7 +73,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     const line = lines[i].trim();
     if (!line) continue;
 
-    const values = parseCsvLine(line);
+    const values = parseCsvLine(line, delimiter);
     const phone = values[phoneIdx]?.replace(/["']/g, '').trim();
     if (!phone) continue;
 
@@ -96,7 +104,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
 }
 
 /** Simple CSV line parse (handles quoted fields). */
-function parseCsvLine(line: string): string[] {
+function parseCsvLine(line: string, delimiter: string): string[] {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -104,7 +112,7 @@ function parseCsvLine(line: string): string[] {
   for (const char of line) {
     if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current.trim());
       current = '';
     } else {

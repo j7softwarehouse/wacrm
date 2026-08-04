@@ -71,3 +71,28 @@ describe('parseContactCsv', () => {
     });
   });
 });
+
+describe('parseContactCsv — compatibilidade com Excel pt-BR', () => {
+  it('aceita ponto e virgula como separador', () => {
+    // Excel em portugues salva CSV com ';'. Com split(',') o arquivo
+    // virava uma coluna so e a importacao falhava inteira.
+    const csv = 'phone;name\n553191234567;Angélica Nunes';
+    const { rows } = parseContactCsv(csv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].phone).toBe('553191234567');
+    expect(rows[0].name).toBe('Angélica Nunes');
+  });
+
+  it('continua aceitando virgula', () => {
+    const csv = 'phone,name\n553191234567,Angélica Nunes';
+    const { rows } = parseContactCsv(csv);
+    expect(rows[0].name).toBe('Angélica Nunes');
+  });
+
+  it('descarta o BOM que o Excel escreve no inicio do arquivo', () => {
+    const csv = '﻿phone;name\n553191234567;Bárbara';
+    const { rows } = parseContactCsv(csv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('Bárbara');
+  });
+});
