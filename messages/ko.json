@@ -276,6 +276,9 @@
     }
   },
   "Contacts": {
+    "newBadge": "신규",
+    "newBadgeTooltip": "미확인 연락처 — 수신 메시지로 유입",
+    "filterUnidentified": "미확인만",
     "page": {
       "title": "연락처",
       "subtitle": "연락처 목록을 관리하세요. 전체 연락처 {count}개.",

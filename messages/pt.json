@@ -282,6 +282,9 @@
     }
   },
   "Contacts": {
+    "newBadge": "Novo",
+    "newBadgeTooltip": "Contato ainda não identificado — chegou por mensagem recebida",
+    "filterUnidentified": "Somente não identificados",
     "page": {
       "title": "Contatos",
       "subtitle": "Gerencie sua lista de contatos. {count} contatos no total.",

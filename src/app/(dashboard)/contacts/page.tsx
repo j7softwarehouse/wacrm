@@ -57,6 +57,7 @@ import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import { CONTACT_SOURCE, isUnidentified } from '@/lib/contacts/source';
 
 const PAGE_SIZE = 25;
 
@@ -66,6 +67,9 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
+  // Shared with the inbox contact panel — kept at the `Contacts` root
+  // (not `.page`) so both consumers read the same badge/filter copy.
+  const tContacts = useTranslations('Contacts');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
@@ -77,6 +81,9 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  // Restricts the list to contacts nobody has identified yet
+  // (source = 'whatsapp') — the secretary's queue of who-is-this.
+  const [unidentifiedOnly, setUnidentifiedOnly] = useState(false);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -151,7 +158,15 @@ export default function ContactsPage() {
         return;
       }
       const rows = (data ?? []) as { contact: Contact; total_count: number }[];
-      contactRows = rows.map((r) => r.contact);
+      // The RPC has no source parameter (adding one is a migration change,
+      // out of scope here), so the unidentified-only filter is applied
+      // client-side on the page already fetched. Combining it with a tag
+      // filter is a rare case; total_count then reflects the tag match
+      // only, not the post-filter row count.
+      const visible = unidentifiedOnly
+        ? rows.filter((r) => isUnidentified(r.contact.source))
+        : rows;
+      contactRows = visible.map((r) => r.contact);
       count = rows.length > 0 ? Number(rows[0].total_count) : 0;
     } else {
       let query = supabase
@@ -163,6 +178,10 @@ export default function ContactsPage() {
       if (term) {
         const like = `%${term}%`;
         query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+      }
+
+      if (unidentifiedOnly) {
+        query = query.eq('source', CONTACT_SOURCE.WHATSAPP);
       }
 
       const { data, count: exactCount, error } = await query;
@@ -207,7 +226,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, unidentifiedOnly, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -323,7 +342,8 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
-  const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
+  const hasActiveFilters =
+    search.trim().length > 0 || selectedTagIds.length > 0 || unidentifiedOnly;
 
   function toggleTagFilter(tagId: string) {
     setSelectedTagIds((prev) =>
@@ -336,6 +356,11 @@ export default function ContactsPage() {
 
   function clearTagFilters() {
     setSelectedTagIds([]);
+    setPage(0);
+  }
+
+  function toggleUnidentifiedOnly() {
+    setUnidentifiedOnly((prev) => !prev);
     setPage(0);
   }
 
@@ -460,6 +485,19 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            aria-pressed={unidentifiedOnly}
+            onClick={toggleUnidentifiedOnly}
+            className={
+              unidentifiedOnly
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 dark:text-amber-400 shrink-0'
+                : 'border-border text-muted-foreground hover:bg-muted shrink-0'
+            }
+          >
+            {tContacts('filterUnidentified')}
+          </Button>
         </div>
 
         {/* Active tag-filter chips */}
@@ -601,7 +639,17 @@ export default function ContactsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                    <span className="inline-flex items-center">
+                      {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                      {isUnidentified(contact.source) && (
+                        <span
+                          title={tContacts('newBadgeTooltip')}
+                          className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+                        >
+                          {tContacts('newBadge')}
+                        </span>
+                      )}
+                    </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
                     {contact.phone}
