@@ -17,6 +17,7 @@ import {
   resolveImportTagIds,
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -278,6 +279,7 @@ export function ImportModal({
           name: row.name || null,
           email: row.email || null,
           company: row.company || null,
+          source: CONTACT_SOURCE.IMPORT,
         }));
 
         const { data, error } = await supabase

@@ -108,6 +108,10 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /** Como o contato entrou no sistema (Task 3). Opcional porque linhas
+   *  anteriores à migração e buscas com select parcial podem não trazer
+   *  a coluna — tratar ausência como não identificado, não como erro. */
+  source?: string;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the

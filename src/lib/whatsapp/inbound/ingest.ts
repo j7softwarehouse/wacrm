@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { runAutomationsForTrigger } from "@/lib/automations/engine";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
+import { CONTACT_SOURCE } from "@/lib/contacts/source";
 import { dispatchInboundToFlows } from "@/lib/flows/engine";
 import { dispatchWebhookEvent } from "@/lib/webhooks/deliver";
 import type { WhatsAppChannel } from "@/types";
@@ -298,6 +299,7 @@ async function findOrCreateContact(
       user_id: configOwnerUserId,
       phone,
       name: name || phone,
+      source: CONTACT_SOURCE.WHATSAPP,
     })
     .select()
     .single();
