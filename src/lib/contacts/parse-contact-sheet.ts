@@ -41,6 +41,37 @@ function cellToString(value: Row[number]): string {
   // Célula que o Excel formatou como data — não esperado nas colunas de
   // contato, mas convertida para não virar "[object Date]" na tela.
   if (value instanceof Date) return value.toISOString();
+
+  if (typeof value === 'number') {
+    // Quando a coluna (a mais comum é `phone`, a única obrigatória) não
+    // está formatada como Texto no Excel — o padrão quando alguém só
+    // digita os dígitos, exatamente o que uma secretária preenchendo
+    // telefone sem configurar a coluna faria —, a read-excel-file devolve
+    // a célula como `number`, não `string`. Um `String(number)` "cru" pode
+    // virar notação científica (ex. "5.5119876e12") ou sobrar um ".0" fora
+    // da faixa de inteiro seguro do JS. Para qualquer inteiro dentro de
+    // `Number.isSafeInteger` (até 2^53-1 — bem acima de qualquer telefone
+    // real) isso nunca acontece, então tratamos esse caso explicitamente
+    // em vez de confiar no comportamento default do `String()`.
+    //
+    // IMPORTANTE — zero à esquerda: se o Excel já gravou o telefone como
+    // número, um eventual zero à esquerda (comum em alguns formatos, ex.
+    // DDD começando com 0) já foi perdido pelo próprio Excel antes de
+    // chegar aqui — não tem como recuperar isso no parser. É uma
+    // limitação de como o Excel grava número vs. texto, não um bug deste
+    // código; a mitigação de verdade é formatar a coluna como Texto antes
+    // de digitar o telefone.
+    if (Number.isSafeInteger(value)) {
+      return value.toString(10);
+    }
+    // Caso extremo e improvável para telefone: número não-inteiro (tem
+    // casas decimais) ou inteiro fora da faixa segura do JS. Não existe
+    // conversão sensata para "recuperar" um telefone a partir de um valor
+    // assim, então caímos no `String()` padrão em vez de tentar adivinhar
+    // um arredondamento ou truncamento.
+    return String(value).trim();
+  }
+
   return String(value).trim();
 }
 

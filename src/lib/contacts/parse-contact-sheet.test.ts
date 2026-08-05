@@ -10,12 +10,25 @@ import { parseContactSheet } from './parse-contact-sheet';
 // binário. Ver `.superpowers/sdd/2026-07-31-adaptacao-escolar/
 // task-6-report.md` para como foi gerado.
 const FIXTURE_PATH = join(__dirname, '__fixtures__/contacts.xlsx');
+// Fixture irmão: mesma origem (fflate), mas a coluna `phone` é gravada como
+// célula NUMÉRICA (sem t="inlineStr"/t="s"), reproduzindo o que o Excel
+// grava quando a coluna não está formatada como Texto — o caso que
+// `cellToString` precisa tratar explicitamente (ver comentário na
+// implementação sobre notação científica e zero à esquerda).
+const FIXTURE_NUMERIC_PHONE_PATH = join(
+  __dirname,
+  '__fixtures__/contacts-phone-as-number.xlsx'
+);
 
-function loadXlsxFile(name = 'contacts.xlsx'): File {
-  const buffer = readFileSync(FIXTURE_PATH);
+function loadXlsxFileFrom(path: string, name: string): File {
+  const buffer = readFileSync(path);
   return new File([buffer], name, {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
+}
+
+function loadXlsxFile(name = 'contacts.xlsx'): File {
+  return loadXlsxFileFrom(FIXTURE_PATH, name);
 }
 
 function csvFile(content: string, name = 'contacts.csv'): File {
@@ -52,6 +65,20 @@ describe('parseContactSheet — .xlsx', () => {
   it('detecta o tipo pela extensão, sem diferenciar maiúsculas/minúsculas', async () => {
     const { rows } = await parseContactSheet(loadXlsxFile('CONTATOS.XLSX'));
     expect(rows).toHaveLength(2);
+  });
+
+  it('lê telefone gravado como célula numérica (coluna phone sem formatar como Texto no Excel)', async () => {
+    const file = loadXlsxFileFrom(
+      FIXTURE_NUMERIC_PHONE_PATH,
+      'contacts-phone-as-number.xlsx'
+    );
+    const { rows } = await parseContactSheet(file);
+
+    expect(rows).toHaveLength(1);
+    // 13 dígitos, dentro de Number.isSafeInteger — sem notação científica
+    // e sem ".0" sobrando.
+    expect(rows[0].phone).toBe('5531987654321');
+    expect(rows[0].name).toBe('Débora Ramos');
   });
 });
 
