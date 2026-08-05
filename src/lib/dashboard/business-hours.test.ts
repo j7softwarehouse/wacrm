@@ -96,4 +96,14 @@ describe('businessMinutesBetween', () => {
       ),
     ).toBe(720);
   });
+
+  it('arredonda para baixo intervalos com segundos nao-alinhados', () => {
+    // Terça 09:00:00 → 09:00:30 São Paulo = 30 segundos = 0 minutos
+    expect(
+      businessMinutesBetween(
+        utc('2026-08-04T12:00:00Z'),
+        utc('2026-08-04T12:00:30Z'),
+      ),
+    ).toBe(0);
+  });
 });
