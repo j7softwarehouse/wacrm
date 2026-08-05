@@ -63,9 +63,11 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
 }
 
 function MediaImage({ url, alt }: { url: string; alt: string }) {
+  const t = useTranslations("Inbox.bubble");
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const loadImage = useCallback(async () => {
     if (!url) return;
@@ -99,6 +101,17 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadImage]);
 
+  // Listener só existe enquanto a sobreposição está aberta -- evita
+  // capturar Escape globalmente para toda mensagem de imagem no chat.
+  useEffect(() => {
+    if (!expanded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [expanded]);
+
   if (error) {
     return (
       <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
@@ -116,12 +129,44 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
-    />
+    <>
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="block cursor-zoom-in"
+        aria-label={t("openMedia")}
+      >
+        <img
+          src={src ?? ""}
+          alt={alt}
+          className="max-h-64 max-w-60 rounded-lg object-contain"
+          onError={() => setError(true)}
+        />
+      </button>
+      {expanded && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setExpanded(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <img
+            src={src ?? ""}
+            alt={alt}
+            className="max-h-full max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <a
+            href={src ?? ""}
+            download
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-4 top-4 rounded-lg bg-white/90 px-3 py-1.5 text-sm font-medium text-black"
+          >
+            {t("downloadMedia")}
+          </a>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -154,11 +199,20 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <div>
+              <video
+                src={message.media_url}
+                controls
+                className="max-h-64 max-w-60 rounded-lg"
+              />
+              <a
+                href={message.media_url}
+                download
+                className="mt-1 inline-block text-xs font-medium underline underline-offset-2 opacity-80 hover:opacity-100"
+              >
+                {t("downloadMedia")}
+              </a>
+            </div>
           ) : (
             <MediaUnavailable label={t("video")} t={t} />
           )}

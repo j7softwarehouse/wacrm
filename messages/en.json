@@ -223,7 +223,10 @@
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
-      "systemSender": "System"
+      "systemSender": "System",
+      "openMedia": "Open full size",
+      "downloadMedia": "Download",
+      "closeMedia": "Close"
     },
     "actions": {
       "reply": "Reply",

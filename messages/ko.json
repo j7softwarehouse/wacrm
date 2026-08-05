@@ -217,7 +217,10 @@
       "unsupported": "[지원되지 않는 메시지 형식]",
       "aiBadge": "AI",
       "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
-      "systemSender": "시스템"
+      "systemSender": "시스템",
+      "openMedia": "원본 크기로 보기",
+      "downloadMedia": "다운로드",
+      "closeMedia": "닫기"
     },
     "actions": {
       "reply": "답장",
