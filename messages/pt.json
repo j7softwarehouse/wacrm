@@ -424,9 +424,9 @@
     },
     "importModal": {
       "title": "Importar Contatos",
-      "desc": "Faça upload de um CSV com uma coluna <phoneCode>phone</phoneCode> obrigatória. Opcional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por vírgula; cite células com múltiplas tags).",
-      "uploadDropzone": "Clique para escolher um arquivo CSV",
-      "uploadHint": ".csv até seu limite de navegador",
+      "desc": "Faça upload de um CSV ou XLSX com uma coluna <phoneCode>phone</phoneCode> obrigatória. Opcional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por vírgula; cite células com múltiplas tags).",
+      "uploadDropzone": "Clique para escolher um arquivo CSV ou XLSX",
+      "uploadHint": ".csv ou .xlsx até seu limite de navegador",
       "rowsReady": "{count} linha pronta",
       "rowsReady_plural": "{count} linhas prontas",
       "preview": "Visualizar · primeira {count}",

@@ -9,9 +9,9 @@ import {
   normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
-  parseContactCsv,
+  parseContactSheet,
   type ParsedContactRow,
-} from '@/lib/contacts/parse-contact-csv';
+} from '@/lib/contacts/parse-contact-sheet';
 import {
   assignImportedContactTags,
   resolveImportTagIds,
@@ -169,12 +169,13 @@ export function ImportModal({
     setFile(selected);
     setResult(null);
 
-    const text = await selected.text();
+    // parseContactSheet detecta .csv vs .xlsx pela extensão do arquivo e
+    // devolve o mesmo formato de resultado nos dois casos.
     const {
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
-    } = parseContactCsv(text);
+    } = await parseContactSheet(selected);
 
     if (rows.length === 0) {
       toast.error(t('toastNoValidRows'));
@@ -461,7 +462,7 @@ export function ImportModal({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={handleFileChange}
             className="hidden"
           />
