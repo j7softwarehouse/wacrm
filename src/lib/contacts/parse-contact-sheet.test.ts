@@ -19,6 +19,17 @@ const FIXTURE_NUMERIC_PHONE_PATH = join(
   __dirname,
   '__fixtures__/contacts-phone-as-number.xlsx'
 );
+// Fixture irmão: a coluna `phone` é gravada como célula numérica COM CASAS
+// DECIMAIS (551198765.4321) — o cenário que de fato exercita a proteção em
+// `cellToString`. `String(551198765.4321)` sozinho já dá o número exato,
+// sem notação científica (só apareceria a partir de 1e21, muito acima de
+// qualquer telefone real) — então o teste com inteiro simples abaixo
+// passaria de qualquer jeito, com ou sem a correção. Este é o que
+// realmente diferencia: sem truncar, o "." vaza pro campo `phone`.
+const FIXTURE_DECIMAL_PHONE_PATH = join(
+  __dirname,
+  '__fixtures__/contacts-phone-decimal.xlsx'
+);
 
 function loadXlsxFileFrom(path: string, name: string): File {
   const buffer = readFileSync(path);
@@ -67,7 +78,7 @@ describe('parseContactSheet — .xlsx', () => {
     expect(rows).toHaveLength(2);
   });
 
-  it('lê telefone gravado como célula numérica (coluna phone sem formatar como Texto no Excel)', async () => {
+  it('lê telefone gravado como célula numérica inteira (caminho feliz, não exercita a proteção contra decimal)', async () => {
     const file = loadXlsxFileFrom(
       FIXTURE_NUMERIC_PHONE_PATH,
       'contacts-phone-as-number.xlsx'
@@ -75,10 +86,25 @@ describe('parseContactSheet — .xlsx', () => {
     const { rows } = await parseContactSheet(file);
 
     expect(rows).toHaveLength(1);
-    // 13 dígitos, dentro de Number.isSafeInteger — sem notação científica
-    // e sem ".0" sobrando.
     expect(rows[0].phone).toBe('5531987654321');
     expect(rows[0].name).toBe('Débora Ramos');
+  });
+
+  it('trunca casas decimais espúrias de um telefone gravado como número (não deixa o "." vazar pro campo phone)', async () => {
+    const file = loadXlsxFileFrom(
+      FIXTURE_DECIMAL_PHONE_PATH,
+      'contacts-phone-decimal.xlsx'
+    );
+    const { rows } = await parseContactSheet(file);
+
+    expect(rows).toHaveLength(1);
+    // Célula gravada como 551198765.4321 (número, não texto). Sem truncar,
+    // `String(551198765.4321)` daria "551198765.4321" — este teste falha
+    // sem o `Math.trunc` em `cellToString` (confirmado manualmente antes
+    // de escrever o fix: ver task-6-report.md).
+    expect(rows[0].phone).toBe('551198765');
+    expect(rows[0].phone).not.toContain('.');
+    expect(rows[0].name).toBe('Fabíola Torres');
   });
 });
 

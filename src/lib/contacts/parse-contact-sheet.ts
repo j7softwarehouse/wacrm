@@ -47,12 +47,7 @@ function cellToString(value: Row[number]): string {
     // está formatada como Texto no Excel — o padrão quando alguém só
     // digita os dígitos, exatamente o que uma secretária preenchendo
     // telefone sem configurar a coluna faria —, a read-excel-file devolve
-    // a célula como `number`, não `string`. Um `String(number)` "cru" pode
-    // virar notação científica (ex. "5.5119876e12") ou sobrar um ".0" fora
-    // da faixa de inteiro seguro do JS. Para qualquer inteiro dentro de
-    // `Number.isSafeInteger` (até 2^53-1 — bem acima de qualquer telefone
-    // real) isso nunca acontece, então tratamos esse caso explicitamente
-    // em vez de confiar no comportamento default do `String()`.
+    // a célula como `number`, não `string`.
     //
     // IMPORTANTE — zero à esquerda: se o Excel já gravou o telefone como
     // número, um eventual zero à esquerda (comum em alguns formatos, ex.
@@ -61,15 +56,25 @@ function cellToString(value: Row[number]): string {
     // limitação de como o Excel grava número vs. texto, não um bug deste
     // código; a mitigação de verdade é formatar a coluna como Texto antes
     // de digitar o telefone.
-    if (Number.isSafeInteger(value)) {
+
+    // Notação científica do `String()` só aparece para magnitude >= 1e21
+    // — nenhum telefone real chega perto disso —, então um inteiro não
+    // precisa de tratamento especial: `value.toString(10)` já é exato,
+    // sem exponencial e sem ".0" sobrando.
+    if (Number.isInteger(value)) {
       return value.toString(10);
     }
-    // Caso extremo e improvável para telefone: número não-inteiro (tem
-    // casas decimais) ou inteiro fora da faixa segura do JS. Não existe
-    // conversão sensata para "recuperar" um telefone a partir de um valor
-    // assim, então caímos no `String()` padrão em vez de tentar adivinhar
-    // um arredondamento ou truncamento.
-    return String(value).trim();
+
+    // Não é inteiro: a célula tem casas decimais espúrias — acontece
+    // quando o valor veio colado de uma fórmula, ou a coluna está
+    // formatada como número genérico, mesmo contendo o que deveria ser
+    // um telefone inteiro (ex.: 551198765.4321). Telefone não tem casas
+    // decimais, então qualquer resto fracionário é artefato de
+    // formatação do Excel, não dígito significativo — truncar e manter
+    // só a parte inteira é mais seguro do que deixar o "." vazar pro
+    // campo `phone` (`String(551198765.4321)` daria
+    // `"551198765.4321"` sem truncar).
+    return Math.trunc(value).toString(10);
   }
 
   return String(value).trim();
