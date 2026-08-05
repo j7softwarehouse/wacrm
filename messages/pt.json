@@ -71,7 +71,11 @@
       "newTodayVsYesterday": "novos hoje vs ontem",
       "vsYesterday": "vs ontem",
       "openDeals": "{count} aberto {count, plural, =1 {negócio} other {negócios}}",
-      "noChange": "Sem alteração {suffix}"
+      "noChange": "Sem alteração {suffix}",
+      "awaitingReply": "Sem resposta há +30 min",
+      "awaitingReplyEmpty": "Tudo respondido",
+      "awaitingReplyClosed": "Fora do horário de atendimento",
+      "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente"
     },
     "quickActions": {
       "newContact": "Novo Contato",

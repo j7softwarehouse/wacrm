@@ -19,9 +19,15 @@ interface MetricCardProps {
   }
   /** Used instead of `delta` when the metric has a static subtitle. */
   subtitle?: string
+  /**
+   * Colors the big value. `alert` is for thresholds actually being
+   * breached right now (e.g. unanswered conversations) — keep it off
+   * `default` so it doesn't cry wolf for neutral/empty states.
+   */
+  tone?: 'default' | 'alert'
 }
 
-export function MetricCard({ title, value, icon: Icon, delta, subtitle }: MetricCardProps) {
+export function MetricCard({ title, value, icon: Icon, delta, subtitle, tone = 'default' }: MetricCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between">
@@ -30,7 +36,12 @@ export function MetricCard({ title, value, icon: Icon, delta, subtitle }: Metric
           <Icon className="h-4 w-4" />
         </div>
       </div>
-      <p className="mt-3 text-[28px] leading-none font-bold tabular-nums text-foreground">
+      <p
+        className={cn(
+          'mt-3 text-[28px] leading-none font-bold tabular-nums',
+          tone === 'alert' ? 'text-red-400' : 'text-foreground',
+        )}
+      >
         {value}
       </p>
       {delta ? <DeltaRow sign={delta.sign} label={delta.label} /> : subtitle ? (

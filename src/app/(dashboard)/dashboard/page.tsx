@@ -1,18 +1,19 @@
 "use client"
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { formatCurrency } from '@/lib/currency'
 import {
   MessageSquare,
   UserPlus,
-  DollarSign,
+  AlertTriangle,
   Send,
 } from 'lucide-react'
 
 import {
   loadActivity,
+  loadAwaitingReply,
   loadConversationsSeries,
   loadMetrics,
   loadPipelineDonut,
@@ -40,9 +41,12 @@ type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency } = useAuth()
+  const { defaultCurrency, accountId } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
+
+  const [awaitingReply, setAwaitingReply] = useState<{ count: number; withinHours: boolean } | null>(null)
+  const [awaitingReplyLoading, setAwaitingReplyLoading] = useState(true)
 
   const [range, setRange] = useState<RangeDays>(30)
   // Keep a cache per range so switching tabs doesn't re-fetch what we
@@ -102,6 +106,23 @@ export default function DashboardPage() {
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  // Separate effect: `accountId` resolves async (after the profile row
+  // loads), later than the mount that kicks off `loadAll`. Keeping this
+  // apart from `loadAll` means the other widgets don't re-fetch when
+  // `accountId` finally arrives.
+  useEffect(() => {
+    if (!accountId) {
+      setAwaitingReplyLoading(false)
+      return
+    }
+    const db = createClient()
+    setAwaitingReplyLoading(true)
+    loadAwaitingReply(db, accountId)
+      .then((r) => setAwaitingReply(r))
+      .catch((err) => console.error('[dashboard] awaiting reply failed:', err))
+      .finally(() => setAwaitingReplyLoading(false))
+  }, [accountId])
 
   // Range switch handler — kept in an event callback (not an effect)
   // so the setState calls stay out of the react-hooks/set-state-in-effect
@@ -164,12 +185,33 @@ export default function DashboardPage() {
                 ),
               }}
             />
-            <MetricCard
-              title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-              icon={DollarSign}
-              subtitle={t('openDeals', { count: metrics.openDealsCount })}
-            />
+            {awaitingReplyLoading || !awaitingReply ? (
+              <SkeletonCard />
+            ) : (
+              <Link href="/inbox" className="block">
+                <MetricCard
+                  title={t('awaitingReply')}
+                  value={
+                    !awaitingReply.withinHours
+                      ? t('awaitingReplyClosed')
+                      : awaitingReply.count > 0
+                      ? awaitingReply.count.toLocaleString()
+                      : t('awaitingReplyEmpty')
+                  }
+                  icon={AlertTriangle}
+                  subtitle={
+                    awaitingReply.withinHours && awaitingReply.count > 0
+                      ? t('awaitingReplyHint')
+                      : undefined
+                  }
+                  tone={
+                    awaitingReply.withinHours && awaitingReply.count > 0
+                      ? 'alert'
+                      : 'default'
+                  }
+                />
+              </Link>
+            )}
             <MetricCard
               title={t('messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}

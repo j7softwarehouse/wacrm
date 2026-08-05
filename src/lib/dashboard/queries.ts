@@ -7,6 +7,7 @@ import {
   mondayIndex,
   startOfLocalDay,
 } from './date-utils'
+import { businessMinutesBetween, isWithinBusinessHours } from './business-hours'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -97,6 +98,38 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       previous: messagesYesterday.count ?? 0,
     },
   }
+}
+
+// --- 1b. Conversas sem resposta há mais de 30 min de expediente --------
+
+/**
+ * Conversas em que o contato falou por último e que já acumularam mais
+ * de 30 minutos de EXPEDIENTE sem resposta. Fora do horário o card não
+ * acusa atraso — às 22h de domingo ninguém está devendo resposta.
+ */
+export async function loadAwaitingReply(
+  db: DB,
+  accountId: string,
+): Promise<{ count: number; withinHours: boolean }> {
+  const now = new Date()
+  if (!isWithinBusinessHours(now)) return { count: 0, withinHours: false }
+
+  const { data } = await db.rpc('conversations_awaiting_reply', {
+    p_account_id: accountId,
+  })
+
+  const rows = (data ?? []) as {
+    last_message_at: string | null
+    last_sender_type: string | null
+  }[]
+
+  const count = rows.filter((r) => {
+    if (r.last_sender_type !== 'customer') return false
+    if (!r.last_message_at) return false
+    return businessMinutesBetween(new Date(r.last_message_at), now) > 30
+  }).length
+
+  return { count, withinHours: true }
 }
 
 // --- 2. Conversations over time ---------------------------------------

@@ -70,6 +70,10 @@
       "messagesSentToday": "Messages Sent Today",
       "newTodayVsYesterday": "new today vs yesterday",
       "vsYesterday": "vs yesterday",
+      "awaitingReply": "Unanswered for 30+ min",
+      "awaitingReplyEmpty": "All caught up",
+      "awaitingReplyClosed": "Outside business hours",
+      "awaitingReplyHint": "Conversations where the contact spoke last and 30 business minutes have already passed",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
       "noChange": "No change {suffix}"
     },
