@@ -36,8 +36,15 @@ export function SettingsOverview({
 }: {
   onSelect: (section: SettingsSection) => void;
 }) {
-  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
-    useAuth();
+  const {
+    user,
+    profile,
+    accountId,
+    accountRole,
+    defaultCurrency,
+    canManageMembers,
+    salesEnabled,
+  } = useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
   const tRoles = useTranslations('Settings.roles');
@@ -194,11 +201,18 @@ export function SettingsOverview({
                 : ''
             }`,
     },
-    {
-      section: 'deals',
-      loading: false,
-      subtitle: `${defaultCurrency} — ${currencyLabel}`,
-    },
+    // Módulo de vendas desligado (Task 10): o ternário abaixo colapsa
+    // pra `[]` em vez de sumir com um `if` no meio do array literal —
+    // mantém a lista declarativa e o spread funciona igual.
+    ...(salesEnabled
+      ? [
+          {
+            section: 'deals' as const,
+            loading: false,
+            subtitle: `${defaultCurrency} — ${currencyLabel}`,
+          },
+        ]
+      : []),
     {
       section: 'fields',
       loading: countsLoading,

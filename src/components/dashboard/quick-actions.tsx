@@ -6,6 +6,9 @@ import type { ComponentType } from 'react'
 
 import { useTranslations } from 'next-intl'
 
+import { useAuth } from '@/hooks/use-auth'
+import { MODULES, type ModuleName } from '@/lib/accounts/modules'
+
 // Quick-action shortcuts. Each navigates to the page that owns the
 // relevant "create" flow. We deliberately don't try to auto-open any
 // modal on the target page — that'd require touching those pages,
@@ -15,21 +18,25 @@ interface Action {
   href: string
   icon: ComponentType<{ className?: string }>
   tint: string
+  /** Hidden when the account disabled this module (Task 10). */
+  module?: ModuleName
 }
 
 const ACTIONS: Action[] = [
   { labelKey: 'newContact', href: '/contacts', icon: UserPlus, tint: 'text-primary' },
-  { labelKey: 'newDeal', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400' },
+  { labelKey: 'newDeal', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400', module: MODULES.SALES },
   { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
   { labelKey: 'newAutomation', href: '/automations/new', icon: Zap, tint: 'text-primary' },
 ]
 
 export function QuickActions() {
   const t = useTranslations('Dashboard.quickActions')
-  
+  const { salesEnabled } = useAuth()
+  const actions = ACTIONS.filter((a) => !a.module || salesEnabled)
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {ACTIONS.map((a) => {
+      {actions.map((a) => {
         const Icon = a.icon
         return (
           <Link

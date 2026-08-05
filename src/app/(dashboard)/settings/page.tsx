@@ -42,7 +42,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, salesEnabled } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -50,7 +50,14 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  let section = resolveSection(searchParams.get('tab'));
+  // Módulo de vendas desligado (Task 10): mesmo que alguém cole
+  // `?tab=deals` direto na URL (o link já está escondido no rail e na
+  // Overview), a seção não é a de Negócios e moeda — cai na Overview
+  // como qualquer tab desconhecida.
+  if (section === 'deals' && !salesEnabled) {
+    section = 'overview';
+  }
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());

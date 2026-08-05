@@ -41,7 +41,7 @@ type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency, accountId } = useAuth()
+  const { defaultCurrency, accountId, salesEnabled } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
@@ -245,8 +245,17 @@ export default function DashboardPage() {
           stretched height so their rounded borders line up. Without
           this, the pipeline card rendered at its natural (shorter)
           height while the line chart drove the row height. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="h-full lg:col-span-3">
+      <div
+        className={
+          // Módulo de vendas desligado (Task 10): sem o donut de
+          // pipeline, o gráfico de conversas fica sozinho e ocupa a
+          // largura toda em vez de dividir 3/5.
+          salesEnabled
+            ? 'grid grid-cols-1 gap-4 lg:grid-cols-5'
+            : 'grid grid-cols-1 gap-4'
+        }
+      >
+        <div className={salesEnabled ? 'h-full lg:col-span-3' : 'h-full'}>
           <ConversationsChart
             series={series}
             loading={seriesLoading}
@@ -254,13 +263,15 @@ export default function DashboardPage() {
             onRangeChange={handleRangeChange}
           />
         </div>
-        <div className="h-full lg:col-span-2">
-          <PipelineDonut
-            data={pipeline}
-            loading={pipelineLoading}
-            currency={defaultCurrency}
-          />
-        </div>
+        {salesEnabled && (
+          <div className="h-full lg:col-span-2">
+            <PipelineDonut
+              data={pipeline}
+              loading={pipelineLoading}
+              currency={defaultCurrency}
+            />
+          </div>
+        )}
       </div>
 
       {/* Response time */}

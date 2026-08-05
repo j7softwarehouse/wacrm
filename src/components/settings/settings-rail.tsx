@@ -4,12 +4,21 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
+import { MODULES } from '@/lib/accounts/modules';
 import {
   RAIL_GROUPS,
   SECTION_META,
   SETTINGS_SECTIONS,
   type SettingsSection,
 } from './settings-sections';
+
+// Sections gated behind a module — hidden from the rail when the
+// account turned that module off (Task 10). Only cosmetic: the panel
+// map in the page itself is what actually keeps the content out.
+const SECTION_MODULE: Partial<Record<SettingsSection, typeof MODULES.SALES>> = {
+  deals: MODULES.SALES,
+};
 
 // Width at/above which the rail is a vertical column (already in view, so
 // no auto-scroll needed). Mirrors the Tailwind `lg:` breakpoint that
@@ -33,6 +42,7 @@ export function SettingsRail({
 }) {
   const t = useTranslations('Settings');
   const activeRef = useRef<HTMLButtonElement>(null);
+  const { salesEnabled } = useAuth();
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -56,9 +66,12 @@ export function SettingsRail({
       )}
     >
       {RAIL_GROUPS.map(({ label, group }) => {
-        const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
-        );
+        const items = SETTINGS_SECTIONS.filter((s) => {
+          if (SECTION_META[s].group !== group) return false;
+          const requiredModule = SECTION_MODULE[s];
+          if (requiredModule === MODULES.SALES) return salesEnabled;
+          return true;
+        });
         return (
           <div
             key={group}

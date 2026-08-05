@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
@@ -50,7 +51,19 @@ export default function PipelinesPage() {
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
-  const { accountId } = useAuth();
+  const router = useRouter();
+  const { accountId, salesEnabled, profileLoading } = useAuth();
+
+  // Bloqueio de rota de verdade (Task 10) — esconder o item do menu
+  // não impede alguém de digitar /pipelines direto na barra de
+  // endereço. Espera o profile resolver (`profileLoading`) antes de
+  // decidir: `salesEnabled` começa `true` durante o carregamento, e
+  // redirecionar cedo demais mandaria embora até contas com o módulo
+  // ligado.
+  useEffect(() => {
+    if (profileLoading) return;
+    if (!salesEnabled) router.replace("/dashboard");
+  }, [profileLoading, salesEnabled, router]);
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
@@ -296,6 +309,13 @@ export default function PipelinesPage() {
   }
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
+
+  // Módulo desligado: o effect acima já disparou o redirect, isso só
+  // evita que o board pisque na tela por um frame enquanto o router
+  // navega para /dashboard.
+  if (!profileLoading && !salesEnabled) {
+    return null;
+  }
 
   if (loading) {
     return (

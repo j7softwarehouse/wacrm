@@ -27,6 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { MODULES, type ModuleName } from "@/lib/accounts/modules";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -87,6 +88,13 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * When set, the item is hidden if the account disabled that module
+   * (Task 10). Note this only hides the menu entry — the route itself
+   * still has to enforce the block, since hiding the link doesn't stop
+   * anyone who types the URL directly.
+   */
+  module?: ModuleName;
 }
 
 const navItems: NavItem[] = [
@@ -94,7 +102,7 @@ const navItems: NavItem[] = [
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
-  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
+  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch, module: MODULES.SALES },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
@@ -116,7 +124,14 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, signOut, salesEnabled } =
+    useAuth();
+  // Filter first so `.map` below never sees an item whose module the
+  // account turned off. Hiding the entry is cosmetic — the route guard
+  // in `/pipelines` is what actually blocks access.
+  const visibleNavItems = navItems.filter(
+    (item) => !item.module || salesEnabled,
+  );
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -208,7 +223,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
