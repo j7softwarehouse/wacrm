@@ -106,17 +106,35 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
  * Conversas em que o contato falou por último e que já acumularam mais
  * de 30 minutos de EXPEDIENTE sem resposta. Fora do horário o card não
  * acusa atraso — às 22h de domingo ninguém está devendo resposta.
+ *
+ * `error: true` no retorno sinaliza que a RPC falhou — o chamador NÃO
+ * deve tratar isso como "tudo respondido" (`count: 0` sozinho seria
+ * indistinguível do caso feliz e faria o card mentir "sem pendências"
+ * bem na hora em que ninguém consegue confiar no número). O erro é
+ * logado aqui com o contexto que dá pra depurar (nome da RPC,
+ * accountId, mensagem), no mesmo padrão de `auto-reply.ts`/`knowledge.ts`.
  */
 export async function loadAwaitingReply(
   db: DB,
   accountId: string,
-): Promise<{ count: number; withinHours: boolean }> {
+): Promise<{ count: number; withinHours: boolean; error?: boolean }> {
   const now = new Date()
   if (!isWithinBusinessHours(now)) return { count: 0, withinHours: false }
 
-  const { data } = await db.rpc('conversations_awaiting_reply', {
+  const { data, error } = await db.rpc('conversations_awaiting_reply', {
     p_account_id: accountId,
   })
+
+  if (error) {
+    // Falha real (RPC renomeada/removida, RLS, timeout, migration não
+    // aplicada) não pode virar silenciosamente "0 pendências" — este é
+    // justamente o card que existe para alertar sobre atraso.
+    console.error(
+      '[dashboard] conversations_awaiting_reply failed:',
+      { accountId, message: error.message },
+    )
+    return { count: 0, withinHours: true, error: true }
+  }
 
   const rows = (data ?? []) as {
     last_message_at: string | null

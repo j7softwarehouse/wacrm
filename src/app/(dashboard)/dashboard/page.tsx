@@ -45,7 +45,7 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
-  const [awaitingReply, setAwaitingReply] = useState<{ count: number; withinHours: boolean } | null>(null)
+  const [awaitingReply, setAwaitingReply] = useState<{ count: number; withinHours: boolean; error?: boolean } | null>(null)
   const [awaitingReplyLoading, setAwaitingReplyLoading] = useState(true)
 
   const [range, setRange] = useState<RangeDays>(30)
@@ -192,7 +192,12 @@ export default function DashboardPage() {
                 <MetricCard
                   title={t('awaitingReply')}
                   value={
-                    !awaitingReply.withinHours
+                    // Falha de RPC não pode se disfarçar de "tudo
+                    // respondido" — um traço deixa claro que o número
+                    // não está disponível, em vez de mentir "0".
+                    awaitingReply.error
+                      ? '—'
+                      : !awaitingReply.withinHours
                       ? t('awaitingReplyClosed')
                       : awaitingReply.count > 0
                       ? awaitingReply.count.toLocaleString()
@@ -200,12 +205,12 @@ export default function DashboardPage() {
                   }
                   icon={AlertTriangle}
                   subtitle={
-                    awaitingReply.withinHours && awaitingReply.count > 0
+                    !awaitingReply.error && awaitingReply.withinHours && awaitingReply.count > 0
                       ? t('awaitingReplyHint')
                       : undefined
                   }
                   tone={
-                    awaitingReply.withinHours && awaitingReply.count > 0
+                    !awaitingReply.error && awaitingReply.withinHours && awaitingReply.count > 0
                       ? 'alert'
                       : 'default'
                   }
