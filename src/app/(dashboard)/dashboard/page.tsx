@@ -119,11 +119,27 @@ export default function DashboardPage() {
       return
     }
     const db = createClient()
-    setAwaitingReplyLoading(true)
-    loadAwaitingReply(db, accountId)
-      .then((r) => setAwaitingReply(r))
-      .catch((err) => console.error('[dashboard] awaiting reply failed:', err))
-      .finally(() => setAwaitingReplyLoading(false))
+
+    // "Sem resposta há +30 min" muda só com o tempo passando, não
+    // apenas quando uma mensagem nova chega — sem atualização
+    // periódica, a secretária só veria o alerta se recarregasse a
+    // página manualmente. `silent` evita o skeleton piscar a cada
+    // ciclo: só a primeira carga mostra o estado de loading.
+    const fetchAwaitingReply = (silent: boolean) => {
+      if (!silent) setAwaitingReplyLoading(true)
+      loadAwaitingReply(db, accountId)
+        .then((r) => setAwaitingReply(r))
+        .catch((err) => console.error('[dashboard] awaiting reply failed:', err))
+        .finally(() => setAwaitingReplyLoading(false))
+    }
+
+    fetchAwaitingReply(false)
+    const AWAITING_REPLY_REFRESH_MS = 60_000
+    const interval = setInterval(
+      () => fetchAwaitingReply(true),
+      AWAITING_REPLY_REFRESH_MS,
+    )
+    return () => clearInterval(interval)
   }, [accountId])
 
   // Range switch handler — kept in an event callback (not an effect)
