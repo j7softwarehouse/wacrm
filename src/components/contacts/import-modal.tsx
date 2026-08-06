@@ -170,12 +170,33 @@ export function ImportModal({
     setResult(null);
 
     // parseContactSheet detecta .csv vs .xlsx pela extensão do arquivo e
-    // devolve o mesmo formato de resultado nos dois casos.
+    // devolve o mesmo formato de resultado nos dois casos. Para .xlsx a
+    // leitura passa por read-excel-file (readSheet), que LANÇA em vez de
+    // devolver um resultado vazio quando o arquivo está corrompido, é um
+    // .xls renomeado, tem senha, ou o zip é inválido — sem o try/catch a
+    // promise rejeita dentro do handler e a tela não reage (nenhum toast,
+    // nenhum feedback).
+    let parsed: {
+      rows: ParsedContactRow[];
+      hasTagsColumn: boolean;
+      hasCompanyColumn: boolean;
+    };
+    try {
+      parsed = await parseContactSheet(selected);
+    } catch {
+      toast.error(t('toastParseFailed'));
+      setParsedRows([]);
+      setHasTagsColumn(false);
+      setHasCompanyColumn(false);
+      setTagColorByKey(new Map());
+      return;
+    }
+
     const {
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
-    } = await parseContactSheet(selected);
+    } = parsed;
 
     if (rows.length === 0) {
       toast.error(t('toastNoValidRows'));

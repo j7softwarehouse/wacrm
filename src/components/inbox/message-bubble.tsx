@@ -356,9 +356,15 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        {showAuthor && (
+        {/* Sem `authorName` resolvido — histórico anterior à Task 1 (coluna
+            `sender_id` nula em toda mensagem de agente) ou automação/
+            broadcast/API pública, que legitimamente nunca tem `sender_id` —
+            não renderiza rótulo nenhum. Mostrar "Sistema" seria falso no
+            caso do histórico (foi uma pessoa real que escreveu); decisão do
+            usuário: melhor nenhum rótulo do que um rótulo errado. */}
+        {showAuthor && authorName && (
           <span className="mb-0.5 block text-[11px] font-medium opacity-70">
-            {authorName || t('systemSender')}
+            {authorName}
           </span>
         )}
         <MessageContent message={message} t={t} />

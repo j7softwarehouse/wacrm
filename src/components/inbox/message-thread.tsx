@@ -780,8 +780,8 @@ export function MessageThread({
   // `sender_id` do snapshot de mensagens. Uma consulta escopada ficaria
   // presa ao momento do fetch: uma mensagem nova chegando ao vivo via
   // realtime (INSERT tratado no componente pai) de um operador que ainda
-  // não tinha mandado nada nessa conversa cairia sempre no fallback
-  // "Sistema" até o próximo refetch completo — justamente na mensagem que
+  // não tinha mandado nada nessa conversa cairia sempre sem rótulo de
+  // autor até o próximo refetch completo — justamente na mensagem que
   // deveria acender o nome por causa da troca de operador.
   const authorNames = useMemo(() => {
     const map: Record<string, string> = {};

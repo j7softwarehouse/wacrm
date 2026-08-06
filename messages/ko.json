@@ -221,7 +221,6 @@
       "unsupported": "[지원되지 않는 메시지 형식]",
       "aiBadge": "AI",
       "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
-      "systemSender": "시스템",
       "openMedia": "원본 크기로 보기",
       "downloadMedia": "다운로드",
       "closeMedia": "닫기"
@@ -453,6 +452,7 @@
       "importBtn": "{count}개 연락처 가져오기",
       "importBtn_plural": "{count}개 연락처 가져오기",
       "toastNoValidRows": "유효한 행을 찾을 수 없습니다. CSV에 \"phone\" 열 헤더가 있는지 확인하세요.",
+      "toastParseFailed": "파일을 읽을 수 없습니다. 파일이 손상되었거나 암호로 보호되어 있거나 지원되지 않는 형식인지 확인하세요.",
       "toastTagsWarning": "연락처는 가져왔지만 일부 태그 지정에 실패했습니다.",
       "toastImported": "연락처 {count}개를 가져왔습니다",
       "toastImported_plural": "연락처 {count}개를 가져왔습니다",

@@ -105,6 +105,31 @@ describe('loadAwaitingReply', () => {
     expect(out).toEqual({ count: 1, withinHours: true })
   })
 
+  it('conta como aguardando uma conversa com ultima mensagem de 1 ano atras, pelo caminho rapido', async () => {
+    // Terça 12:00 São Paulo = 15:00 UTC — dentro do expediente. A conversa
+    // nunca fecha sozinha (só automação fecha), então uma última mensagem
+    // de 1 ano atrás precisa contar como "aguardando" sem rodar o loop
+    // dia-a-dia de businessMinutesBetween (corte de 7 dias corridos em
+    // queries.ts). O teste verifica o RESULTADO — não mede duração, que é
+    // não-determinístico — mas a asserção só passa se o corte existir:
+    // sem ele, o loop ainda produziria a mesma resposta, só que lento, e
+    // por isso o valor real de proteção deste teste é de regressão de
+    // COMPORTAMENTO caso alguém reintroduza um teto (ex.: capar em 30
+    // dias) que corte errado; ver também a nota informal de performance
+    // no relatório final da revisão.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T15:00:00Z'))
+
+    const { db, state } = makeDb()
+    state.rows = [
+      { last_message_at: '2025-08-04T14:00:00Z', last_sender_type: 'customer' },
+    ]
+
+    const out = await loadAwaitingReply(db, 'acct-1')
+
+    expect(out).toEqual({ count: 1, withinHours: true })
+  })
+
   it('quando o RPC falha, loga o erro e sinaliza error em vez de fingir "tudo respondido"', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-04T15:00:00Z'))

@@ -108,6 +108,28 @@ describe('parseContactSheet — .xlsx', () => {
   });
 });
 
+describe('parseContactSheet — .xlsx corrompido', () => {
+  // Não existe infraestrutura de teste de componente React neste repositório
+  // (sem @testing-library/react, sem ambiente jsdom configurado no
+  // vitest.config.ts — só `renderToStaticMarkup` foi usado uma vez, para um
+  // teste que não depende de eventos/estado). Por isso este teste cobre o
+  // contrato que o try/catch em `import-modal.tsx` (handleFileChange)
+  // precisa respeitar — que `parseContactSheet` REJEITA (não retorna linhas
+  // vazias) para um .xlsx inválido — em vez de exercitar o handler do modal
+  // ponta a ponta com um toast real.
+  it('rejeita (não engole em silêncio) quando o zip do .xlsx é inválido', async () => {
+    const bogus = new File(
+      [new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04])],
+      'corrompido.xlsx',
+      {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }
+    );
+
+    await expect(parseContactSheet(bogus)).rejects.toBeTruthy();
+  });
+});
+
 describe('parseContactSheet — .csv (delegação)', () => {
   it('delega para o parser de CSV já corrigido, inclusive separador ";" e BOM', async () => {
     const csv = '﻿phone;name\n553191234567;Cátia Lima';

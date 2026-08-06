@@ -227,7 +227,6 @@
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
-      "systemSender": "System",
       "openMedia": "Open full size",
       "downloadMedia": "Download",
       "closeMedia": "Close"
@@ -460,6 +459,7 @@
       "importBtn": "Import {count} contact",
       "importBtn_plural": "Import {count} contacts",
       "toastNoValidRows": "No valid rows found. Ensure CSV has a \"phone\" column header.",
+      "toastParseFailed": "Couldn't read the file. Check that it isn't corrupted, password-protected, or in an unsupported format.",
       "toastTagsWarning": "Contacts imported, but some tag assignments failed.",
       "toastImported": "{count} contact imported",
       "toastImported_plural": "{count} contacts imported",
