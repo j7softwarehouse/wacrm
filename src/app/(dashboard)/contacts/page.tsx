@@ -49,6 +49,9 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -84,6 +87,25 @@ export default function ContactsPage() {
   // Restricts the list to contacts nobody has identified yet
   // (source = 'whatsapp') — the secretary's queue of who-is-this.
   const [unidentifiedOnly, setUnidentifiedOnly] = useState(false);
+  // Ordenação da lista. Default reproduz o comportamento anterior a
+  // esta feature (mais recente primeiro), para não mudar a ordem que
+  // ninguém pediu para mudar.
+  const [sortColumn, setSortColumn] = useState<'name' | 'created_at'>(
+    'created_at',
+  );
+  const [sortAscending, setSortAscending] = useState(false);
+
+  function toggleSort(column: 'name' | 'created_at') {
+    if (sortColumn === column) {
+      setSortAscending((prev) => !prev);
+    } else {
+      setSortColumn(column);
+      // Nome começa em A-Z (mais natural para texto); data começa do
+      // mais recente (mantém o comportamento que já existia).
+      setSortAscending(column === 'name');
+    }
+    setPage(0);
+  }
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -150,6 +172,8 @@ export default function ContactsPage() {
         p_search: term || null,
         p_limit: PAGE_SIZE,
         p_offset: from,
+        p_sort_column: sortColumn,
+        p_sort_ascending: sortAscending,
       });
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
@@ -169,7 +193,7 @@ export default function ContactsPage() {
       let query = supabase
         .from('contacts')
         .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order(sortColumn, { ascending: sortAscending })
         .range(from, to);
 
       if (term) {
@@ -223,7 +247,17 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, unidentifiedOnly, tagsMap, t]);
+  }, [
+    supabase,
+    page,
+    search,
+    selectedTagIds,
+    unidentifiedOnly,
+    sortColumn,
+    sortAscending,
+    tagsMap,
+    t,
+  ]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -582,12 +616,46 @@ export default function ContactsPage() {
                   aria-label="Select all contacts on this page"
                 />
               </TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
+              <TableHead className="text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('name')}
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                >
+                  {t('tableColumns.name')}
+                  {sortColumn === 'name' ? (
+                    sortAscending ? (
+                      <ArrowUp className="size-3.5" />
+                    ) : (
+                      <ArrowDown className="size-3.5" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="size-3.5 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('created_at')}
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                >
+                  {t('tableColumns.createdAt')}
+                  {sortColumn === 'created_at' ? (
+                    sortAscending ? (
+                      <ArrowUp className="size-3.5" />
+                    ) : (
+                      <ArrowDown className="size-3.5" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="size-3.5 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
