@@ -196,12 +196,13 @@ export default function DashboardPage() {
                     !awaitingReply.error &&
                     awaitingReply.withinHours &&
                     awaitingReply.count > 0
-                  // Ícone e peso tipográfico refletem o que o estado
-                  // realmente é: alerta de verdade merece o triângulo
-                  // e o número grande; "fora do horário" e "tudo
-                  // respondido" são estados neutros/positivos, não
-                  // avisos — um relógio ou um check pesa menos, e a
-                  // frase de status não precisa do tamanho de métrica.
+                  // Ícone reflete o que o estado realmente é: alerta
+                  // de verdade merece o triângulo; "fora do horário" e
+                  // "tudo respondido" são estados neutros/positivos,
+                  // não avisos — relógio e check pesam menos. O valor
+                  // grande fica sempre curto (mesmo padrão dos outros
+                  // cards do dashboard); a frase de status vai no
+                  // rodapé pequeno, junto com o resto dos cards.
                   const icon = awaitingReply.error
                     ? AlertTriangle
                     : !awaitingReply.withinHours
@@ -219,16 +220,19 @@ export default function DashboardPage() {
                         // mentir "0".
                         awaitingReply.error
                           ? '—'
-                          : !awaitingReply.withinHours
-                            ? t('awaitingReplyClosed')
-                            : awaitingReply.count > 0
-                              ? awaitingReply.count.toLocaleString()
-                              : t('awaitingReplyEmpty')
+                          : awaitingReply.count.toLocaleString()
                       }
                       icon={icon}
-                      subtitle={hasRealAlert ? t('awaitingReplyHint') : undefined}
+                      subtitle={
+                        awaitingReply.error
+                          ? t('awaitingReplyErrorHint')
+                          : !awaitingReply.withinHours
+                            ? t('awaitingReplyClosed')
+                            : hasRealAlert
+                              ? t('awaitingReplyHint')
+                              : t('awaitingReplyEmpty')
+                      }
                       tone={hasRealAlert ? 'alert' : 'default'}
-                      compactValue={!awaitingReply.error && !hasRealAlert}
                     />
                   )
                 })()}

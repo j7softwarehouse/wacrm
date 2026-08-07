@@ -74,6 +74,7 @@
       "awaitingReplyEmpty": "All caught up",
       "awaitingReplyClosed": "Outside business hours",
       "awaitingReplyHint": "Conversations where the contact spoke last and 30 business minutes have already passed",
+      "awaitingReplyErrorHint": "Couldn't load right now",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
       "noChange": "No change {suffix}"
     },

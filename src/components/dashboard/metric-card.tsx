@@ -25,24 +25,9 @@ interface MetricCardProps {
    * `default` so it doesn't cry wolf for neutral/empty states.
    */
   tone?: 'default' | 'alert'
-  /**
-   * Para valores que são uma FRASE de status (ex.: "Fora do horário de
-   * atendimento"), não um número — a tipografia de métrica (28px,
-   * negrito) fica pesada para uma frase de estado neutro. Reduz o
-   * tamanho e o peso, mantendo o número normal do card inalterado.
-   */
-  compactValue?: boolean
 }
 
-export function MetricCard({
-  title,
-  value,
-  icon: Icon,
-  delta,
-  subtitle,
-  tone = 'default',
-  compactValue = false,
-}: MetricCardProps) {
+export function MetricCard({ title, value, icon: Icon, delta, subtitle, tone = 'default' }: MetricCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between">
@@ -53,11 +38,8 @@ export function MetricCard({
       </div>
       <p
         className={cn(
-          'mt-3 tabular-nums',
-          compactValue
-            ? 'text-base leading-snug font-medium text-muted-foreground'
-            : 'text-[28px] leading-none font-bold',
-          !compactValue && (tone === 'alert' ? 'text-red-400' : 'text-foreground'),
+          'mt-3 text-[28px] leading-none font-bold tabular-nums',
+          tone === 'alert' ? 'text-red-400' : 'text-foreground',
         )}
       >
         {value}

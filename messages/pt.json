@@ -75,7 +75,8 @@
       "awaitingReply": "Sem resposta há +30 min",
       "awaitingReplyEmpty": "Tudo respondido",
       "awaitingReplyClosed": "Fora do horário de atendimento",
-      "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente"
+      "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente",
+      "awaitingReplyErrorHint": "Não foi possível carregar agora"
     },
     "quickActions": {
       "newContact": "Novo Contato",
