@@ -188,7 +188,7 @@ export async function storeEncryptedInboundMedia(
     const encrypted = new Uint8Array(await response.arrayBuffer());
     const plaintext = decryptWhatsAppMedia(encrypted, mediaKeyBase64, mediaType);
 
-    const ext = mimetype.split("/")[1]?.split(";")[0] || "bin";
+    const ext = stripMimeTypeParams(mimetype).split("/")[1] || "bin";
     return await uploadBytes(accountId, plaintext, `media.${ext}`, mimetype);
   } catch (err) {
     console.error(

@@ -23,4 +23,8 @@ describe('stripMimeTypeParams', () => {
   it('tira espaco em volta do tipo base', () => {
     expect(stripMimeTypeParams('  audio/mpeg  ;bitrate=128')).toBe('audio/mpeg');
   });
+
+  it('descarta todos os parametros quando ha mais de um', () => {
+    expect(stripMimeTypeParams('audio/ogg; codecs=opus; foo=bar')).toBe('audio/ogg');
+  });
 });
