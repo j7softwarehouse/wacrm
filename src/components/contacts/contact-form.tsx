@@ -12,6 +12,7 @@ import {
   isUniqueViolation,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import {
   Dialog,
   DialogContent,
@@ -150,15 +151,24 @@ export function ContactForm({
       let contactId = contact?.id;
 
       if (isEdit && contactId) {
+        const trimmedName = name.trim() || null;
+        const patch: Record<string, unknown> = {
+          name: trimmedName,
+          phone: phone.trim(),
+          email: email.trim() || null,
+          company: company.trim() || null,
+          updated_at: new Date().toISOString(),
+        };
+        // Salvar este formulário É o ato de identificar o contato — não
+        // só trocar o nome. A secretária pode abrir, conferir que está
+        // tudo certo e salvar sem tocar no nome; isso já é confirmação
+        // de que alguém olhou e reconheceu esse contato.
+        if (contact?.source === CONTACT_SOURCE.WHATSAPP) {
+          patch.source = CONTACT_SOURCE.MANUAL;
+        }
         const { error } = await supabase
           .from('contacts')
-          .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
+          .update(patch)
           .eq('id', contactId);
         if (error) throw error;
       } else {
@@ -171,6 +181,9 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            // Cadastro manual já nasce identificado — alguém sabia quem
+            // era ao criá-lo.
+            source: CONTACT_SOURCE.MANUAL,
           })
           .select('id')
           .single();

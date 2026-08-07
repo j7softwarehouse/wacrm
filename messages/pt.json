@@ -71,7 +71,12 @@
       "newTodayVsYesterday": "novos hoje vs ontem",
       "vsYesterday": "vs ontem",
       "openDeals": "{count} aberto {count, plural, =1 {negócio} other {negócios}}",
-      "noChange": "Sem alteração {suffix}"
+      "noChange": "Sem alteração {suffix}",
+      "awaitingReply": "Sem resposta há +30 min",
+      "awaitingReplyEmpty": "Tudo respondido",
+      "awaitingReplyClosed": "Fora do horário de atendimento",
+      "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente",
+      "awaitingReplyErrorHint": "Não foi possível carregar agora"
     },
     "quickActions": {
       "newContact": "Novo Contato",
@@ -222,7 +227,10 @@
       "interactiveReply": "[Resposta interativa]",
       "unsupported": "[Tipo de mensagem não suportado]",
       "aiBadge": "IA",
-      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA"
+      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
+      "openMedia": "Abrir em tamanho real",
+      "downloadMedia": "Baixar",
+      "closeMedia": "Fechar"
     },
     "actions": {
       "reply": "Responder",
@@ -281,6 +289,9 @@
     }
   },
   "Contacts": {
+    "newBadge": "Novo",
+    "newBadgeTooltip": "Contato ainda não identificado — chegou por mensagem recebida",
+    "filterUnidentified": "Somente não identificados",
     "page": {
       "title": "Contatos",
       "subtitle": "Gerencie sua lista de contatos. {count} contatos no total.",
@@ -420,9 +431,9 @@
     },
     "importModal": {
       "title": "Importar Contatos",
-      "desc": "Faça upload de um CSV com uma coluna <phoneCode>phone</phoneCode> obrigatória. Opcional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por vírgula; cite células com múltiplas tags).",
-      "uploadDropzone": "Clique para escolher um arquivo CSV",
-      "uploadHint": ".csv até seu limite de navegador",
+      "desc": "Faça upload de um CSV ou XLSX com uma coluna <phoneCode>phone</phoneCode> obrigatória. Opcional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por vírgula; cite células com múltiplas tags).",
+      "uploadDropzone": "Clique para escolher um arquivo CSV ou XLSX",
+      "uploadHint": ".csv ou .xlsx até seu limite de navegador",
       "rowsReady": "{count} linha pronta",
       "rowsReady_plural": "{count} linhas prontas",
       "preview": "Visualizar · primeira {count}",
@@ -449,6 +460,8 @@
       "importBtn": "Importar {count} contato",
       "importBtn_plural": "Importar {count} contatos",
       "toastNoValidRows": "Nenhuma linha válida encontrada. Certifique-se de que o CSV tem um cabeçalho de coluna \"phone\".",
+      "toastMissingPhoneColumn": "Coluna de telefone não encontrada. Colunas do arquivo: {headers}. Renomeie a coluna de telefone para \"phone\" ou \"telefone\" e importe de novo.",
+      "toastParseFailed": "Não foi possível ler o arquivo. Confira se não está corrompido, protegido por senha, ou num formato não suportado.",
       "toastTagsWarning": "Contatos importados, mas algumas atribuições de tags falharam.",
       "toastImported": "{count} contato importado",
       "toastImported_plural": "{count} contatos importados",
@@ -981,6 +994,66 @@
         "matchExact": "Exato",
         "closeConversationHint": "Define o status da conversa como \"fechado\". Nenhuma configuração necessária."
       }
+    },
+    "templates": {
+      "welcome_message": {
+        "name": "Mensagem de Boas-vindas",
+        "description": "Responde automaticamente a contatos de primeira vez com uma saudação."
+      },
+      "out_of_office": {
+        "name": "Fora do Expediente",
+        "description": "Responde automaticamente fora do horário para ninguém ficar esperando."
+      },
+      "lead_qualifier": {
+        "name": "Qualificador de Lead",
+        "description": "Faz perguntas de qualificação para filtrar leads recebidos."
+      },
+      "follow_up_reminder": {
+        "name": "Lembrete de Retorno",
+        "description": "Envia um lembrete se um contato não responder em 24 horas."
+      }
+    }
+  },
+  "Agents": {
+    "page": {
+      "title": "Agentes IA",
+      "subtitle": "Seu agente de IA com chave própria — configure e teste no playground antes que ele responda clientes na caixa de entrada.",
+      "tabPlayground": "Playground",
+      "tabSetup": "Configuração",
+      "tabUsage": "Uso"
+    },
+    "playground": {
+      "title": "Playground",
+      "subtitleHint": "— teste as respostas como se você fosse um cliente",
+      "reset": "Reiniciar",
+      "emptyTitle": "Envie uma mensagem para ver como seu agente responderia.",
+      "emptyHint": "Ele usa sua base de conhecimento e se comporta exatamente como o bot de resposta automática — incluindo o repasse.",
+      "goToSetup": "Ainda não configurado? Ir para Configuração",
+      "handoffNotice": "Repassaria para um humano aqui",
+      "thinking": "Pensando…",
+      "composerPlaceholder": "Digite uma mensagem de cliente…",
+      "notConfigured": "Nenhum agente configurado ainda — finalize a Configuração primeiro.",
+      "replyError": "Não foi possível obter uma resposta.",
+      "connectionError": "Não foi possível conectar ao agente."
+    },
+    "usage": {
+      "title": "Uso de tokens",
+      "description": "Tokens gastos na sua chave do provedor por rascunhos e pelo bot de resposta automática. Apenas contagens — nenhum conteúdo de mensagem é armazenado aqui.",
+      "last7Days": "Últimos 7 dias",
+      "last30Days": "Últimos 30 dias",
+      "last90Days": "Últimos 90 dias",
+      "loadError": "Falha ao carregar o uso",
+      "emptyTitle": "Nenhum uso de IA nos últimos {days} dias ainda.",
+      "emptyHint": "Isso vai sendo preenchido conforme o assistente gera rascunhos e respostas automáticas.",
+      "totalTokens": "Tokens totais",
+      "llmCalls": "Chamadas de IA",
+      "autoReply": "Resposta automática",
+      "drafts": "Rascunhos",
+      "tokensPerDay": "Tokens por dia",
+      "byModel": "Por modelo",
+      "call": "chamada",
+      "callsPlural": "chamadas",
+      "truncatedNotice": "Exibindo uma janela parcial — o uso é alto o suficiente para que só os registros mais recentes sejam resumidos aqui."
     }
   },
   "Flows": {
@@ -1677,6 +1750,7 @@
       "title": "Setup do agente",
       "description": "Traga sua própria chave OpenAI ou Anthropic. wacrm chama o provedor diretamente com sua chave — sem taxas de IA por assento, e seus dados permanecem seus. Isso alimenta respostas com rascunho de IA na caixa de entrada, o bot de resposta automática, e o Playground.",
       "adminOnlyConfig": "Apenas administradores e proprietários podem alterar a configuração de IA.",
+      "loading": "Carregando…",
       "loadFailed": "Falha ao carregar configuração de IA",
       "providerAndKey": "Provedor e chave",
       "encryptionNotice": "Sua chave é criptografada em repouso (AES-256-GCM) e nunca mostrada novamente após salvar.",

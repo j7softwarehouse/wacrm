@@ -70,6 +70,11 @@
       "messagesSentToday": "Messages Sent Today",
       "newTodayVsYesterday": "new today vs yesterday",
       "vsYesterday": "vs yesterday",
+      "awaitingReply": "Unanswered for 30+ min",
+      "awaitingReplyEmpty": "All caught up",
+      "awaitingReplyClosed": "Outside business hours",
+      "awaitingReplyHint": "Conversations where the contact spoke last and 30 business minutes have already passed",
+      "awaitingReplyErrorHint": "Couldn't load right now",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
       "noChange": "No change {suffix}"
     },
@@ -222,7 +227,10 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "openMedia": "Open full size",
+      "downloadMedia": "Download",
+      "closeMedia": "Close"
     },
     "actions": {
       "reply": "Reply",
@@ -281,6 +289,9 @@
     }
   },
   "Contacts": {
+    "newBadge": "New",
+    "newBadgeTooltip": "Unidentified contact — arrived via inbound message",
+    "filterUnidentified": "Unidentified only",
     "page": {
       "title": "Contacts",
       "subtitle": "Manage your contact list. {count} total contacts.",
@@ -420,9 +431,9 @@
     },
     "importModal": {
       "title": "Import Contacts",
-      "desc": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
-      "uploadDropzone": "Click to choose a CSV file",
-      "uploadHint": ".csv up to your browser limit",
+      "desc": "Upload a CSV or XLSX with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
+      "uploadDropzone": "Click to choose a CSV or XLSX file",
+      "uploadHint": ".csv or .xlsx up to your browser limit",
       "rowsReady": "{count} row ready",
       "rowsReady_plural": "{count} rows ready",
       "preview": "Preview · first {count}",
@@ -449,6 +460,8 @@
       "importBtn": "Import {count} contact",
       "importBtn_plural": "Import {count} contacts",
       "toastNoValidRows": "No valid rows found. Ensure CSV has a \"phone\" column header.",
+      "toastMissingPhoneColumn": "Phone column not found. File columns: {headers}. Rename the phone column to \"phone\" and import again.",
+      "toastParseFailed": "Couldn't read the file. Check that it isn't corrupted, password-protected, or in an unsupported format.",
       "toastTagsWarning": "Contacts imported, but some tag assignments failed.",
       "toastImported": "{count} contact imported",
       "toastImported_plural": "{count} contacts imported",
@@ -981,6 +994,66 @@
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
+    },
+    "templates": {
+      "welcome_message": {
+        "name": "Welcome Message",
+        "description": "Auto-reply to first-time contacts with a greeting."
+      },
+      "out_of_office": {
+        "name": "Out of Office",
+        "description": "Auto-reply during off-hours so nobody is left waiting."
+      },
+      "lead_qualifier": {
+        "name": "Lead Qualifier",
+        "description": "Ask qualification questions to filter inbound leads."
+      },
+      "follow_up_reminder": {
+        "name": "Follow-up Reminder",
+        "description": "Send a nudge if a contact has not replied within 24 hours."
+      }
+    }
+  },
+  "Agents": {
+    "page": {
+      "title": "AI Agents",
+      "subtitle": "Your bring-your-own-key AI agent — set it up, then test it in the playground before it replies to customers in the inbox.",
+      "tabPlayground": "Playground",
+      "tabSetup": "Setup",
+      "tabUsage": "Usage"
+    },
+    "playground": {
+      "title": "Playground",
+      "subtitleHint": "— test replies as if you were a customer",
+      "reset": "Reset",
+      "emptyTitle": "Send a message to see how your agent would reply.",
+      "emptyHint": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+      "goToSetup": "Not set up yet? Go to Setup",
+      "handoffNotice": "Would hand off to a human here",
+      "thinking": "Thinking…",
+      "composerPlaceholder": "Type a customer message…",
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "replyError": "Couldn't get a reply.",
+      "connectionError": "Couldn't reach the agent."
+    },
+    "usage": {
+      "title": "Token usage",
+      "description": "Tokens spent on your provider key by drafts and the auto-reply bot. Counts only — no message content is stored here.",
+      "last7Days": "Last 7 days",
+      "last30Days": "Last 30 days",
+      "last90Days": "Last 90 days",
+      "loadError": "Failed to load usage",
+      "emptyTitle": "No AI usage in the last {days} days yet.",
+      "emptyHint": "This fills in as the assistant drafts and auto-replies.",
+      "totalTokens": "Total tokens",
+      "llmCalls": "LLM calls",
+      "autoReply": "Auto-reply",
+      "drafts": "Drafts",
+      "tokensPerDay": "Tokens per day",
+      "byModel": "By model",
+      "call": "call",
+      "callsPlural": "calls",
+      "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
     }
   },
   "Flows": {
@@ -1689,6 +1762,7 @@
       "title": "Agent setup",
       "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
+      "loading": "Loading…",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",
       "encryptionNotice": "Your key is encrypted at rest (AES-256-GCM) and never shown again after saving.",

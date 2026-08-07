@@ -20,6 +20,7 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import { isModuleEnabled, MODULES } from "@/lib/accounts/modules";
 
 interface Profile {
   id: string;
@@ -43,6 +44,13 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /**
+   * Modules this account turned off (opt-out — see
+   * `src/lib/accounts/modules.ts`). NOT NULL DEFAULT '{}' in the DB
+   * (Task 3), so an empty/absent array always means "everything on"
+   * and no existing account changes behaviour.
+   */
+  disabled_modules: string[] | null;
 }
 
 interface AuthContextValue {
@@ -102,6 +110,14 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /**
+   * True unless the account explicitly disabled the sales module
+   * (`disabled_modules` contains `'sales'`). Opt-out, so it's true
+   * while loading and for every account that never touched the
+   * column — gates that read this fail OPEN, not closed, matching
+   * "no existing account changes behaviour".
+   */
+  salesEnabled: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -171,7 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
             // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            // disabled_modules added by Task 3 (opt-out module gate).
+            .select("id, name, default_currency, disabled_modules")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -186,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              disabled_modules: account.disabled_modules ?? null,
             };
           }
         }
@@ -333,6 +351,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.account_role, profile?.account_id]);
 
+  // Opt-out module gate (Task 10). Computed from `account`, not
+  // `profile`, and defaults to enabled while `account` is still null
+  // (loading, or no account resolved) so nothing flashes "off" first.
+  const salesEnabled = useMemo(
+    () => isModuleEnabled(account?.disabled_modules, MODULES.SALES),
+    [account?.disabled_modules],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -345,6 +371,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         ...derived,
+        salesEnabled,
       }}
     >
       {children}
@@ -383,6 +410,9 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      // Opt-out: fail OPEN like every other account with no
+      // configuration, not closed like the role gates above.
+      salesEnabled: true,
     };
   }
   return ctx;

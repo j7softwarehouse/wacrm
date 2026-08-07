@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
@@ -50,7 +51,19 @@ export default function PipelinesPage() {
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
-  const { accountId } = useAuth();
+  const router = useRouter();
+  const { accountId, salesEnabled, profileLoading } = useAuth();
+
+  // Bloqueio de rota de verdade (Task 10) — esconder o item do menu
+  // não impede alguém de digitar /pipelines direto na barra de
+  // endereço. Espera o profile resolver (`profileLoading`) antes de
+  // decidir: `salesEnabled` começa `true` durante o carregamento, e
+  // redirecionar cedo demais mandaria embora até contas com o módulo
+  // ligado.
+  useEffect(() => {
+    if (profileLoading) return;
+    if (!salesEnabled) router.replace("/dashboard");
+  }, [profileLoading, salesEnabled, router]);
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
@@ -141,7 +154,20 @@ export default function PipelinesPage() {
   }, [supabase, accountId]);
 
   // Initial load + seed-if-empty
+  //
+  // Gateado em `salesEnabled` (rodada de correção 1): sem isso, o
+  // efeito dispara `loadPipelines()`/`seedDefaultPipeline()`
+  // incondicionalmente no mount, e o `seedDefaultPipeline` faz INSERT
+  // de um pipeline "Sales Pipeline" + stages no banco. Isso corre em
+  // paralelo com o `router.replace("/dashboard")` do guard de rota
+  // acima — que é assíncrono e não desmonta o componente na hora —
+  // então uma conta com vendas desligada podia acabar criando um
+  // pipeline fantasma antes do redirect completar. Também esperamos
+  // `profileLoading` resolver, pelo mesmo motivo do guard de rota:
+  // `salesEnabled` começa `true` durante o carregamento e não pode
+  // travar o load legítimo de uma conta com o módulo ligado.
   useEffect(() => {
+    if (profileLoading || !salesEnabled) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -167,14 +193,21 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline]);
+  }, [profileLoading, salesEnabled, loadPipelines, seedDefaultPipeline]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
   // state; the load completion uses async setters inside promise
   // callbacks (not synchronous in the effect body).
+  //
+  // Also gated on `salesEnabled` (rodada de correção 1): com o módulo
+  // desligado o efeito acima nunca seleciona um pipeline, então
+  // `selectedPipelineId` fica vazio na prática — mas o guard aqui
+  // também evita qualquer fetch de `pipeline_stages`/`deals` caso um
+  // id antigo já estivesse em estado (ex.: troca de conta sem reload
+  // completo da página).
   useEffect(() => {
-    if (!selectedPipelineId) {
+    if (profileLoading || !salesEnabled || !selectedPipelineId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStages([]);
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -194,7 +227,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPipelineId, loadStages, loadDeals]);
+  }, [profileLoading, salesEnabled, selectedPipelineId, loadStages, loadDeals]);
 
   const refreshPipelines = useCallback(async () => {
     const list = await loadPipelines();
@@ -296,6 +329,13 @@ export default function PipelinesPage() {
   }
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
+
+  // Módulo desligado: o effect acima já disparou o redirect, isso só
+  // evita que o board pisque na tela por um frame enquanto o router
+  // navega para /dashboard.
+  if (!profileLoading && !salesEnabled) {
+    return null;
+  }
 
   if (loading) {
     return (

@@ -21,6 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
@@ -94,10 +95,17 @@ export async function resolveConversationByPhone(
   if (existing) {
     contactId = existing.id;
     if (name && name !== existing.name) {
-      await db
-        .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
+      const patch: Record<string, unknown> = {
+        name,
+        updated_at: new Date().toISOString(),
+      };
+      // Mesma promoção do formulário do dashboard: dar nome a um
+      // contato que só existia por mensagem recebida é o ato de
+      // identificá-lo, venha essa chamada de onde vier.
+      if (existing.source === CONTACT_SOURCE.WHATSAPP) {
+        patch.source = CONTACT_SOURCE.MANUAL;
+      }
+      await db.from('contacts').update(patch).eq('id', existing.id);
     }
   } else {
     const { data: created, error: createErr } = await db
@@ -107,6 +115,10 @@ export async function resolveConversationByPhone(
         user_id: ownerUserId,
         phone: sanitized,
         name: name || sanitized,
+        // Criação via API pública é manual pelo mesmo critério de
+        // lib/api/v1/contacts.ts: alguém (a integração) sabia quem era
+        // ao criar.
+        source: CONTACT_SOURCE.MANUAL,
       })
       .select('id')
       .single();

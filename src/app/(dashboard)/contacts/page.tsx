@@ -49,6 +49,9 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -57,6 +60,7 @@ import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import { CONTACT_SOURCE, isUnidentified } from '@/lib/contacts/source';
 
 const PAGE_SIZE = 25;
 
@@ -66,6 +70,9 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
+  // Shared with the inbox contact panel — kept at the `Contacts` root
+  // (not `.page`) so both consumers read the same badge/filter copy.
+  const tContacts = useTranslations('Contacts');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
@@ -77,6 +84,28 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  // Restricts the list to contacts nobody has identified yet
+  // (source = 'whatsapp') — the secretary's queue of who-is-this.
+  const [unidentifiedOnly, setUnidentifiedOnly] = useState(false);
+  // Ordenação da lista. Default reproduz o comportamento anterior a
+  // esta feature (mais recente primeiro), para não mudar a ordem que
+  // ninguém pediu para mudar.
+  const [sortColumn, setSortColumn] = useState<'name' | 'created_at'>(
+    'created_at',
+  );
+  const [sortAscending, setSortAscending] = useState(false);
+
+  function toggleSort(column: 'name' | 'created_at') {
+    if (sortColumn === column) {
+      setSortAscending((prev) => !prev);
+    } else {
+      setSortColumn(column);
+      // Nome começa em A-Z (mais natural para texto); data começa do
+      // mais recente (mantém o comportamento que já existia).
+      setSortAscending(column === 'name');
+    }
+    setPage(0);
+  }
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -143,6 +172,8 @@ export default function ContactsPage() {
         p_search: term || null,
         p_limit: PAGE_SIZE,
         p_offset: from,
+        p_sort_column: sortColumn,
+        p_sort_ascending: sortAscending,
       });
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
@@ -150,6 +181,11 @@ export default function ContactsPage() {
         setLoading(false);
         return;
       }
+      // Tag filter and unidentified-only are mutually exclusive (enforced
+      // in toggleTagFilter/toggleUnidentifiedOnly below), so this branch
+      // never needs to also filter by source: the RPC's total_count is
+      // always the true count of what's rendered. A combined filter would
+      // need a source parameter on the RPC (migration, out of scope here).
       const rows = (data ?? []) as { contact: Contact; total_count: number }[];
       contactRows = rows.map((r) => r.contact);
       count = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -157,12 +193,16 @@ export default function ContactsPage() {
       let query = supabase
         .from('contacts')
         .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order(sortColumn, { ascending: sortAscending })
         .range(from, to);
 
       if (term) {
         const like = `%${term}%`;
         query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+      }
+
+      if (unidentifiedOnly) {
+        query = query.eq('source', CONTACT_SOURCE.WHATSAPP);
       }
 
       const { data, count: exactCount, error } = await query;
@@ -207,7 +247,17 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [
+    supabase,
+    page,
+    search,
+    selectedTagIds,
+    unidentifiedOnly,
+    sortColumn,
+    sortAscending,
+    tagsMap,
+    t,
+  ]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -323,7 +373,8 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
-  const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
+  const hasActiveFilters =
+    search.trim().length > 0 || selectedTagIds.length > 0 || unidentifiedOnly;
 
   function toggleTagFilter(tagId: string) {
     setSelectedTagIds((prev) =>
@@ -331,11 +382,22 @@ export default function ContactsPage() {
         ? prev.filter((id) => id !== tagId)
         : [...prev, tagId]
     );
+    // Mutually exclusive with unidentifiedOnly — see fetchContacts for why:
+    // the RPC total_count has no source filter, so both active at once
+    // would desync the header count/pagination from the visible rows.
+    setUnidentifiedOnly(false);
     setPage(0);
   }
 
   function clearTagFilters() {
     setSelectedTagIds([]);
+    setPage(0);
+  }
+
+  function toggleUnidentifiedOnly() {
+    // Mutually exclusive with the tag filter — see fetchContacts for why.
+    if (!unidentifiedOnly) setSelectedTagIds([]);
+    setUnidentifiedOnly((prev) => !prev);
     setPage(0);
   }
 
@@ -460,6 +522,19 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            aria-pressed={unidentifiedOnly}
+            onClick={toggleUnidentifiedOnly}
+            className={
+              unidentifiedOnly
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 dark:text-amber-400 shrink-0'
+                : 'border-border text-muted-foreground hover:bg-muted shrink-0'
+            }
+          >
+            {tContacts('filterUnidentified')}
+          </Button>
         </div>
 
         {/* Active tag-filter chips */}
@@ -541,12 +616,46 @@ export default function ContactsPage() {
                   aria-label="Select all contacts on this page"
                 />
               </TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
+              <TableHead className="text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('name')}
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                >
+                  {t('tableColumns.name')}
+                  {sortColumn === 'name' ? (
+                    sortAscending ? (
+                      <ArrowUp className="size-3.5" />
+                    ) : (
+                      <ArrowDown className="size-3.5" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="size-3.5 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('created_at')}
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                >
+                  {t('tableColumns.createdAt')}
+                  {sortColumn === 'created_at' ? (
+                    sortAscending ? (
+                      <ArrowUp className="size-3.5" />
+                    ) : (
+                      <ArrowDown className="size-3.5" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="size-3.5 opacity-40" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
@@ -601,7 +710,17 @@ export default function ContactsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                    <span className="inline-flex items-center">
+                      {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                      {isUnidentified(contact.source) && (
+                        <span
+                          title={tContacts('newBadgeTooltip')}
+                          className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+                        >
+                          {tContacts('newBadge')}
+                        </span>
+                      )}
+                    </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
                     {contact.phone}

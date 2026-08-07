@@ -23,6 +23,20 @@ const BUCKET = "chat-media";
 const MAX_INBOUND_BYTES = 16 * 1024 * 1024;
 
 /**
+ * `allowed_mime_types` do bucket `chat-media` faz correspondência
+ * EXATA (migração 023). O WhatsApp manda nota de voz como
+ * `audio/ogg; codecs=opus` — o tipo base (`audio/ogg`) está na lista,
+ * mas com o parâmetro sobrando o Storage recusa o upload inteiro,
+ * silenciosamente (o erro só aparece no log do servidor, nunca na UI).
+ * Mesma armadilha vale para qualquer `Content-Type` com parâmetro
+ * (`; charset=`, `; boundary=`), então a limpeza é geral, não só para
+ * áudio.
+ */
+export function stripMimeTypeParams(contentType: string): string {
+  return contentType.split(";")[0]?.trim() || contentType;
+}
+
+/**
  * `sourceUrl` vem de um evento de webhook — ou seja, de quem quer que
  * conheça o `webhook_secret` do canal, o que inclui TODO tenant para o
  * próprio canal (a URL completa é exibida na UI de canais). Sem
@@ -112,9 +126,11 @@ async function uploadBytes(
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { error } = await admin.storage
-    .from(BUCKET)
-    .upload(path, bytes, { contentType, upsert: false, cacheControl: "3600" });
+  const { error } = await admin.storage.from(BUCKET).upload(path, bytes, {
+    contentType: stripMimeTypeParams(contentType),
+    upsert: false,
+    cacheControl: "3600",
+  });
   if (error) {
     console.error("[store-inbound-media] upload falhou:", error.message);
     return null;
@@ -172,7 +188,7 @@ export async function storeEncryptedInboundMedia(
     const encrypted = new Uint8Array(await response.arrayBuffer());
     const plaintext = decryptWhatsAppMedia(encrypted, mediaKeyBase64, mediaType);
 
-    const ext = mimetype.split("/")[1]?.split(";")[0] || "bin";
+    const ext = stripMimeTypeParams(mimetype).split("/")[1] || "bin";
     return await uploadBytes(accountId, plaintext, `media.${ext}`, mimetype);
   } catch (err) {
     console.error(

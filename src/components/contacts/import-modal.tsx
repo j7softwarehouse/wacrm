@@ -9,14 +9,15 @@ import {
   normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
-  parseContactCsv,
+  parseContactSheet,
   type ParsedContactRow,
-} from '@/lib/contacts/parse-contact-csv';
+} from '@/lib/contacts/parse-contact-sheet';
 import {
   assignImportedContactTags,
   resolveImportTagIds,
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -168,15 +169,50 @@ export function ImportModal({
     setFile(selected);
     setResult(null);
 
-    const text = await selected.text();
+    // parseContactSheet detecta .csv vs .xlsx pela extensão do arquivo e
+    // devolve o mesmo formato de resultado nos dois casos. Para .xlsx a
+    // leitura passa por read-excel-file (readSheet), que LANÇA em vez de
+    // devolver um resultado vazio quando o arquivo está corrompido, é um
+    // .xls renomeado, tem senha, ou o zip é inválido — sem o try/catch a
+    // promise rejeita dentro do handler e a tela não reage (nenhum toast,
+    // nenhum feedback).
+    let parsed: {
+      rows: ParsedContactRow[];
+      hasTagsColumn: boolean;
+      hasCompanyColumn: boolean;
+      missingPhoneColumnHeaders?: string[];
+    };
+    try {
+      parsed = await parseContactSheet(selected);
+    } catch {
+      toast.error(t('toastParseFailed'));
+      setParsedRows([]);
+      setHasTagsColumn(false);
+      setHasCompanyColumn(false);
+      setTagColorByKey(new Map());
+      return;
+    }
+
     const {
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
-    } = parseContactCsv(text);
+      missingPhoneColumnHeaders,
+    } = parsed;
 
     if (rows.length === 0) {
-      toast.error(t('toastNoValidRows'));
+      // Cabeçalho lido, mas nenhuma coluna de telefone reconhecida —
+      // mensagem específica com os cabeçalhos reais, em vez do aviso
+      // genérico de "nenhuma linha válida" (que não explica o motivo).
+      if (missingPhoneColumnHeaders) {
+        toast.error(
+          t('toastMissingPhoneColumn', {
+            headers: missingPhoneColumnHeaders.join(', '),
+          }),
+        );
+      } else {
+        toast.error(t('toastNoValidRows'));
+      }
       setParsedRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
@@ -278,6 +314,7 @@ export function ImportModal({
           name: row.name || null,
           email: row.email || null,
           company: row.company || null,
+          source: CONTACT_SOURCE.IMPORT,
         }));
 
         const { data, error } = await supabase
@@ -459,7 +496,7 @@ export function ImportModal({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={handleFileChange}
             className="hidden"
           />

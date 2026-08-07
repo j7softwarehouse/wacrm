@@ -80,6 +80,13 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * Usuário que disparou o envio, quando há humano por trás. Nulo em
+   * automação, fluxo, broadcast e API pública — nesses casos a origem
+   * é o sistema, não uma pessoa. Resposta automática de IA continua
+   * distinguida por `ai_generated`.
+   */
+  senderUserId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -420,6 +427,7 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      sender_id: params.senderUserId ?? null,
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,

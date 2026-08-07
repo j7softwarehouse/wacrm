@@ -37,27 +37,74 @@ export interface ParseContactCsvResult {
   hasTagsColumn: boolean;
   /** True when the CSV header includes a `company` column. */
   hasCompanyColumn: boolean;
+  /**
+   * Preenchido só quando nenhuma coluna de telefone reconhecida foi
+   * encontrada — os cabeçalhos originais (sem lowercase) do arquivo,
+   * para a tela explicar o que faltou em vez de só mostrar "0 linhas".
+   */
+  missingPhoneColumnHeaders?: string[];
+}
+
+/**
+ * Cabeçalhos aceitos por coluna, em inglês e português. A lista real de
+ * contatos que motivou a importação em XLSX usa cabeçalho em português
+ * ("Telefone", "Nome", "empresa") — reconhecer só o inglês deixaria
+ * esse arquivo real inutilizável sem editar a planilha à mão.
+ */
+export const COLUMN_ALIASES = {
+  phone: ['phone', 'telefone'],
+  // "nome salvo" é como o WhatsApp rotula o nome exportado dos
+  // contatos salvos — é o cabeçalho real da lista da escola.
+  name: ['name', 'nome', 'nome salvo'],
+  email: ['email'],
+  company: ['company', 'empresa'],
+  tags: ['tags'],
+} as const;
+
+export function findColumnIndex(
+  headers: string[],
+  aliases: readonly string[],
+): number {
+  for (const alias of aliases) {
+    const idx = headers.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  return -1;
 }
 
 export function parseContactCsv(text: string): ParseContactCsvResult {
-  const lines = text.trim().split(/\r?\n/);
+  // O Excel em português salva CSV com ';' e prefixa BOM. Sem tratar os
+  // dois, o arquivo vira uma coluna só e os acentos se perdem — a
+  // importação falhava inteira e parecia erro do usuário.
+  const clean = text.replace(/^﻿/, '');
+  const lines = clean.trim().split(/\r?\n/);
   if (lines.length < 2) {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
-  const headers = lines[0]
-    .split(',')
-    .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
+  // Vence o separador que produz mais colunas no cabeçalho.
+  const delimiter =
+    lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
 
-  const phoneIdx = headers.indexOf('phone');
+  const rawHeaders = lines[0]
+    .split(delimiter)
+    .map((h) => h.trim().replace(/["']/g, ''));
+  const headers = rawHeaders.map((h) => h.toLowerCase());
+
+  const phoneIdx = findColumnIndex(headers, COLUMN_ALIASES.phone);
   if (phoneIdx === -1) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+    return {
+      rows: [],
+      hasTagsColumn: false,
+      hasCompanyColumn: false,
+      missingPhoneColumnHeaders: rawHeaders,
+    };
   }
 
-  const nameIdx = headers.indexOf('name');
-  const emailIdx = headers.indexOf('email');
-  const companyIdx = headers.indexOf('company');
-  const tagsIdx = headers.indexOf('tags');
+  const nameIdx = findColumnIndex(headers, COLUMN_ALIASES.name);
+  const emailIdx = findColumnIndex(headers, COLUMN_ALIASES.email);
+  const companyIdx = findColumnIndex(headers, COLUMN_ALIASES.company);
+  const tagsIdx = findColumnIndex(headers, COLUMN_ALIASES.tags);
 
   const rows: ParsedContactRow[] = [];
 
@@ -65,7 +112,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     const line = lines[i].trim();
     if (!line) continue;
 
-    const values = parseCsvLine(line);
+    const values = parseCsvLine(line, delimiter);
     const phone = values[phoneIdx]?.replace(/["']/g, '').trim();
     if (!phone) continue;
 
@@ -96,7 +143,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
 }
 
 /** Simple CSV line parse (handles quoted fields). */
-function parseCsvLine(line: string): string[] {
+function parseCsvLine(line: string, delimiter: string): string[] {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -104,7 +151,7 @@ function parseCsvLine(line: string): string[] {
   for (const char of line) {
     if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current.trim());
       current = '';
     } else {

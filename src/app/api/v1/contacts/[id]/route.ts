@@ -16,6 +16,7 @@ import {
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
+import { CONTACT_SOURCE } from '@/lib/contacts/source';
 
 export async function GET(
   request: Request,
@@ -64,6 +65,26 @@ export async function PATCH(
         updates[field] = value;
       } else {
         return fail('bad_request', `'${field}' must be a string or null`, 400);
+      }
+    }
+
+    // Promoção ao identificar (mesma regra do formulário do dashboard):
+    // um PATCH externo que dá nome a um contato que só existia por
+    // mensagem recebida é, semanticamente, o mesmo ato de identificação.
+    // `existing` (ApiContact) não expõe `source` — não é parte do
+    // contrato público — então lemos direto da tabela, escopado à conta.
+    if ('name' in updates) {
+      const { data: sourceRow } = await ctx.supabase
+        .from('contacts')
+        .select('source')
+        .eq('id', id)
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+      if (
+        sourceRow?.source === CONTACT_SOURCE.WHATSAPP &&
+        updates.name !== existing.name
+      ) {
+        updates.source = CONTACT_SOURCE.MANUAL;
       }
     }
 

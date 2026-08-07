@@ -7,6 +7,7 @@ import {
   mondayIndex,
   startOfLocalDay,
 } from './date-utils'
+import { businessMinutesBetween, isWithinBusinessHours } from './business-hours'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -97,6 +98,71 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       previous: messagesYesterday.count ?? 0,
     },
   }
+}
+
+// --- 1b. Conversas sem resposta há mais de 30 min de expediente --------
+
+/**
+ * Conversas em que o contato falou por último e que já acumularam mais
+ * de 30 minutos de EXPEDIENTE sem resposta. Fora do horário o card não
+ * acusa atraso — às 22h de domingo ninguém está devendo resposta.
+ *
+ * `error: true` no retorno sinaliza que a RPC falhou — o chamador NÃO
+ * deve tratar isso como "tudo respondido" (`count: 0` sozinho seria
+ * indistinguível do caso feliz e faria o card mentir "sem pendências"
+ * bem na hora em que ninguém consegue confiar no número). O erro é
+ * logado aqui com o contexto que dá pra depurar (nome da RPC,
+ * accountId, mensagem), no mesmo padrão de `auto-reply.ts`/`knowledge.ts`.
+ */
+export async function loadAwaitingReply(
+  db: DB,
+  accountId: string,
+): Promise<{ count: number; withinHours: boolean; error?: boolean }> {
+  const now = new Date()
+  if (!isWithinBusinessHours(now)) return { count: 0, withinHours: false }
+
+  const { data, error } = await db.rpc('conversations_awaiting_reply', {
+    p_account_id: accountId,
+  })
+
+  if (error) {
+    // Falha real (RPC renomeada/removida, RLS, timeout, migration não
+    // aplicada) não pode virar silenciosamente "0 pendências" — este é
+    // justamente o card que existe para alertar sobre atraso.
+    console.error(
+      '[dashboard] conversations_awaiting_reply failed:',
+      { accountId, message: error.message },
+    )
+    return { count: 0, withinHours: true, error: true }
+  }
+
+  const rows = (data ?? []) as {
+    last_message_at: string | null
+    last_sender_type: string | null
+  }[]
+
+  // Corte barato ANTES de chamar businessMinutesBetween: conversas nunca
+  // fecham sozinhas (só uma ação de automação fecha), então uma conversa
+  // parada há meses/anos ainda cairia no loop dia-a-dia de
+  // businessMinutesBetween, iterando um dia civil por vez desde o último
+  // fechamento até hoje — medido em 1,4s de trava para 200 conversas com
+  // 1 ano de inatividade. 7 dias CORRIDOS (não de expediente) já é folga
+  // enorme sobre os 30 minutos de expediente do limiar: mesmo contando só
+  // dias úteis, 7 dias corridos garantem bem mais que 30 minutos úteis.
+  // Só vale a pena rodar a aritmética fina quando o intervalo corrido for
+  // pequeno o bastante para o resultado não ser óbvio de antemão.
+  const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000
+
+  const count = rows.filter((r) => {
+    if (r.last_sender_type !== 'customer') return false
+    if (!r.last_message_at) return false
+    const lastMessageAt = new Date(r.last_message_at)
+    const elapsedMs = now.getTime() - lastMessageAt.getTime()
+    if (elapsedMs > STALE_THRESHOLD_MS) return true
+    return businessMinutesBetween(lastMessageAt, now) > 30
+  }).length
+
+  return { count, withinHours: true }
 }
 
 // --- 2. Conversations over time ---------------------------------------

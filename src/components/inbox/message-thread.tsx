@@ -44,6 +44,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
+import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
   CHAT_MEDIA_BUCKET,
@@ -765,6 +766,41 @@ export function MessageThread({
     return map;
   }, [messages]);
 
+  // Mensagem imediatamente anterior na conversa (não no grupo por data —
+  // um novo dia não define, por si só, uma troca de operador). Alimenta
+  // `shouldShowAuthor` abaixo.
+  const previousMessage = useMemo(() => {
+    const map = new Map<string, Message | null>();
+    messages.forEach((m, i) => map.set(m.id, i > 0 ? messages[i - 1] : null));
+    return map;
+  }, [messages]);
+
+  // id -> nome, derivado do `profiles` já carregado (todos os membros da
+  // conta, ver efeito acima) em vez de uma consulta escopada aos
+  // `sender_id` do snapshot de mensagens. Uma consulta escopada ficaria
+  // presa ao momento do fetch: uma mensagem nova chegando ao vivo via
+  // realtime (INSERT tratado no componente pai) de um operador que ainda
+  // não tinha mandado nada nessa conversa cairia sempre sem rótulo de
+  // autor até o próximo refetch completo — justamente na mensagem que
+  // deveria acender o nome por causa da troca de operador.
+  const authorNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of profiles) {
+      map[p.user_id] = p.full_name || p.email || "";
+    }
+    return map;
+  }, [profiles]);
+
+  // `sender_type` da mensagem inclui 'bot' (automação/Flow), que para fins
+  // de agrupamento de autor conta como agente — a distinção que importa
+  // aqui é "veio do contato" vs. "saiu da nossa conta".
+  const toAuthorable = useCallback((m: Message): AuthorableMessage => {
+    return {
+      sender_type: m.sender_type === "customer" ? "customer" : "agent",
+      sender_id: m.sender_id ?? null,
+    };
+  }, []);
+
   // Bucket reactions by their target message_id for O(1) per-bubble lookup.
   const reactionsByMessageId = useMemo(() => {
     const map = new Map<string, MessageReaction[]>();
@@ -1193,6 +1229,14 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
+                    const prevMsg = previousMessage.get(msg.id) ?? null;
+                    const showAuthor = shouldShowAuthor(
+                      toAuthorable(msg),
+                      prevMsg ? toAuthorable(prevMsg) : null,
+                    );
+                    const authorName = msg.sender_id
+                      ? authorNames[msg.sender_id]
+                      : undefined;
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
@@ -1219,6 +1263,8 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          showAuthor={showAuthor}
+                          authorName={authorName}
                         />
                       </MessageActions>
                     );

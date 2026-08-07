@@ -1,18 +1,21 @@
 "use client"
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { formatCurrency } from '@/lib/currency'
 import {
   MessageSquare,
   UserPlus,
-  DollarSign,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
   Send,
 } from 'lucide-react'
 
 import {
   loadActivity,
+  loadAwaitingReply,
   loadConversationsSeries,
   loadMetrics,
   loadPipelineDonut,
@@ -40,9 +43,12 @@ type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency } = useAuth()
+  const { defaultCurrency, accountId, salesEnabled } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
+
+  const [awaitingReply, setAwaitingReply] = useState<{ count: number; withinHours: boolean; error?: boolean } | null>(null)
+  const [awaitingReplyLoading, setAwaitingReplyLoading] = useState(true)
 
   const [range, setRange] = useState<RangeDays>(30)
   // Keep a cache per range so switching tabs doesn't re-fetch what we
@@ -102,6 +108,39 @@ export default function DashboardPage() {
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  // Separate effect: `accountId` resolves async (after the profile row
+  // loads), later than the mount that kicks off `loadAll`. Keeping this
+  // apart from `loadAll` means the other widgets don't re-fetch when
+  // `accountId` finally arrives.
+  useEffect(() => {
+    if (!accountId) {
+      setAwaitingReplyLoading(false)
+      return
+    }
+    const db = createClient()
+
+    // "Sem resposta há +30 min" muda só com o tempo passando, não
+    // apenas quando uma mensagem nova chega — sem atualização
+    // periódica, a secretária só veria o alerta se recarregasse a
+    // página manualmente. `silent` evita o skeleton piscar a cada
+    // ciclo: só a primeira carga mostra o estado de loading.
+    const fetchAwaitingReply = (silent: boolean) => {
+      if (!silent) setAwaitingReplyLoading(true)
+      loadAwaitingReply(db, accountId)
+        .then((r) => setAwaitingReply(r))
+        .catch((err) => console.error('[dashboard] awaiting reply failed:', err))
+        .finally(() => setAwaitingReplyLoading(false))
+    }
+
+    fetchAwaitingReply(false)
+    const AWAITING_REPLY_REFRESH_MS = 60_000
+    const interval = setInterval(
+      () => fetchAwaitingReply(true),
+      AWAITING_REPLY_REFRESH_MS,
+    )
+    return () => clearInterval(interval)
+  }, [accountId])
 
   // Range switch handler — kept in an event callback (not an effect)
   // so the setState calls stay out of the react-hooks/set-state-in-effect
@@ -164,12 +203,65 @@ export default function DashboardPage() {
                 ),
               }}
             />
-            <MetricCard
-              title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-              icon={DollarSign}
-              subtitle={t('openDeals', { count: metrics.openDealsCount })}
-            />
+            {awaitingReplyLoading || !awaitingReply ? (
+              <SkeletonCard />
+            ) : (
+              <Link href="/inbox" className="block">
+                {(() => {
+                  const hasRealAlert =
+                    !awaitingReply.error &&
+                    awaitingReply.withinHours &&
+                    awaitingReply.count > 0
+                  // Ícone reflete o que o estado realmente é: alerta
+                  // de verdade merece o triângulo; "fora do horário" e
+                  // "tudo respondido" são estados neutros/positivos,
+                  // não avisos — relógio e check pesam menos. O valor
+                  // grande fica sempre curto (mesmo padrão dos outros
+                  // cards do dashboard); a frase de status vai no
+                  // rodapé pequeno, junto com o resto dos cards.
+                  const icon = awaitingReply.error
+                    ? AlertTriangle
+                    : !awaitingReply.withinHours
+                      ? Clock
+                      : hasRealAlert
+                        ? AlertTriangle
+                        : CheckCircle2
+                  return (
+                    <MetricCard
+                      title={t('awaitingReply')}
+                      value={
+                        // Falha de RPC não pode se disfarçar de "tudo
+                        // respondido" — um traço deixa claro que o
+                        // número não está disponível, em vez de
+                        // mentir "0".
+                        awaitingReply.error
+                          ? '—'
+                          : awaitingReply.count.toLocaleString()
+                      }
+                      icon={icon}
+                      subtitle={
+                        <>
+                          {(() => {
+                            const SubtitleIcon = icon
+                            return <SubtitleIcon className="h-4 w-4" aria-hidden />
+                          })()}
+                          <span>
+                            {awaitingReply.error
+                              ? t('awaitingReplyErrorHint')
+                              : !awaitingReply.withinHours
+                                ? t('awaitingReplyClosed')
+                                : hasRealAlert
+                                  ? t('awaitingReplyHint')
+                                  : t('awaitingReplyEmpty')}
+                          </span>
+                        </>
+                      }
+                      tone={hasRealAlert ? 'alert' : 'default'}
+                    />
+                  )
+                })()}
+              </Link>
+            )}
             <MetricCard
               title={t('messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}
@@ -198,8 +290,17 @@ export default function DashboardPage() {
           stretched height so their rounded borders line up. Without
           this, the pipeline card rendered at its natural (shorter)
           height while the line chart drove the row height. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="h-full lg:col-span-3">
+      <div
+        className={
+          // Módulo de vendas desligado (Task 10): sem o donut de
+          // pipeline, o gráfico de conversas fica sozinho e ocupa a
+          // largura toda em vez de dividir 3/5.
+          salesEnabled
+            ? 'grid grid-cols-1 gap-4 lg:grid-cols-5'
+            : 'grid grid-cols-1 gap-4'
+        }
+      >
+        <div className={salesEnabled ? 'h-full lg:col-span-3' : 'h-full'}>
           <ConversationsChart
             series={series}
             loading={seriesLoading}
@@ -207,13 +308,15 @@ export default function DashboardPage() {
             onRangeChange={handleRangeChange}
           />
         </div>
-        <div className="h-full lg:col-span-2">
-          <PipelineDonut
-            data={pipeline}
-            loading={pipelineLoading}
-            currency={defaultCurrency}
-          />
-        </div>
+        {salesEnabled && (
+          <div className="h-full lg:col-span-2">
+            <PipelineDonut
+              data={pipeline}
+              loading={pipelineLoading}
+              currency={defaultCurrency}
+            />
+          </div>
+        )}
       </div>
 
       {/* Response time */}

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { isUnidentified } from "@/lib/contacts/source";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -28,6 +29,9 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+  // Same badge copy as the Contacts list — kept at the `Contacts` root
+  // namespace so both consumers share one translation.
+  const tContacts = useTranslations("Contacts");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -147,8 +151,16 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
+            <h3 className="mt-3 flex items-center text-sm font-semibold text-foreground">
               {displayName}
+              {isUnidentified(contact.source) && (
+                <span
+                  title={tContacts("newBadgeTooltip")}
+                  className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+                >
+                  {tContacts("newBadge")}
+                </span>
+              )}
             </h3>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
