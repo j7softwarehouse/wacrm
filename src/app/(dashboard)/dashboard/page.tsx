@@ -8,6 +8,8 @@ import {
   MessageSquare,
   UserPlus,
   AlertTriangle,
+  CheckCircle2,
+  Clock,
   Send,
 } from 'lucide-react'
 
@@ -189,32 +191,47 @@ export default function DashboardPage() {
               <SkeletonCard />
             ) : (
               <Link href="/inbox" className="block">
-                <MetricCard
-                  title={t('awaitingReply')}
-                  value={
-                    // Falha de RPC não pode se disfarçar de "tudo
-                    // respondido" — um traço deixa claro que o número
-                    // não está disponível, em vez de mentir "0".
-                    awaitingReply.error
-                      ? '—'
-                      : !awaitingReply.withinHours
-                      ? t('awaitingReplyClosed')
-                      : awaitingReply.count > 0
-                      ? awaitingReply.count.toLocaleString()
-                      : t('awaitingReplyEmpty')
-                  }
-                  icon={AlertTriangle}
-                  subtitle={
-                    !awaitingReply.error && awaitingReply.withinHours && awaitingReply.count > 0
-                      ? t('awaitingReplyHint')
-                      : undefined
-                  }
-                  tone={
-                    !awaitingReply.error && awaitingReply.withinHours && awaitingReply.count > 0
-                      ? 'alert'
-                      : 'default'
-                  }
-                />
+                {(() => {
+                  const hasRealAlert =
+                    !awaitingReply.error &&
+                    awaitingReply.withinHours &&
+                    awaitingReply.count > 0
+                  // Ícone e peso tipográfico refletem o que o estado
+                  // realmente é: alerta de verdade merece o triângulo
+                  // e o número grande; "fora do horário" e "tudo
+                  // respondido" são estados neutros/positivos, não
+                  // avisos — um relógio ou um check pesa menos, e a
+                  // frase de status não precisa do tamanho de métrica.
+                  const icon = awaitingReply.error
+                    ? AlertTriangle
+                    : !awaitingReply.withinHours
+                      ? Clock
+                      : hasRealAlert
+                        ? AlertTriangle
+                        : CheckCircle2
+                  return (
+                    <MetricCard
+                      title={t('awaitingReply')}
+                      value={
+                        // Falha de RPC não pode se disfarçar de "tudo
+                        // respondido" — um traço deixa claro que o
+                        // número não está disponível, em vez de
+                        // mentir "0".
+                        awaitingReply.error
+                          ? '—'
+                          : !awaitingReply.withinHours
+                            ? t('awaitingReplyClosed')
+                            : awaitingReply.count > 0
+                              ? awaitingReply.count.toLocaleString()
+                              : t('awaitingReplyEmpty')
+                      }
+                      icon={icon}
+                      subtitle={hasRealAlert ? t('awaitingReplyHint') : undefined}
+                      tone={hasRealAlert ? 'alert' : 'default'}
+                      compactValue={!awaitingReply.error && !hasRealAlert}
+                    />
+                  )
+                })()}
               </Link>
             )}
             <MetricCard
