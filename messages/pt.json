@@ -459,6 +459,7 @@
       "importBtn": "Importar {count} contato",
       "importBtn_plural": "Importar {count} contatos",
       "toastNoValidRows": "Nenhuma linha válida encontrada. Certifique-se de que o CSV tem um cabeçalho de coluna \"phone\".",
+      "toastMissingPhoneColumn": "Coluna de telefone não encontrada. Colunas do arquivo: {headers}. Renomeie a coluna de telefone para \"phone\" ou \"telefone\" e importe de novo.",
       "toastParseFailed": "Não foi possível ler o arquivo. Confira se não está corrompido, protegido por senha, ou num formato não suportado.",
       "toastTagsWarning": "Contatos importados, mas algumas atribuições de tags falharam.",
       "toastImported": "{count} contato importado",

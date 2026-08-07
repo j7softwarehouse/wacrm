@@ -37,6 +37,39 @@ export interface ParseContactCsvResult {
   hasTagsColumn: boolean;
   /** True when the CSV header includes a `company` column. */
   hasCompanyColumn: boolean;
+  /**
+   * Preenchido só quando nenhuma coluna de telefone reconhecida foi
+   * encontrada — os cabeçalhos originais (sem lowercase) do arquivo,
+   * para a tela explicar o que faltou em vez de só mostrar "0 linhas".
+   */
+  missingPhoneColumnHeaders?: string[];
+}
+
+/**
+ * Cabeçalhos aceitos por coluna, em inglês e português. A lista real de
+ * contatos que motivou a importação em XLSX usa cabeçalho em português
+ * ("Telefone", "Nome", "empresa") — reconhecer só o inglês deixaria
+ * esse arquivo real inutilizável sem editar a planilha à mão.
+ */
+export const COLUMN_ALIASES = {
+  phone: ['phone', 'telefone'],
+  // "nome salvo" é como o WhatsApp rotula o nome exportado dos
+  // contatos salvos — é o cabeçalho real da lista da escola.
+  name: ['name', 'nome', 'nome salvo'],
+  email: ['email'],
+  company: ['company', 'empresa'],
+  tags: ['tags'],
+} as const;
+
+export function findColumnIndex(
+  headers: string[],
+  aliases: readonly string[],
+): number {
+  for (const alias of aliases) {
+    const idx = headers.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  return -1;
 }
 
 export function parseContactCsv(text: string): ParseContactCsvResult {
@@ -53,19 +86,25 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
   const delimiter =
     lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
 
-  const headers = lines[0]
+  const rawHeaders = lines[0]
     .split(delimiter)
-    .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
+    .map((h) => h.trim().replace(/["']/g, ''));
+  const headers = rawHeaders.map((h) => h.toLowerCase());
 
-  const phoneIdx = headers.indexOf('phone');
+  const phoneIdx = findColumnIndex(headers, COLUMN_ALIASES.phone);
   if (phoneIdx === -1) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+    return {
+      rows: [],
+      hasTagsColumn: false,
+      hasCompanyColumn: false,
+      missingPhoneColumnHeaders: rawHeaders,
+    };
   }
 
-  const nameIdx = headers.indexOf('name');
-  const emailIdx = headers.indexOf('email');
-  const companyIdx = headers.indexOf('company');
-  const tagsIdx = headers.indexOf('tags');
+  const nameIdx = findColumnIndex(headers, COLUMN_ALIASES.name);
+  const emailIdx = findColumnIndex(headers, COLUMN_ALIASES.email);
+  const companyIdx = findColumnIndex(headers, COLUMN_ALIASES.company);
+  const tagsIdx = findColumnIndex(headers, COLUMN_ALIASES.tags);
 
   const rows: ParsedContactRow[] = [];
 

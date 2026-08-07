@@ -30,6 +30,23 @@ const FIXTURE_DECIMAL_PHONE_PATH = join(
   __dirname,
   '__fixtures__/contacts-phone-decimal.xlsx'
 );
+// Fixture irmão: mesmo cabeçalho real da lista_emanuel.xlsx (a lista da
+// escola que motivou esta importação) -- ["Nome Salvo", "Telefone",
+// "email", "empresa"], em português. Gerado por
+// `__fixtures__/generate-pt-header-fixture.mjs` (script commitado, ao
+// contrário dos fixtures anteriores). Reproduz o bug real: sem os
+// aliases de cabeçalho, este arquivo devolvia 0 linhas em silêncio.
+const FIXTURE_PT_HEADER_PATH = join(
+  __dirname,
+  '__fixtures__/contacts-pt-header.xlsx'
+);
+// Fixture irmão: mesmo cabeçalho pt-BR, mas SEM nenhuma coluna de
+// telefone reconhecível (nem "phone" nem "telefone") -- exercita
+// `missingPhoneColumnHeaders` no caminho .xlsx real, não só via CSV.
+const FIXTURE_NO_PHONE_COLUMN_PATH = join(
+  __dirname,
+  '__fixtures__/contacts-no-phone-column.xlsx'
+);
 
 function loadXlsxFileFrom(path: string, name: string): File {
   const buffer = readFileSync(path);
@@ -105,6 +122,40 @@ describe('parseContactSheet — .xlsx', () => {
     expect(rows[0].phone).toBe('551198765');
     expect(rows[0].phone).not.toContain('.');
     expect(rows[0].name).toBe('Fabíola Torres');
+  });
+
+  it('reconhece cabecalho em portugues (Telefone/Nome Salvo/empresa) -- o arquivo real da escola', async () => {
+    const file = loadXlsxFileFrom(
+      FIXTURE_PT_HEADER_PATH,
+      'contacts-pt-header.xlsx'
+    );
+    const { rows, hasCompanyColumn } = await parseContactSheet(file);
+
+    expect(rows).toHaveLength(2);
+    // Linha 2 do arquivo real: telefone numerico, sem nome (contato
+    // ainda nao identificado).
+    expect(rows[0].phone).toBe('553189891123');
+    expect(rows[0].name).toBeUndefined();
+    // Linha 3: nome via alias "nome salvo", empresa via alias "empresa".
+    expect(rows[1].phone).toBe('553183886076');
+    expect(rows[1].name).toBe('Família Silva');
+    expect(rows[1].company).toBe('Instituto Emanuel');
+    expect(hasCompanyColumn).toBe(true);
+  });
+
+  it('devolve os cabecalhos quando nenhuma coluna de telefone e reconhecida (.xlsx real, nao so CSV)', async () => {
+    const file = loadXlsxFileFrom(
+      FIXTURE_NO_PHONE_COLUMN_PATH,
+      'contacts-no-phone-column.xlsx'
+    );
+    const result = await parseContactSheet(file);
+
+    expect(result.rows).toEqual([]);
+    expect(result.missingPhoneColumnHeaders).toEqual([
+      'Nome Salvo',
+      'email',
+      'empresa',
+    ]);
   });
 });
 

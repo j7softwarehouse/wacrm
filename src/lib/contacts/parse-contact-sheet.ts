@@ -17,6 +17,8 @@
  */
 import { readSheet, type Row } from 'read-excel-file/browser';
 import {
+  COLUMN_ALIASES,
+  findColumnIndex,
   parseContactCsv,
   parseTagCell,
   type ParseContactCsvResult,
@@ -87,17 +89,23 @@ function parseXlsxRows(sheet: Row[]): ParseContactCsvResult {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
-  const headers = sheet[0].map((cell) => cellToString(cell).toLowerCase());
+  const rawHeaders = sheet[0].map((cell) => cellToString(cell));
+  const headers = rawHeaders.map((h) => h.toLowerCase());
 
-  const phoneIdx = headers.indexOf('phone');
+  const phoneIdx = findColumnIndex(headers, COLUMN_ALIASES.phone);
   if (phoneIdx === -1) {
-    return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
+    return {
+      rows: [],
+      hasTagsColumn: false,
+      hasCompanyColumn: false,
+      missingPhoneColumnHeaders: rawHeaders,
+    };
   }
 
-  const nameIdx = headers.indexOf('name');
-  const emailIdx = headers.indexOf('email');
-  const companyIdx = headers.indexOf('company');
-  const tagsIdx = headers.indexOf('tags');
+  const nameIdx = findColumnIndex(headers, COLUMN_ALIASES.name);
+  const emailIdx = findColumnIndex(headers, COLUMN_ALIASES.email);
+  const companyIdx = findColumnIndex(headers, COLUMN_ALIASES.company);
+  const tagsIdx = findColumnIndex(headers, COLUMN_ALIASES.tags);
 
   const rows: ParsedContactRow[] = [];
 

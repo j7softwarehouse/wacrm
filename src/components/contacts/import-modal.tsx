@@ -180,6 +180,7 @@ export function ImportModal({
       rows: ParsedContactRow[];
       hasTagsColumn: boolean;
       hasCompanyColumn: boolean;
+      missingPhoneColumnHeaders?: string[];
     };
     try {
       parsed = await parseContactSheet(selected);
@@ -196,10 +197,22 @@ export function ImportModal({
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
+      missingPhoneColumnHeaders,
     } = parsed;
 
     if (rows.length === 0) {
-      toast.error(t('toastNoValidRows'));
+      // Cabeçalho lido, mas nenhuma coluna de telefone reconhecida —
+      // mensagem específica com os cabeçalhos reais, em vez do aviso
+      // genérico de "nenhuma linha válida" (que não explica o motivo).
+      if (missingPhoneColumnHeaders) {
+        toast.error(
+          t('toastMissingPhoneColumn', {
+            headers: missingPhoneColumnHeaders.join(', '),
+          }),
+        );
+      } else {
+        toast.error(t('toastNoValidRows'));
+      }
       setParsedRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);

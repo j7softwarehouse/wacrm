@@ -459,6 +459,7 @@
       "importBtn": "Import {count} contact",
       "importBtn_plural": "Import {count} contacts",
       "toastNoValidRows": "No valid rows found. Ensure CSV has a \"phone\" column header.",
+      "toastMissingPhoneColumn": "Phone column not found. File columns: {headers}. Rename the phone column to \"phone\" and import again.",
       "toastParseFailed": "Couldn't read the file. Check that it isn't corrupted, password-protected, or in an unsupported format.",
       "toastTagsWarning": "Contacts imported, but some tag assignments failed.",
       "toastImported": "{count} contact imported",
