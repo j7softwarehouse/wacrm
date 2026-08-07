@@ -213,14 +213,12 @@ export function ContactDetailView({
       company: editCompany.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    // Mesma regra do formulário de cadastro (contact-form.tsx): nomear
-    // um contato que chegou por mensagem é o ato de identificá-lo. Este
-    // painel é o caminho de edição mais usado da tela (abre ao clicar
-    // na linha), então precisa da mesma promoção.
-    if (
-      contact?.source === CONTACT_SOURCE.WHATSAPP &&
-      trimmedName !== (contact?.name ?? null)
-    ) {
+    // Mesma regra do formulário de cadastro (contact-form.tsx): salvar
+    // este painel É o ato de identificar o contato, não só trocar o
+    // nome — a secretária pode abrir, conferir que está certo e salvar
+    // sem tocar no nome. Este painel é o caminho de edição mais usado
+    // da tela (abre ao clicar na linha), então precisa da mesma regra.
+    if (contact?.source === CONTACT_SOURCE.WHATSAPP) {
       patch.source = CONTACT_SOURCE.MANUAL;
     }
     const { error } = await supabase

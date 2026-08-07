@@ -159,13 +159,11 @@ export function ContactForm({
           company: company.trim() || null,
           updated_at: new Date().toISOString(),
         };
-        // Nomear um contato que chegou por mensagem é o ato de
-        // identificá-lo: deixa de ser "alguém novo" e passa a ser gente
-        // conhecida da casa.
-        if (
-          contact?.source === CONTACT_SOURCE.WHATSAPP &&
-          trimmedName !== (contact?.name ?? null)
-        ) {
+        // Salvar este formulário É o ato de identificar o contato — não
+        // só trocar o nome. A secretária pode abrir, conferir que está
+        // tudo certo e salvar sem tocar no nome; isso já é confirmação
+        // de que alguém olhou e reconheceu esse contato.
+        if (contact?.source === CONTACT_SOURCE.WHATSAPP) {
           patch.source = CONTACT_SOURCE.MANUAL;
         }
         const { error } = await supabase
