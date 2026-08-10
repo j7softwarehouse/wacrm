@@ -240,13 +240,21 @@ export default function DashboardPage() {
                       }
                       icon={icon}
                       subtitle={
-                        awaitingReply.error
-                          ? t('awaitingReplyErrorHint')
-                          : !awaitingReply.withinHours
-                            ? t('awaitingReplyClosed')
-                            : hasRealAlert
-                              ? t('awaitingReplyHint')
-                              : t('awaitingReplyEmpty')
+                        <>
+                          {(() => {
+                            const SubtitleIcon = icon
+                            return <SubtitleIcon className="h-4 w-4" aria-hidden />
+                          })()}
+                          <span>
+                            {awaitingReply.error
+                              ? t('awaitingReplyErrorHint')
+                              : !awaitingReply.withinHours
+                                ? t('awaitingReplyClosed')
+                                : hasRealAlert
+                                  ? t('awaitingReplyHint')
+                                  : t('awaitingReplyEmpty')}
+                          </span>
+                        </>
                       }
                       tone={hasRealAlert ? 'alert' : 'default'}
                     />
