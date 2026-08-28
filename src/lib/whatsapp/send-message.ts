@@ -319,13 +319,12 @@ export async function sendMessageToConversation(
   // trás (senderUserId) e há texto pra assinar (templates e
   // interativos ficam fora: têm formato próprio/pré-aprovado).
   let outboundText = contentText ?? null;
-  let debugSignatureInfo: string | null = `DEBUG cond=false su=${params.senderUserId} ct=${!!contentText} mt=${messageType}`;
   if (
     params.senderUserId &&
     contentText &&
     (messageType === 'text' || isMediaKind)
   ) {
-    const { data: senderProfile, error: senderProfileError } = await db
+    const { data: senderProfile } = await db
       .from('profiles')
       .select('full_name')
       .eq('user_id', params.senderUserId)
@@ -334,7 +333,6 @@ export async function sendMessageToConversation(
       senderProfile?.full_name ?? null,
       contentText
     );
-    debugSignatureInfo = `DEBUG cond=true profile=${JSON.stringify(senderProfile)} err=${JSON.stringify(senderProfileError)} outboundText=${outboundText}`;
   }
 
   const attempt = async (phone: string): Promise<string> => {
@@ -455,7 +453,7 @@ export async function sendMessageToConversation(
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,
-      template_name: templateName || debugSignatureInfo || null,
+      template_name: templateName || null,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,
       message_id: waMessageId,
