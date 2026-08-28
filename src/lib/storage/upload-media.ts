@@ -14,21 +14,28 @@ import { createClient } from "@/lib/supabase/client";
  * composer call this so the logic lives in exactly one place.
  */
 
-/** 16 MB — matches the `file_size_limit` on both buckets (migrations 016/020/023). */
-export const MEDIA_MAX_BYTES = 16 * 1024 * 1024;
+/** 30 MB — matches the `file_size_limit` on both buckets (migrations 016/020/023/024). */
+export const MEDIA_MAX_BYTES = 30 * 1024 * 1024;
 
 /**
- * Per-kind upload ceilings that mirror Meta's WhatsApp Cloud API caps so
- * a file that the bucket would accept (≤16 MB) but Meta would reject is
- * caught client-side BEFORE upload — otherwise it lands in storage as an
- * orphan and the send fails with a confusing 400. Images are Meta's
- * tightest cap at 5 MB; documents are held at the 16 MB bucket limit
- * (Meta allows 100 MB, but the bucket — and shared-hosting upload UX —
- * caps lower).
+ * Tetos de upload por tipo.
+ *
+ * Estes valores espelhavam os limites da Meta Cloud API, mas a conta usa
+ * o provider uazapi, que fala o protocolo multi-device direto — e ali o
+ * teto de 16 MB da Meta não se aplica. Verificado empiricamente: um
+ * vídeo de 29,3 MB foi aceito pelo WhatsApp em 1080p, sem recompressão,
+ * como vídeo tocável.
+ *
+ * Vídeo vai a 30 MB; os demais seguem em 16 MB porque nunca foram o
+ * gargalo (imagem raramente passa de poucos MB, áudio de voz idem) e
+ * segurar o teto deles protege a cota de storage.
+ *
+ * A validação continua acontecendo no cliente ANTES do upload: sem ela o
+ * arquivo é aceito pelo bucket e vira órfão quando o envio falha.
  */
 export const MEDIA_MAX_BYTES_BY_KIND = {
   image: 5 * 1024 * 1024,
-  video: 16 * 1024 * 1024,
+  video: 30 * 1024 * 1024,
   audio: 16 * 1024 * 1024,
   document: 16 * 1024 * 1024,
 } as const;
