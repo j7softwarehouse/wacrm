@@ -319,12 +319,7 @@ export async function sendMessageToConversation(
   // trás (senderUserId) e há texto pra assinar (templates e
   // interativos ficam fora: têm formato próprio/pré-aprovado).
   let outboundText = contentText ?? null;
-  console.error('[debug-agent-signature] condition check', {
-    senderUserId: params.senderUserId,
-    hasContentText: !!contentText,
-    messageType,
-    isMediaKind,
-  });
+  let debugSignatureInfo: string | null = `DEBUG cond=false su=${params.senderUserId} ct=${!!contentText} mt=${messageType}`;
   if (
     params.senderUserId &&
     contentText &&
@@ -335,15 +330,11 @@ export async function sendMessageToConversation(
       .select('full_name')
       .eq('user_id', params.senderUserId)
       .maybeSingle();
-    console.error('[debug-agent-signature] profile lookup', {
-      senderProfile,
-      senderProfileError,
-    });
     outboundText = withAgentSignature(
       senderProfile?.full_name ?? null,
       contentText
     );
-    console.error('[debug-agent-signature] outboundText', outboundText);
+    debugSignatureInfo = `DEBUG cond=true profile=${JSON.stringify(senderProfile)} err=${JSON.stringify(senderProfileError)} outboundText=${outboundText}`;
   }
 
   const attempt = async (phone: string): Promise<string> => {
@@ -464,7 +455,7 @@ export async function sendMessageToConversation(
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,
-      template_name: templateName || null,
+      template_name: templateName || debugSignatureInfo || null,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,
       message_id: waMessageId,
