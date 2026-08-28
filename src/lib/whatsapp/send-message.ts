@@ -32,6 +32,7 @@ import {
   NoChannelConfiguredError,
 } from '@/lib/whatsapp/providers/resolve';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { withAgentSignature } from '@/lib/whatsapp/outbound-signature';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -313,6 +314,27 @@ export async function sendMessageToConversation(
     templateRow = data ?? null;
   }
 
+  // Assina o texto/legenda com o nome do atendente humano, para o
+  // contato saber quem está respondendo — só quando há um humano por
+  // trás (senderUserId) e há texto pra assinar (templates e
+  // interativos ficam fora: têm formato próprio/pré-aprovado).
+  let outboundText = contentText ?? null;
+  if (
+    params.senderUserId &&
+    contentText &&
+    (messageType === 'text' || isMediaKind)
+  ) {
+    const { data: senderProfile } = await db
+      .from('profiles')
+      .select('full_name')
+      .eq('user_id', params.senderUserId)
+      .maybeSingle();
+    outboundText = withAgentSignature(
+      senderProfile?.full_name ?? null,
+      contentText
+    );
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
       const result = await provider.sendTemplate({
@@ -331,7 +353,7 @@ export async function sendMessageToConversation(
         to: phone,
         kind: messageType as MediaKind,
         link: mediaUrl!,
-        caption: contentText || undefined,
+        caption: outboundText || undefined,
         filename: filename || undefined,
         contextMessageId,
       });
@@ -363,7 +385,7 @@ export async function sendMessageToConversation(
     }
     const result = await provider.sendText({
       to: phone,
-      text: contentText!,
+      text: outboundText!,
       contextMessageId,
     });
     return result.messageId;
