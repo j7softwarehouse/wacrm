@@ -198,6 +198,8 @@ describe('sendMessageToConversation — autoria', () => {
               }),
               maybeSingle: async () => ({ data: null, error: null }),
             }),
+            // Shape used by the sender-profile lookup (single eq).
+            maybeSingle: async () => ({ data: null, error: null }),
           }),
         }),
         insert: (row: Record<string, unknown>) => {
@@ -281,5 +283,126 @@ describe('sendMessageToConversation — autoria', () => {
     expect(result.messageId).toBe('msg-1');
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].sender_id).toBe(null);
+  });
+});
+
+describe('sendMessageToConversation — assinatura do atendente', () => {
+  function dbWithProfile(fullName: string | null) {
+    const insertedRows: Record<string, unknown>[] = [];
+    const db = {
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: fullName ? { full_name: fullName } : null,
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'cv-1',
+                    account_id: 'acct-1',
+                    contact: { id: 'contact-1', phone: '+5511987654321' },
+                  },
+                  error: null,
+                }),
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+            }),
+          }),
+          insert: (row: Record<string, unknown>) => {
+            insertedRows.push(row);
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: { id: 'msg-1', ...row },
+                  error: null,
+                }),
+              }),
+            };
+          },
+          update: () => ({ eq: async () => ({}) }),
+        };
+      },
+    } as unknown as SupabaseClient;
+    return { db, insertedRows };
+  }
+
+  it('assina o texto enviado ao provider com o nome do atendente', async () => {
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const { db } = dbWithProfile('Ramon Paula');
+
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'Oi, tudo bem?',
+      senderUserId: 'user-1',
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '*Ramon Paula:*\nOi, tudo bem?' })
+    );
+  });
+
+  it('mantém content_text salvo no banco sem o prefixo', async () => {
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const { db, insertedRows } = dbWithProfile('Ramon Paula');
+
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'Oi, tudo bem?',
+      senderUserId: 'user-1',
+    });
+
+    expect(insertedRows[0].content_text).toBe('Oi, tudo bem?');
+  });
+
+  it('não assina quando o perfil não tem full_name', async () => {
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const { db } = dbWithProfile(null);
+
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'Oi, tudo bem?',
+      senderUserId: 'user-1',
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Oi, tudo bem?' })
+    );
+  });
+
+  it('não assina quando não há senderUserId (automação/fluxo/API)', async () => {
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const { db } = dbWithProfile('Ramon Paula');
+
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'Oi, tudo bem?',
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Oi, tudo bem?' })
+    );
   });
 });

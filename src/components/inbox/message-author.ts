@@ -1,24 +1,20 @@
 /**
  * Decide se o balão deve estampar o nome de quem enviou.
  *
- * Repetir o autor em toda mensagem polui a leitura; o que resolve a dor
- * real ("onde termina o atendimento de um operador e começa o do
- * outro") é marcar a TROCA. Por isso o nome só aparece quando o autor
- * muda em relação à mensagem imediatamente anterior.
+ * Todo balão de agente leva o nome do autor. A regra anterior só marcava
+ * a TROCA de operador, o que deixava sequências inteiras sem
+ * identificação — numa conversa em que o mesmo atendente responde várias
+ * vezes seguidas, ninguém consegue dizer quem está falando sem rolar até
+ * o início do bloco. Identificar sempre custa uma linha discreta por
+ * balão e resolve a dor real.
  */
 export interface AuthorableMessage {
   sender_type: 'agent' | 'customer';
   sender_id: string | null;
 }
 
-export function shouldShowAuthor(
-  current: AuthorableMessage,
-  previous: AuthorableMessage | null,
-): boolean {
+export function shouldShowAuthor(current: AuthorableMessage): boolean {
   // Mensagem do contato nunca leva autor: quem falou é o próprio
   // contato, já identificado pelo cabeçalho da conversa.
-  if (current.sender_type !== 'agent') return false;
-  if (!previous) return true;
-  if (previous.sender_type !== 'agent') return true;
-  return previous.sender_id !== current.sender_id;
+  return current.sender_type === 'agent';
 }
