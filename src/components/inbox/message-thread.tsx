@@ -766,15 +766,6 @@ export function MessageThread({
     return map;
   }, [messages]);
 
-  // Mensagem imediatamente anterior na conversa (não no grupo por data —
-  // um novo dia não define, por si só, uma troca de operador). Alimenta
-  // `shouldShowAuthor` abaixo.
-  const previousMessage = useMemo(() => {
-    const map = new Map<string, Message | null>();
-    messages.forEach((m, i) => map.set(m.id, i > 0 ? messages[i - 1] : null));
-    return map;
-  }, [messages]);
-
   // id -> nome, derivado do `profiles` já carregado (todos os membros da
   // conta, ver efeito acima) em vez de uma consulta escopada aos
   // `sender_id` do snapshot de mensagens. Uma consulta escopada ficaria
@@ -1229,11 +1220,7 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
-                    const prevMsg = previousMessage.get(msg.id) ?? null;
-                    const showAuthor = shouldShowAuthor(
-                      toAuthorable(msg),
-                      prevMsg ? toAuthorable(prevMsg) : null,
-                    );
+                    const showAuthor = shouldShowAuthor(toAuthorable(msg));
                     const authorName = msg.sender_id
                       ? authorNames[msg.sender_id]
                       : undefined;
