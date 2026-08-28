@@ -319,20 +319,31 @@ export async function sendMessageToConversation(
   // trás (senderUserId) e há texto pra assinar (templates e
   // interativos ficam fora: têm formato próprio/pré-aprovado).
   let outboundText = contentText ?? null;
+  console.error('[debug-agent-signature] condition check', {
+    senderUserId: params.senderUserId,
+    hasContentText: !!contentText,
+    messageType,
+    isMediaKind,
+  });
   if (
     params.senderUserId &&
     contentText &&
     (messageType === 'text' || isMediaKind)
   ) {
-    const { data: senderProfile } = await db
+    const { data: senderProfile, error: senderProfileError } = await db
       .from('profiles')
       .select('full_name')
       .eq('user_id', params.senderUserId)
       .maybeSingle();
+    console.error('[debug-agent-signature] profile lookup', {
+      senderProfile,
+      senderProfileError,
+    });
     outboundText = withAgentSignature(
       senderProfile?.full_name ?? null,
       contentText
     );
+    console.error('[debug-agent-signature] outboundText', outboundText);
   }
 
   const attempt = async (phone: string): Promise<string> => {
