@@ -19,8 +19,14 @@ import { buildMediaPath } from "./upload-media";
 
 const BUCKET = "chat-media";
 
-/** Teto de segurança: mídia recebida não pode encher o bucket. */
-const MAX_INBOUND_BYTES = 16 * 1024 * 1024;
+/**
+ * Teto de segurança: mídia recebida não pode encher o bucket. Acompanha
+ * o teto de envio (30 MB) para que um vídeo que o contato consegue
+ * mandar pelo WhatsApp também caiba aqui — senão ele chegaria na
+ * conversa como "indisponível". A retenção de 48h
+ * (`/api/media/cron`) é o que segura a cota de storage.
+ */
+const MAX_INBOUND_BYTES = 30 * 1024 * 1024;
 
 /**
  * `allowed_mime_types` do bucket `chat-media` faz correspondência

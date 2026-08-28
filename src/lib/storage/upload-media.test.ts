@@ -38,8 +38,11 @@ describe("MEDIA_MAX_BYTES_BY_KIND", () => {
     expect(MEDIA_MAX_BYTES_BY_KIND.image).toBe(5 * 1024 * 1024);
   });
 
-  it("caps video/audio/document at the 16 MB bucket limit", () => {
-    expect(MEDIA_MAX_BYTES_BY_KIND.video).toBe(16 * 1024 * 1024);
+  it("permite video ate 30 MB (uazapi nao tem o teto de 16 MB da Meta)", () => {
+    expect(MEDIA_MAX_BYTES_BY_KIND.video).toBe(30 * 1024 * 1024);
+  });
+
+  it("mantem audio/document em 16 MB", () => {
     expect(MEDIA_MAX_BYTES_BY_KIND.audio).toBe(16 * 1024 * 1024);
     expect(MEDIA_MAX_BYTES_BY_KIND.document).toBe(16 * 1024 * 1024);
   });
