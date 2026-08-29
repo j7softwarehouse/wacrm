@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InboundContent } from "./ingest";
 import { buildConversationPreview, isDuplicateMessage } from "./ingest";
+import { dispatchInboundToFlows } from "@/lib/flows/engine";
+import { runAutomationsForTrigger } from "@/lib/automations/engine";
+import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 
 // Os motores de flows/automations/AI e a entrega de webhooks são
 // efeitos colaterais disparados DEPOIS que a mensagem já foi gravada —
@@ -342,5 +345,49 @@ describe("ingestInboundMessage — conversa órfã sem channel_id", () => {
     expect(db.tables.messages).toHaveLength(1);
     expect(db.tables.messages[0].conversation_id).toBe("conv-orfa");
     expect(db.tables.messages[0].message_id).toBe("wamid.ABC");
+  });
+});
+
+describe("ingestInboundMessage — mensagem de grupo nao aciona motores", () => {
+  it("NAO chama flows, automations nem IA quando params.group esta preenchido", async () => {
+    // Regressao da trava critica da Tarefa 3: sem ela, o bot responderia
+    // dentro de grupos de WhatsApp — inclusive grupos pessoais do numero
+    // conectado. Este teste chama ingestInboundMessage de verdade (nao
+    // so a funcao pura shouldDispatchEngines) para travar qualquer
+    // mudanca futura que mova uma chamada de motor para fora do `if`.
+    const { ingestInboundMessage } = await import("./ingest");
+
+    const channel = {
+      id: "chan-1",
+      account_id: "acc-1",
+      user_id: "user-1",
+      provider: "uazapi",
+      status: "connected",
+    };
+
+    const db = new FakeDb({
+      contacts: [],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    await ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP1",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi do grupo" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+
+    expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+    expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+    expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
   });
 });
