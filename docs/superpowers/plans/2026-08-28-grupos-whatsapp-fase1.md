@@ -152,13 +152,24 @@ Esperado: a constraint existe; `is_nullable = YES`.
 
 - [ ] **Step 3: Verificar que o CHECK realmente barra estado inválido**
 
+`conversations.account_id` e `conversations.user_id` são `NOT NULL` com FK para `accounts`/`auth.users` — um UUID fictício nesses campos falharia por violação de FK, não pela `CHECK`, e provaria a coisa errada. Por isso o teste usa uma conta e um usuário reais já existentes, dentro de uma transação desfeita no final (não deixa lixo no banco):
+
 ```sql
--- Deve FALHAR com violação da constraint:
+BEGIN;
+
+-- Pega um account_id e um user_id reais já existentes no ambiente.
+-- (rodar antes, à parte, e usar os valores devolvidos abaixo)
+SELECT id AS account_id FROM accounts LIMIT 1;
+SELECT user_id FROM profiles LIMIT 1;
+
+-- Deve FALHAR com violação da constraint (usar os UUIDs reais obtidos acima):
 INSERT INTO conversations (account_id, user_id, contact_id, group_id)
-VALUES ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', NULL, NULL);
+VALUES ('<account_id real>', '<user_id real>', NULL, NULL);
+
+ROLLBACK;
 ```
 
-Esperado: erro `violates check constraint "conversations_contact_xor_group"`. Se o insert passar, a constraint não está ativa — parar e investigar antes de seguir.
+Esperado: erro `violates check constraint "conversations_contact_xor_group"`. Se o insert passar, a constraint não está ativa — parar e investigar antes de seguir. O `ROLLBACK` garante que nada fica gravado mesmo que o teste passe.
 
 - [ ] **Step 4: Commit**
 
