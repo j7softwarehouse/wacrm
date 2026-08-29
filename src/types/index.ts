@@ -164,7 +164,13 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
-  contact_id: string;
+  /**
+   * Nullable since Task 1 (grupos WhatsApp fase 1): a group conversation
+   * carries `group_id` instead and has no `contact_id`/`contact`. Phase 1
+   * doesn't create group conversations yet, but every reader must treat
+   * this — and `contact` below — as possibly absent.
+   */
+  contact_id: string | null;
   status: ConversationStatus;
   /**
    * Which WhatsApp channel this conversation belongs to (migration 037,
