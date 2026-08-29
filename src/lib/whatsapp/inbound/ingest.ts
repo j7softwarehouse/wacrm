@@ -504,7 +504,7 @@ async function ingestGroupMessage(
       conversation_id: resolved.conversationId,
       sender_type: "customer",
       participant_id: resolved.participantId,
-      content_type: params.content.type,
+      content_type: toDbContentType(params.content.type),
       content_text: params.content.text ?? null,
       media_url: params.content.mediaUrl ?? null,
       message_id: params.providerMessageId,

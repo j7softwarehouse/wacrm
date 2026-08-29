@@ -144,4 +144,28 @@ describe('ingestInboundMessage — mensagem de grupo', () => {
     expect(r).toBeNull();
     expect(porTabela['messages']).toBeUndefined();
   });
+
+  it('normaliza content_type sticker para image', async () => {
+    // Figurinhas são comuns em grupos, mas a CHECK constraint de
+    // messages.content_type só aceita tipos permitidos — sticker não está
+    // na lista. toDbContentType já mapeia sticker → image, e o caminho 1:1
+    // usa este helper (linha ~656). O caminho de grupo deve fazer o mesmo
+    // para evitar violação de constraint.
+    const porTabela: Record<string, Record<string, unknown>[]> = {};
+
+    await ingestInboundMessage(fakeDb(porTabela), {
+      channel: CANAL,
+      from: '5511999999999',
+      providerMessageId: 'wamid-sticker-1',
+      timestamp: Math.floor(Date.now() / 1000),
+      content: { type: 'sticker' },
+      group: GRUPO,
+    });
+
+    expect(porTabela['messages']?.[0]).toMatchObject({
+      conversation_id: 'cv-1',
+      sender_type: 'customer',
+      content_type: 'image',
+    });
+  });
 });
