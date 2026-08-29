@@ -65,34 +65,55 @@ export async function resolveGroupConversation(
   // mas a mensagem não entra na inbox.
   if (!enabled) return null;
 
-  const { data: participant } = await db
+  // Upsert: o mesmo participante escreve várias vezes no mesmo grupo.
+  // UNIQUE (group_id, participant_jid) faria um insert cego violar a
+  // constraint a partir da segunda mensagem — silenciosamente, porque
+  // o erro não era checado.
+  const { data: participant, error: participantError } = await db
     .from('group_participants')
-    .insert({
-      group_id: groupId,
-      participant_jid: group.participantJid,
-      phone: phoneFromParticipantJid(group.participantJid),
-      display_name: group.participantName ?? null,
-    })
+    .upsert(
+      {
+        group_id: groupId,
+        participant_jid: group.participantJid,
+        phone: phoneFromParticipantJid(group.participantJid),
+        display_name: group.participantName ?? null,
+      },
+      { onConflict: 'group_id,participant_jid' },
+    )
     .select('id')
     .single();
+  if (participantError || !participant) return null;
 
-  const { data: conversation } = await db
+  // Find-or-create: idx_conversations_account_group_channel permite no
+  // máximo uma conversa por (account_id, group_id, channel_id). Um
+  // insert cego faria toda mensagem a partir da segunda no mesmo grupo
+  // (de qualquer participante) violar a constraint.
+  const { data: existingConversation } = await db
     .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: userId,
-      contact_id: null,
-      group_id: groupId,
-      channel_id: channelId,
-    })
     .select('id')
-    .single();
+    .eq('account_id', accountId)
+    .eq('group_id', groupId)
+    .eq('channel_id', channelId)
+    .maybeSingle();
 
-  if (!participant || !conversation) return null;
+  let conversationId: string;
+  if (existingConversation) {
+    conversationId = existingConversation.id;
+  } else {
+    const { data: created, error } = await db
+      .from('conversations')
+      .insert({
+        account_id: accountId,
+        user_id: userId,
+        contact_id: null,
+        group_id: groupId,
+        channel_id: channelId,
+      })
+      .select('id')
+      .single();
+    if (error || !created) return null;
+    conversationId = created.id;
+  }
 
-  return {
-    conversationId: conversation.id,
-    groupId,
-    participantId: participant.id,
-  };
+  return { conversationId, groupId, participantId: participant.id };
 }
