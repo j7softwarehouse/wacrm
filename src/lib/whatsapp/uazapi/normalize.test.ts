@@ -84,12 +84,34 @@ describe("normalizeUazapiEvent — formato real (EventType/message)", () => {
     expect(result!.timestamp).toBe(1785287848);
   });
 
-  it("descarta mensagens de grupo", () => {
-    const grupo = {
+  it("extrai grupo e participante em vez de descartar", () => {
+    const evento = {
       ...eventoReal,
-      message: { ...eventoReal.message, isGroup: true },
+      message: {
+        ...eventoReal.message,
+        isGroup: true,
+        chatid: '120363000000000000@g.us',
+        sender_pn: '5511999999999@s.whatsapp.net',
+        senderName: 'Fulano',
+      },
     };
-    expect(normalizeUazapiEvent(grupo)).toBeNull();
+
+    const r = normalizeUazapiEvent(evento);
+
+    expect(r).not.toBeNull();
+    expect(r!.group).toEqual({
+      groupJid: '120363000000000000@g.us',
+      participantJid: '5511999999999@s.whatsapp.net',
+      participantName: 'Fulano',
+    });
+    // Em grupo o remetente e o PARTICIPANTE, nunca o JID do grupo.
+    expect(r!.from).toBe('5511999999999');
+  });
+
+  it("mensagem 1:1 continua sem o campo group", () => {
+    const r = normalizeUazapiEvent(eventoReal);
+    expect(r).not.toBeNull();
+    expect(r!.group).toBeUndefined();
   });
 
   it("descarta o eco das próprias mensagens", () => {

@@ -51,6 +51,12 @@ export interface NormalizedInbound {
   timestamp: number;
   content: InboundContent;
   replyToProviderMessageId?: string;
+  /** Presente só em mensagem de grupo. Ausente = 1:1. */
+  group?: {
+    groupJid: string;
+    participantJid: string;
+    participantName?: string;
+  };
 }
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`. */
@@ -60,6 +66,10 @@ function phoneFromJid(jid: unknown): string | null {
   if (!user) return null;
   const [phone] = user.split(":");
   return phone || null;
+}
+
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" && v ? v : undefined;
 }
 
 /** Nome do evento, nos dois vocabulários possíveis — `EventType` é o confirmado. */
@@ -113,24 +123,50 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
   const d = extractMessageData(e);
   if (!d) return null;
 
-  if (d.isGroup === true) return null;
   if (d.wasSentByApi === true) return null;
   if (d.fromMe === true) return null;
+
+  const isGroup = d.isGroup === true;
 
   // `sender_pn` é o JID baseado em TELEFONE do remetente — confirmado
   // com evento real. `sender` sozinho pode vir no formato @lid (o
   // identificador opaco e não-telefônico que o WhatsApp usa cada vez
   // mais por privacidade), que não é um número utilizável. Por isso
-  // `sender_pn` e `chatid` (o JID da conversa 1:1, equivalente aqui já
-  // que grupo foi descartado acima) vêm ANTES de `sender` — na ordem
-  // errada, toda mensagem vira um "contato" com o número de LID em vez
-  // do telefone real.
+  // `sender_pn` vem ANTES de `sender` — na ordem errada, toda mensagem
+  // vira um "contato" com o número de LID em vez do telefone real.
+  //
+  // `chatid` só entra na cadeia em mensagem 1:1, onde é o JID da
+  // própria conversa (equivalente ao remetente). Em GRUPO, `chatid` é
+  // o JID DO GRUPO — usá-lo aqui gravaria o grupo como se fosse quem
+  // enviou a mensagem.
   const from =
     phoneFromJid(d.sender_pn) ??
-    phoneFromJid(d.chatid) ??
+    (isGroup ? null : phoneFromJid(d.chatid)) ??
     phoneFromJid(d.sender) ??
     phoneFromJid(d.from);
   if (!from) return null;
+
+  // Em grupo, `chatid` é o JID DO GRUPO — não serve como identidade do
+  // remetente. O participante tem que sair de `sender_pn`/`sender`, e
+  // quando só houver @lid ficamos sem telefone (por isso
+  // `group_participants.phone` é nulável).
+  const groupJid = isGroup ? asString(d.chatid) : undefined;
+  const participantJid = isGroup
+    ? (asString(d.sender_pn) ?? asString(d.sender))
+    : undefined;
+
+  const group =
+    groupJid && participantJid
+      ? {
+          groupJid,
+          participantJid,
+          participantName: asString(d.senderName) ?? asString(d.pushName),
+        }
+      : undefined;
+
+  // Grupo sem participante identificável é descartado: sem autor a
+  // mensagem viraria um balão anônimo na thread.
+  if (isGroup && !group) return null;
 
   const providerMessageId =
     (typeof d.messageid === "string" && d.messageid) ||
@@ -217,5 +253,6 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
     content,
     replyToProviderMessageId:
       typeof d.quoted === "string" && d.quoted ? d.quoted : undefined,
+    group,
   };
 }
