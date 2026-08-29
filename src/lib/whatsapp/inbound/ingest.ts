@@ -22,6 +22,10 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 import { CONTACT_SOURCE } from "@/lib/contacts/source";
 import { dispatchInboundToFlows } from "@/lib/flows/engine";
+import {
+  resolveGroupConversation,
+  type ResolvedGroupConversation,
+} from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { dispatchWebhookEvent } from "@/lib/webhooks/deliver";
 import type { WhatsAppChannel } from "@/types";
 
@@ -483,6 +487,54 @@ async function findOrCreateConversation(
 }
 
 /**
+ * Grava a mensagem de um grupo já resolvido (conversa + participante).
+ * Caminho deliberadamente separado do 1:1: não há contato a achar ou
+ * criar — o participante mora em `group_participants`, nunca em
+ * `contacts`. Não dispara flows/automations/IA (isso é decidido antes,
+ * por `shouldDispatchEngines`, no caminho comum de quem chama).
+ */
+async function ingestGroupMessage(
+  db: SupabaseClient,
+  params: IngestParams,
+  resolved: ResolvedGroupConversation,
+): Promise<IngestResult | null> {
+  const { data: message, error } = await db
+    .from("messages")
+    .insert({
+      conversation_id: resolved.conversationId,
+      sender_type: "customer",
+      participant_id: resolved.participantId,
+      content_type: params.content.type,
+      content_text: params.content.text ?? null,
+      media_url: params.content.mediaUrl ?? null,
+      message_id: params.providerMessageId,
+      status: "received",
+    })
+    .select("id")
+    .single();
+
+  if (error || !message) return null;
+
+  await db
+    .from("conversations")
+    .update({
+      last_message_text: buildConversationPreview(params.content),
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", resolved.conversationId);
+
+  return {
+    messageId: message.id,
+    conversationId: resolved.conversationId,
+    // Conversa de grupo não tem contato — o campo existe no contrato
+    // por causa do caminho 1:1.
+    contactId: "",
+    deduped: false,
+  };
+}
+
+/**
  * Ingere uma mensagem recebida, venha de qual provedor vier.
  *
  * Devolve `null` quando nada foi ingerido — contato/conversa não
@@ -503,6 +555,25 @@ export async function ingestInboundMessage(
   // NOT NULL (contacts, conversations). Sempre o admin que salvou a
   // configuração do canal; a escolha é arbitrária pós-017 mas estável.
   const configOwnerUserId = channel.user_id;
+
+  // Grupo tem caminho próprio: não há contato a criar, e o
+  // participante mora em `group_participants`. Precisa vir antes de
+  // findOrCreateContact — senão um "contato" seria criado a partir do
+  // telefone do participante do grupo, violando a restrição de
+  // produto de que participante nunca vira contato.
+  if (params.group) {
+    const resolved = await resolveGroupConversation(
+      db,
+      accountId,
+      channel.id,
+      configOwnerUserId,
+      params.group,
+    );
+    // Grupo não habilitado (ou recém-descoberto): nada entra na inbox.
+    if (!resolved) return null;
+
+    return await ingestGroupMessage(db, params, resolved);
+  }
 
   // Acha ou cria o contato
   const contactOutcome = await findOrCreateContact(
