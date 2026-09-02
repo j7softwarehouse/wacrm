@@ -178,6 +178,11 @@ export function SettingsOverview({
       ),
     },
     {
+      section: 'groups',
+      loading: false,
+      subtitle: t('manageGroups'),
+    },
+    {
       section: 'members',
       loading: countsLoading,
       subtitle:
