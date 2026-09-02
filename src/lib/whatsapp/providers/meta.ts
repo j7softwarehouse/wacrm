@@ -17,15 +17,16 @@ import {
 import type { MessageTemplate } from "@/types";
 import type { SendTimeParams } from "@/lib/whatsapp/template-send-builder";
 
-import type {
-  SendInteractiveButtonsArgs,
-  SendInteractiveListArgs,
-  SendMediaArgs,
-  SendReactionArgs,
-  SendResult,
-  SendTemplateArgs,
-  SendTextArgs,
-  WhatsAppProvider,
+import {
+  ProviderUnsupportedError,
+  type SendInteractiveButtonsArgs,
+  type SendInteractiveListArgs,
+  type SendMediaArgs,
+  type SendReactionArgs,
+  type SendResult,
+  type SendTemplateArgs,
+  type SendTextArgs,
+  type WhatsAppProvider,
 } from "./types";
 
 export interface MetaProviderConfig {
@@ -115,6 +116,13 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       // resolve sob demanda com a credencial do lado do servidor.
       if (!ref) return null;
       return `/api/whatsapp/media/${ref}`;
+    },
+
+    async listGroups() {
+      // A Cloud API da Meta não expõe grupos. A UI esconde a
+      // funcionalidade em canais Meta; isto é a rede de proteção para
+      // um caminho que não deveria ser alcançável.
+      throw new ProviderUnsupportedError("meta", "listGroups");
     },
   };
 }

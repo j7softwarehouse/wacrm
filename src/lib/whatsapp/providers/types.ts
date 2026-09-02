@@ -153,4 +153,6 @@ export interface WhatsAppProvider {
    * Meta devolve um proxy preguiçoso; UAZAPI baixa para o Storage.
    */
   resolveInboundMediaUrl(ref: string): Promise<string | null>;
+  /** Grupos de que o número conectado participa. */
+  listGroups(): Promise<Array<{ groupJid: string; name?: string; avatarUrl?: string }>>;
 }
