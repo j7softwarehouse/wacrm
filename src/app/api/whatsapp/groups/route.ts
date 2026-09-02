@@ -53,7 +53,7 @@ async function resolveCallerProfile(
   };
 }
 
-export async function GET() {
+export async function GET(_request: Request) {
   try {
     const supabase = await createClient();
 
