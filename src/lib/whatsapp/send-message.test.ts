@@ -540,4 +540,66 @@ describe('sendMessageToConversation — conversa de grupo', () => {
       }),
     ).rejects.toBeInstanceOf(SendMessageError);
   });
+
+  it('assina a mensagem de grupo com o nome do atendente', async () => {
+    // Em grupo a assinatura importa mais que no 1:1: varias pessoas leem,
+    // e sem ela ninguem sabe qual atendente respondeu.
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-grupo-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const db = {
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { full_name: 'Ramon Paula' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'cv-grupo',
+                    account_id: 'acct-1',
+                    contact_id: null,
+                    group_id: 'grp-1',
+                    contact: null,
+                    group: { id: 'grp-1', group_jid: '120363000000000000@g.us' },
+                  },
+                  error: null,
+                }),
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (row: Record<string, unknown>) => ({
+            select: () => ({
+              single: async () => ({ data: { id: 'msg-1', ...row }, error: null }),
+            }),
+          }),
+          update: () => ({ eq: async () => ({ error: null }) }),
+        };
+      },
+    } as unknown as SupabaseClient;
+
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'bom dia',
+      senderUserId: 'user-1',
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '*Ramon Paula:*\nbom dia' }),
+    );
+  });
 });
