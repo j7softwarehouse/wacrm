@@ -76,7 +76,7 @@ export async function resolveGroupConversation(
         group_id: groupId,
         participant_jid: group.participantJid,
         phone: phoneFromParticipantJid(group.participantJid),
-        display_name: group.participantName ?? null,
+        ...(group.participantName ? { display_name: group.participantName } : {}),
       },
       { onConflict: 'group_id,participant_jid' },
     )

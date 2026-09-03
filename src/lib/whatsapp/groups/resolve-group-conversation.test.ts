@@ -276,4 +276,30 @@ describe('resolveGroupConversation — idempotência (upsert / find-or-create)',
     // group_participants — só a conversa é compartilhada.
     expect(db.tables['group_participants']).toHaveLength(2);
   });
+
+  it('nao apaga display_name ja conhecido quando uma mensagem seguinte chega sem participantName', async () => {
+    // Regressão do bug Importante: normalize.ts só preenche
+    // participantName quando o evento da uazapi traz senderName/pushName
+    // (ambos opcionais). Um upsert que sempre grava
+    // `display_name: group.participantName ?? null` sobrescreveria um
+    // nome já resolvido com null assim que uma mensagem sem esse campo
+    // chegasse — mesmo participante, mesmo grupo.
+    const db = new FakeDb();
+    db.tables['whatsapp_groups'] = [
+      { id: 'grp-1', account_id: 'acct-1', channel_id: 'ch-1', group_jid: GROUP.groupJid, enabled: true },
+    ];
+
+    const r1 = await resolveGroupConversation(db as unknown as SupabaseClient, 'acct-1', 'ch-1', 'user-1', GROUP);
+    const r2 = await resolveGroupConversation(db as unknown as SupabaseClient, 'acct-1', 'ch-1', 'user-1', {
+      groupJid: GROUP.groupJid,
+      participantJid: GROUP.participantJid,
+      // participantName ausente, como em vários tipos de evento da uazapi.
+    });
+
+    expect(r1).not.toBeNull();
+    expect(r2).not.toBeNull();
+    expect(r2!.participantId).toBe(r1!.participantId);
+    expect(db.tables['group_participants']).toHaveLength(1);
+    expect(db.tables['group_participants'][0].display_name).toBe('Fulano');
+  });
 });
