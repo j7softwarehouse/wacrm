@@ -508,7 +508,14 @@ async function ingestGroupMessage(
       content_text: params.content.text ?? null,
       media_url: params.content.mediaUrl ?? null,
       message_id: params.providerMessageId,
-      status: "received",
+      // 'received' nunca existiu na CHECK constraint de messages.status
+      // (só 'sending'|'sent'|'delivered'|'read'|'failed' — schema
+      // original, nunca alterado). O insert violava a constraint e a
+      // função devolvia null silenciosamente: participante e conversa
+      // eram criados, mas a mensagem em si nunca era gravada. O caminho
+      // 1:1 (ingestInboundMessage, abaixo) já usa 'delivered' para o
+      // mesmo cenário — mensagem recebida de um cliente.
+      status: "delivered",
     })
     .select("id")
     .single();

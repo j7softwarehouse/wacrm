@@ -145,6 +145,30 @@ describe('ingestInboundMessage — mensagem de grupo', () => {
     expect(porTabela['messages']).toBeUndefined();
   });
 
+  it('grava mensagem de grupo com status permitido pela CHECK constraint real', async () => {
+    // messages.status tem CHECK (status IN ('sending','sent','delivered',
+    // 'read','failed')) desde a migration inicial — nunca alterada para
+    // incluir 'received'. O fake de banco não simula CHECK constraint (só
+    // reentrega o valor no insert.select().single()), então este teste
+    // precisa afirmar o VALOR gravado, não confiar em um erro de banco
+    // fake. O caminho 1:1 (ingestInboundMessage, mesmo arquivo) já usa
+    // 'delivered' para o mesmo cenário — mensagem recebida de um cliente.
+    const ALLOWED_STATUS = ['sending', 'sent', 'delivered', 'read', 'failed'];
+    const porTabela: Record<string, Record<string, unknown>[]> = {};
+
+    await ingestInboundMessage(fakeDb(porTabela), {
+      channel: CANAL,
+      from: '5511999999999',
+      providerMessageId: 'wamid-status-1',
+      timestamp: Math.floor(Date.now() / 1000),
+      content: { type: 'text', text: 'oi grupo' },
+      group: GRUPO,
+    });
+
+    const status = porTabela['messages']?.[0]?.status;
+    expect(ALLOWED_STATUS).toContain(status);
+  });
+
   it('normaliza content_type sticker para image', async () => {
     // Figurinhas são comuns em grupos, mas a CHECK constraint de
     // messages.content_type só aceita tipos permitidos — sticker não está
