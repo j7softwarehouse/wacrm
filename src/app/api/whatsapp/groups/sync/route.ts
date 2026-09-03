@@ -25,9 +25,10 @@ import {
 // payload. O merge do PostgREST (`Prefer: resolution=merge-duplicates`)
 // só sobrescreve as colunas presentes no corpo do upsert — omitindo
 // `enabled`, um grupo já existente mantém o valor que o usuário
-// configurou, e um grupo novo cai no DEFAULT da coluna (`false`,
-// opt-in explícito). Resetar `enabled` a cada sync desligaria grupos
-// que o usuário já tinha ligado.
+// configurou, e um grupo novo cai no DEFAULT da coluna (`true` —
+// espelha o WhatsApp: já é membro do grupo, já vê as mensagens).
+// Resetar `enabled` a cada sync desligaria grupos que o usuário já
+// tinha desligado.
 // ============================================================
 
 type SyncSupabase = Awaited<ReturnType<typeof createClient>>;
