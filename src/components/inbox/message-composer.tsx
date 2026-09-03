@@ -626,6 +626,7 @@ export function MessageComposer({
             <Button
               variant="ghost"
               size="sm"
+              disabled={sendBlocked}
               className="h-7 text-xs text-amber-400 hover:text-amber-300"
               onClick={onOpenTemplates}
             >
