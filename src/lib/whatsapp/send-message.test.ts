@@ -406,3 +406,138 @@ describe('sendMessageToConversation — assinatura do atendente', () => {
     );
   });
 });
+
+describe('sendMessageToConversation — conversa de grupo', () => {
+  beforeEach(() => {
+    mocks.getProviderForConversation.mockResolvedValue({
+      sendText: async () => ({ messageId: 'wamid-grupo-1' }),
+    });
+  });
+
+  /** Conversa de grupo: sem contato, com `group` embutido pela query. */
+  function groupDb(capture: { rows: Record<string, unknown>[]; tables: string[] }) {
+    return {
+      from: (table: string) => {
+        capture.tables.push(table);
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'cv-grupo',
+                    account_id: 'acct-1',
+                    contact_id: null,
+                    group_id: 'grp-1',
+                    contact: null,
+                    group: { id: 'grp-1', group_jid: '120363000000000000@g.us' },
+                  },
+                  error: null,
+                }),
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (row: Record<string, unknown>) => {
+            capture.rows.push(row);
+            return {
+              select: () => ({
+                single: async () => ({ data: { id: 'msg-grupo-1', ...row }, error: null }),
+              }),
+            };
+          },
+          update: () => ({ eq: async () => ({ error: null }) }),
+        };
+      },
+    } as unknown as SupabaseClient;
+  }
+
+  it('envia texto para o JID do grupo em vez de telefone', async () => {
+    const sendText = vi.fn(async () => ({ messageId: 'wamid-grupo-1' }));
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    const result = await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'oi grupo',
+      senderUserId: 'user-1',
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '120363000000000000@g.us' }),
+    );
+    expect(result.messageId).toBe('msg-grupo-1');
+  });
+
+  it('NAO toca na tabela contacts ao enviar em grupo', async () => {
+    // Requisito duro da Fase 1 que a Fase 2 nao pode quebrar: a
+    // auto-correcao de telefone do caminho 1:1 grava em `contacts`, e
+    // conversa de grupo nao tem contato nenhum para corrigir.
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'oi',
+      senderUserId: 'user-1',
+    });
+
+    expect(capture.tables).not.toContain('contacts');
+  });
+
+  it('grava a mensagem enviada com sender_id do operador e sem participant_id', async () => {
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'oi',
+      senderUserId: 'user-1',
+    });
+
+    const message = capture.rows.find((r) => r.sender_type === 'agent');
+    expect(message).toMatchObject({
+      conversation_id: 'cv-grupo',
+      sender_type: 'agent',
+      sender_id: 'user-1',
+    });
+    // participant_id identifica quem escreveu numa mensagem RECEBIDA;
+    // mensagem enviada e do nosso time, o autor vem de sender_id.
+    expect(message?.participant_id).toBeUndefined();
+  });
+
+  it('recusa conversa de grupo cujo grupo nao foi encontrado', async () => {
+    const db = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  id: 'cv-grupo',
+                  account_id: 'acct-1',
+                  contact_id: null,
+                  group_id: 'grp-sumiu',
+                  contact: null,
+                  group: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      sendMessageToConversation(db, 'acct-1', {
+        conversationId: 'cv-grupo',
+        messageType: 'text',
+        contentText: 'oi',
+        senderUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(SendMessageError);
+  });
+});
