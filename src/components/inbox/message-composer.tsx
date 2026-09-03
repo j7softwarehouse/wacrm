@@ -135,19 +135,11 @@ interface MessageComposerProps {
    */
   channelWarning?: string | null;
   /**
-   * True for a group conversation (`conversation.group_id` set). Phase 1
-   * (Tarefa 11) is read-only for groups — sending arrives in a later
-   * phase — so this closes the composer entirely rather than letting an
-   * agent tap Send and hit a server-side rejection. Defaults to false so
-   * existing 1:1 callers keep working.
+   * True numa conversa de grupo. Fase 2 permite texto e mídia em grupo,
+   * mas o construtor de mensagem interativa fica de fora: botão em grupo
+   * tem semântica confusa (qualquer participante pode clicar).
    */
-  groupReadOnly?: boolean;
-  /**
-   * Localized copy shown when `groupReadOnly` is true (parent passes
-   * `Settings.groups.readOnly` — same wording as the Settings tab so the
-   * "why" is consistent across the app).
-   */
-  groupReadOnlyText?: string;
+  isGroup?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -173,8 +165,7 @@ export function MessageComposer({
   templatesSupported = true,
   channelUnavailable,
   channelWarning,
-  groupReadOnly = false,
-  groupReadOnlyText,
+  isGroup = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -230,12 +221,7 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
-  // Group conversations are read-only for the whole account in Phase 1
-  // (not a per-role gate like `readOnly` above) — sending to a group
-  // arrives in a later phase. Folded into the same "sending is blocked"
-  // boolean as `channelUnavailable` so every button/textarea that
-  // already guards on it picks this up for free.
-  const sendBlocked = channelUnavailable || groupReadOnly;
+  const sendBlocked = channelUnavailable;
   // Media (like free-form text) is only allowed inside the 24h window.
   // `channelUnavailable` folds in the two channel-level reasons sending
   // can't happen — channel disconnected, or its channel_id was set to
@@ -608,14 +594,6 @@ export function MessageComposer({
           <p className="text-xs text-red-400">{channelWarning}</p>
         </div>
       )}
-      {/* Group read-only notice (Tarefa 11) — informational, not an
-          error, so it gets the neutral treatment (no red/amber) that
-          Settings → Groups uses for the same copy. */}
-      {groupReadOnly && groupReadOnlyText && (
-        <div className="mb-2 flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2">
-          <p className="text-xs text-muted-foreground">{groupReadOnlyText}</p>
-        </div>
-      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -712,11 +690,9 @@ export function MessageComposer({
               title={
                 readOnly
                   ? t("readOnlyTitle")
-                  : groupReadOnly
-                    ? groupReadOnlyText
-                    : inputsDisabled
-                      ? undefined
-                      : t("attachMedia")
+                  : inputsDisabled
+                    ? undefined
+                    : t("attachMedia")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -754,21 +730,21 @@ export function MessageComposer({
               title={
                 readOnly
                   ? t("readOnlyTitle")
-                  : groupReadOnly
-                    ? groupReadOnlyText
-                    : inputsDisabled
-                      ? undefined
-                      : t("moreActions")
+                  : inputsDisabled
+                    ? undefined
+                    : t("moreActions")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
-                <MessageSquareDashed className="mr-2 h-4 w-4" />
-                {t("interactiveMessage")}
-              </DropdownMenuItem>
+              {!isGroup && (
+                <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                  <MessageSquareDashed className="mr-2 h-4 w-4" />
+                  {t("interactiveMessage")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -786,9 +762,7 @@ export function MessageComposer({
               title={
                 readOnly
                   ? undefined
-                  : groupReadOnly
-                    ? groupReadOnlyText
-                    : channelWarning ?? t("sendTemplate")
+                  : channelWarning ?? t("sendTemplate")
               }
               className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
               onClick={onOpenTemplates}
@@ -806,9 +780,7 @@ export function MessageComposer({
             title={
               readOnly
                 ? undefined
-                : groupReadOnly
-                  ? groupReadOnlyText
-                  : channelWarning ?? t("draftWithAI")
+                : channelWarning ?? t("draftWithAI")
             }
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
@@ -828,26 +800,22 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : groupReadOnly
-                  ? groupReadOnlyText
-                  : channelUnavailable
-                    ? t("channelUnavailablePlaceholder")
-                    : sessionExpired
-                      ? t("sessionExpiredPlaceholder")
-                      : t("typeMessagePlaceholder")
+                : channelUnavailable
+                  ? t("channelUnavailablePlaceholder")
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : t("typeMessagePlaceholder")
             }
             disabled={inputsDisabled}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only /
-            // channel-unavailable / group-read-only state.
+            // channel-unavailable state.
             title={
               readOnly
                 ? t("readOnlyTitle")
-                : groupReadOnly
-                  ? groupReadOnlyText
-                  : channelWarning ?? undefined
+                : channelWarning ?? undefined
             }
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",

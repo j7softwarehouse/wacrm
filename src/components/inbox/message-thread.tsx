@@ -191,7 +191,6 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
   const tBubble = useTranslations("Inbox.bubble");
-  const tGroups = useTranslations("Settings.groups");
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -1338,16 +1337,15 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer — Fase 1 de grupos é somente leitura (Tarefa 11):
-          envio para grupo chega numa fase futura. */}
+      {/* Composer — Fase 2 de grupos permite texto e mídia; o construtor
+          de mensagem interativa fica oculto em grupo (isGroup). */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         templatesSupported={templatesSupported}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
-        groupReadOnly={!!conversation.group_id}
-        groupReadOnlyText={tGroups("readOnly")}
+        isGroup={!!conversation.group_id}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}
