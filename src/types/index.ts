@@ -166,9 +166,9 @@ export interface Conversation {
   user_id: string;
   /**
    * Nullable since Task 1 (grupos WhatsApp fase 1): a group conversation
-   * carries `group_id` instead and has no `contact_id`/`contact`. Phase 1
-   * doesn't create group conversations yet, but every reader must treat
-   * this — and `contact` below — as possibly absent.
+   * carries `group_id` instead and has no `contact_id`/`contact`. Group
+   * conversations are created for real as of Tasks 5/7 — every reader
+   * must treat this, and `contact` below, as possibly absent.
    */
   contact_id: string | null;
   status: ConversationStatus;
@@ -194,6 +194,11 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * Presente só numa conversa de grupo (`group_id` não nulo). Mesmo
+   * padrão de `contact` para o caminho 1:1.
+   */
+  group?: { id: string; name: string | null; avatar_url: string | null } | null;
   /**
    * AI auto-reply state for this thread (migration 029 + 033):
    *  - `ai_autoreply_disabled` — the bot is paused here (a human took

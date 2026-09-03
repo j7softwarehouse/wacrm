@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   channelLabel,
+  conversationDisplayName,
   matchesContactFilters,
   normalizeConversation,
 } from "./conversations";
@@ -142,6 +143,39 @@ describe("normalizeConversation", () => {
     };
     // A contactless row passes through untouched (consumers use `?.`).
     expect(normalizeConversation(raw).contact).toBeNull();
+  });
+});
+
+describe("conversationDisplayName", () => {
+  // Bug real da verificação ponta-a-ponta (Tarefa 12): CONVERSATION_SELECT
+  // nunca juntava whatsapp_groups, então uma conversa de grupo (contact_id
+  // null) sempre caía no fallback "Desconhecido" na lista da Inbox.
+  it("usa o nome do grupo quando não há contato", () => {
+    const conv = {
+      group: { id: "g1", name: "Teste", avatar_url: null },
+      contact: null,
+    };
+    expect(conversationDisplayName(conv)).toBe("Teste");
+  });
+
+  it("usa o nome do contato no caminho 1:1 (sem grupo)", () => {
+    const conv = {
+      group: undefined,
+      contact: { name: "Fulano", phone: "5511999999999" } as Conversation["contact"],
+    };
+    expect(conversationDisplayName(conv)).toBe("Fulano");
+  });
+
+  it("cai para o telefone do contato quando o contato não tem nome", () => {
+    const conv = {
+      group: undefined,
+      contact: { name: undefined, phone: "5511999999999" } as unknown as Conversation["contact"],
+    };
+    expect(conversationDisplayName(conv)).toBe("5511999999999");
+  });
+
+  it("devolve null quando não há grupo nem contato (chamador decide o fallback)", () => {
+    expect(conversationDisplayName({ group: undefined, contact: undefined })).toBeNull();
   });
 });
 

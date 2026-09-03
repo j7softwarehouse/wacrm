@@ -7,7 +7,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
-import { channelLabel } from "@/lib/inbox/conversations";
+import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
 import type {
   Conversation,
   Message,
@@ -967,7 +967,12 @@ export function MessageThread({
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
-  if (!conversation || !contact) {
+  // Um grupo não tem `contact` (contact_id é null pra ele — ver
+  // `conversations_contact_xor_group`); sem esta exceção o thread inteiro
+  // caía no placeholder "selecione uma conversa" pra toda conversa de
+  // grupo, mesmo já selecionada. Achado durante a correção do Bug 2 da
+  // Tarefa 12 (a lista já mostrava "Desconhecido" pelo mesmo motivo).
+  if (!conversation || (!contact && !conversation.group_id)) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -983,7 +988,7 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = conversationDisplayName(conversation) || "Unknown";
 
   // Which channel this conversation came in on, and whether sending is
   // currently possible on it. `channel_id === null` means the channel was
@@ -1057,7 +1062,7 @@ export function MessageThread({
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <p className="truncate text-xs text-muted-foreground">{contact?.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}

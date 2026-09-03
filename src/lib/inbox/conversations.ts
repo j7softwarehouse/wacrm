@@ -6,9 +6,16 @@ import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
  * can filter conversations by contact tag without a second round-trip.
  * `contact_tags(tags(*))` returns the join rows; {@link normalizeConversation}
  * flattens them onto `contact.tags`.
+ *
+ * Also embeds the group (columns `id`, `name`, `avatar_url` from
+ * `whatsapp_groups`, migration 20260829000001) for the group-conversation
+ * path: `group_id` is set instead of `contact_id`, so without this join
+ * every group conversation showed up in the Inbox list as "Desconhecido"
+ * (no `contact` to read a name from). Found during the Task 12
+ * end-to-end verification against a real database.
  */
 export const CONVERSATION_SELECT =
-  "*, contact:contacts(*, contact_tags(tags(*)))";
+  "*, contact:contacts(*, contact_tags(tags(*))), group:whatsapp_groups(id, name, avatar_url)";
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };
@@ -48,6 +55,27 @@ export interface ContactFilters {
   tagIds: string[];
   /** Exact company match, or null for no company filter. */
   company: string | null;
+}
+
+/**
+ * Best available display name for a conversation, or `null` when there's
+ * nothing to show (caller falls back to an "unknown" label). A group
+ * conversation has `group` but no `contact` (`contact_id` is null for it,
+ * per `conversations_contact_xor_group`); the 1:1 path is the mirror
+ * image. Checking `group` first costs nothing on the 1:1 path (it's
+ * always undefined there) and gives the group path priority when, in
+ * theory, both were present.
+ */
+export function conversationDisplayName(conversation: {
+  group?: Conversation["group"];
+  contact?: Contact | null;
+}): string | null {
+  return (
+    conversation.group?.name ||
+    conversation.contact?.name ||
+    conversation.contact?.phone ||
+    null
+  );
 }
 
 /**
