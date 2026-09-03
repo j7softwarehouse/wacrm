@@ -23,4 +23,18 @@ describe('shouldShowAuthor', () => {
     // Quem falou e o proprio contato, ja identificado pelo cabecalho.
     expect(shouldShowAuthor(customer)).toBe(false);
   });
+
+  it('mostra autor em mensagem de participante de grupo', () => {
+    // Em grupo cada mensagem recebida vem de uma pessoa diferente —
+    // sem autor a thread vira uma pilha de baloes anonimos.
+    expect(
+      shouldShowAuthor({ sender_type: 'customer', sender_id: null, participant_id: 'p-1' }),
+    ).toBe(true);
+  });
+
+  it('segue sem autor em mensagem 1:1 do contato', () => {
+    expect(
+      shouldShowAuthor({ sender_type: 'customer', sender_id: null }),
+    ).toBe(false);
+  });
 });

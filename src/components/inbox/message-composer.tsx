@@ -134,6 +134,20 @@ interface MessageComposerProps {
    * nothing.
    */
   channelWarning?: string | null;
+  /**
+   * True for a group conversation (`conversation.group_id` set). Phase 1
+   * (Tarefa 11) is read-only for groups — sending arrives in a later
+   * phase — so this closes the composer entirely rather than letting an
+   * agent tap Send and hit a server-side rejection. Defaults to false so
+   * existing 1:1 callers keep working.
+   */
+  groupReadOnly?: boolean;
+  /**
+   * Localized copy shown when `groupReadOnly` is true (parent passes
+   * `Settings.groups.readOnly` — same wording as the Settings tab so the
+   * "why" is consistent across the app).
+   */
+  groupReadOnlyText?: string;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -159,6 +173,8 @@ export function MessageComposer({
   templatesSupported = true,
   channelUnavailable,
   channelWarning,
+  groupReadOnly = false,
+  groupReadOnlyText,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -214,12 +230,18 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
+  // Group conversations are read-only for the whole account in Phase 1
+  // (not a per-role gate like `readOnly` above) — sending to a group
+  // arrives in a later phase. Folded into the same "sending is blocked"
+  // boolean as `channelUnavailable` so every button/textarea that
+  // already guards on it picks this up for free.
+  const sendBlocked = channelUnavailable || groupReadOnly;
   // Media (like free-form text) is only allowed inside the 24h window.
   // `channelUnavailable` folds in the two channel-level reasons sending
   // can't happen — channel disconnected, or its channel_id was set to
   // null because the channel was removed from Settings — on top of the
   // existing role/session gates.
-  const inputsDisabled = readOnly || sessionExpired || channelUnavailable;
+  const inputsDisabled = readOnly || sessionExpired || sendBlocked;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -251,7 +273,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired || channelUnavailable) return;
+    if (!trimmed || sending || sessionExpired || sendBlocked) return;
 
     setSending(true);
     try {
@@ -263,7 +285,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, channelUnavailable, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, sendBlocked, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -586,6 +608,14 @@ export function MessageComposer({
           <p className="text-xs text-red-400">{channelWarning}</p>
         </div>
       )}
+      {/* Group read-only notice (Tarefa 11) — informational, not an
+          error, so it gets the neutral treatment (no red/amber) that
+          Settings → Groups uses for the same copy. */}
+      {groupReadOnly && groupReadOnlyText && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2">
+          <p className="text-xs text-muted-foreground">{groupReadOnlyText}</p>
+        </div>
+      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -643,7 +673,7 @@ export function MessageComposer({
           draft={draft}
           busy={busy}
           readOnly={readOnly}
-          channelUnavailable={channelUnavailable}
+          channelUnavailable={sendBlocked}
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
@@ -681,9 +711,11 @@ export function MessageComposer({
               title={
                 readOnly
                   ? t("readOnlyTitle")
-                  : inputsDisabled
-                    ? undefined
-                    : t("attachMedia")
+                  : groupReadOnly
+                    ? groupReadOnlyText
+                    : inputsDisabled
+                      ? undefined
+                      : t("attachMedia")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -721,9 +753,11 @@ export function MessageComposer({
               title={
                 readOnly
                   ? t("readOnlyTitle")
-                  : inputsDisabled
-                    ? undefined
-                    : t("moreActions")
+                  : groupReadOnly
+                    ? groupReadOnlyText
+                    : inputsDisabled
+                      ? undefined
+                      : t("moreActions")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -747,8 +781,14 @@ export function MessageComposer({
               size="sm"
               canAct={!readOnly}
               gateReason="send messages"
-              disabled={channelUnavailable}
-              title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
+              disabled={sendBlocked}
+              title={
+                readOnly
+                  ? undefined
+                  : groupReadOnly
+                    ? groupReadOnlyText
+                    : channelWarning ?? t("sendTemplate")
+              }
               className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
               onClick={onOpenTemplates}
             >
@@ -761,8 +801,14 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={drafting || channelUnavailable}
-            title={readOnly ? undefined : channelWarning ?? t("draftWithAI")}
+            disabled={drafting || sendBlocked}
+            title={
+              readOnly
+                ? undefined
+                : groupReadOnly
+                  ? groupReadOnlyText
+                  : channelWarning ?? t("draftWithAI")
+            }
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
           >
@@ -781,22 +827,26 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : channelUnavailable
-                  ? t("channelUnavailablePlaceholder")
-                  : sessionExpired
-                    ? t("sessionExpiredPlaceholder")
-                    : t("typeMessagePlaceholder")
+                : groupReadOnly
+                  ? groupReadOnlyText
+                  : channelUnavailable
+                    ? t("channelUnavailablePlaceholder")
+                    : sessionExpired
+                      ? t("sessionExpiredPlaceholder")
+                      : t("typeMessagePlaceholder")
             }
             disabled={inputsDisabled}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only /
-            // channel-unavailable state.
+            // channel-unavailable / group-read-only state.
             title={
               readOnly
                 ? t("readOnlyTitle")
-                : channelWarning ?? undefined
+                : groupReadOnly
+                  ? groupReadOnlyText
+                  : channelWarning ?? undefined
             }
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
@@ -808,7 +858,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || channelUnavailable || sending}
+            disabled={!text.trim() || sessionExpired || sendBlocked || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >

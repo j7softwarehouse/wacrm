@@ -361,7 +361,11 @@ export function MessageBubble({
             broadcast/API pública, que legitimamente nunca tem `sender_id` —
             não renderiza rótulo nenhum. Mostrar "Sistema" seria falso no
             caso do histórico (foi uma pessoa real que escreveu); decisão do
-            usuário: melhor nenhum rótulo do que um rótulo errado. */}
+            usuário: melhor nenhum rótulo do que um rótulo errado.
+            Mensagem de participante de grupo (Tarefa 11) não cai nesse
+            caso: `message-thread.tsx` sempre resolve `authorName` com um
+            fallback (display_name -> phone -> "Participante"), então
+            `showAuthor` nunca aparece sem nome ali. */}
         {showAuthor && authorName && (
           <span className="mb-0.5 block text-[11px] font-medium opacity-70">
             {authorName}

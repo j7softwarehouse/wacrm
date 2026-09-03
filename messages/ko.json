@@ -224,7 +224,8 @@
       "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
       "openMedia": "원본 크기로 보기",
       "downloadMedia": "다운로드",
-      "closeMedia": "닫기"
+      "closeMedia": "닫기",
+      "participant": "참가자"
     },
     "actions": {
       "reply": "답장",

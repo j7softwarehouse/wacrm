@@ -230,7 +230,8 @@
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
       "openMedia": "Abrir em tamanho real",
       "downloadMedia": "Baixar",
-      "closeMedia": "Fechar"
+      "closeMedia": "Fechar",
+      "participant": "Participante"
     },
     "actions": {
       "reply": "Responder",

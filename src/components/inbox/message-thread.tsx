@@ -190,6 +190,8 @@ export function MessageThread({
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
+  const tBubble = useTranslations("Inbox.bubble");
+  const tGroups = useTranslations("Settings.groups");
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -244,6 +246,40 @@ export function MessageThread({
       cancelled = true;
     };
   }, []);
+
+  // Group-conversation members (`group_participants`, migration
+  // 20260829000001). Scoped to the active conversation's `group_id` —
+  // refetches when the selected group changes; cleared when the thread
+  // isn't a group conversation (1:1, or nothing selected).
+  const [groupParticipants, setGroupParticipants] = useState<
+    { id: string; display_name: string | null; phone: string | null }[]
+  >([]);
+  const activeGroupId = conversation?.group_id ?? null;
+  useEffect(() => {
+    if (!activeGroupId) {
+      setGroupParticipants([]);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("group_participants")
+      .select("id, display_name, phone")
+      .eq("group_id", activeGroupId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to fetch group participants:", error);
+          return;
+        }
+        setGroupParticipants(
+          (data as { id: string; display_name: string | null; phone: string | null }[]) ?? [],
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGroupId]);
 
   /**
    * The channel this conversation came in on. Resolved here (not further
@@ -782,6 +818,21 @@ export function MessageThread({
     return map;
   }, [profiles]);
 
+  // participant_id -> nome, mesmo padrão do `authorNames` acima mas para
+  // membros de grupo (`group_participants`). Fallback em cadeia:
+  // display_name (o nome salvo pelo WhatsApp) -> phone (quando o
+  // participante usa @s.whatsapp.net) -> rótulo genérico i18n — um
+  // participante sempre resolve para algo, ao contrário do autor
+  // operador (que pode legitimamente ficar sem rótulo, ver comentário em
+  // MessageBubble).
+  const participantNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of groupParticipants) {
+      map[p.id] = p.display_name || p.phone || tBubble("participant");
+    }
+    return map;
+  }, [groupParticipants, tBubble]);
+
   // `sender_type` da mensagem inclui 'bot' (automação/Flow), que para fins
   // de agrupamento de autor conta como agente — a distinção que importa
   // aqui é "veio do contato" vs. "saiu da nossa conta".
@@ -789,6 +840,7 @@ export function MessageThread({
     return {
       sender_type: m.sender_type === "customer" ? "customer" : "agent",
       sender_id: m.sender_id ?? null,
+      participant_id: m.participant_id ?? null,
     };
   }, []);
 
@@ -1221,9 +1273,11 @@ export function MessageThread({
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
                     const showAuthor = shouldShowAuthor(toAuthorable(msg));
-                    const authorName = msg.sender_id
-                      ? authorNames[msg.sender_id]
-                      : undefined;
+                    const authorName = msg.participant_id
+                      ? participantNames[msg.participant_id]
+                      : msg.sender_id
+                        ? authorNames[msg.sender_id]
+                        : undefined;
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
@@ -1279,13 +1333,16 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
+      {/* Composer — Fase 1 de grupos é somente leitura (Tarefa 11):
+          envio para grupo chega numa fase futura. */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         templatesSupported={templatesSupported}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
+        groupReadOnly={!!conversation.group_id}
+        groupReadOnlyText={tGroups("readOnly")}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

@@ -181,6 +181,12 @@ export interface Conversation {
    * `null` here.
    */
   channel_id?: string | null;
+  /**
+   * Set instead of `contact_id` for a group conversation (migration
+   * 20260829000001, Tarefa 1/7). `conversations_contact_xor_group`
+   * enforces exactly one of the two being non-null at the DB level.
+   */
+  group_id?: string | null;
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
@@ -242,6 +248,12 @@ export interface Message {
   conversation_id: string;
   sender_type: SenderType;
   sender_id?: string;
+  /**
+   * Set instead of `sender_id` for an inbound group message (migration
+   * 20260829000001, Tarefa 1/7) — points at `group_participants`, the
+   * group member who wrote it. `sender_type` stays `'customer'`.
+   */
+  participant_id?: string | null;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
