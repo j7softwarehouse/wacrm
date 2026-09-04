@@ -250,6 +250,20 @@ export async function sendMessageToConversation(
         400
       );
     }
+    // Interativo (botões/listas) e template ficam fora de escopo em grupo
+    // por decisão de produto (uazapi suportaria tecnicamente) — botão em
+    // grupo tem semântica confusa, qualquer participante pode clicar. A UI
+    // já esconde os dois caminhos que levariam aqui ("Mensagem interativa"
+    // e "Respostas rápidas" do tipo interativo), mas a trava real precisa
+    // estar aqui: nenhum outro caminho (ex.: chamada direta à API) pode
+    // contornar a decisão de produto.
+    if (messageType === 'interactive' || messageType === 'template') {
+      throw new SendMessageError(
+        'bad_request',
+        `${messageType} messages are not supported in group conversations`,
+        400
+      );
+    }
     // O JID vai como está: a uazapi aceita com ou sem o sufixo `@g.us`
     // (verificado contra a instância real) e normaliza sozinha. Nada de
     // `sanitizePhoneForMeta`/`isValidE164` aqui — o JID tem 18+ dígitos

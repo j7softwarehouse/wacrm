@@ -883,6 +883,7 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+        hideInteractive={isGroup}
       />
     </div>
   );

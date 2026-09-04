@@ -602,4 +602,54 @@ describe('sendMessageToConversation — conversa de grupo', () => {
       expect.objectContaining({ text: '*Ramon Paula:*\nbom dia' }),
     );
   });
+
+  it('recusa mensagem interativa em conversa de grupo, sem chamar o provider', async () => {
+    // Achado da revisao final: a spec e o criterio de aceite 7 dizem
+    // que interativo (botoes/listas) e template nao podem ir para
+    // grupo. O backend precisa recusar mesmo que a UI deixe passar —
+    // e recusar ANTES de tentar o provider, nao so acabar em erro por
+    // acaso (o mock global de `sendText` nao teria `sendInteractiveButtons`
+    // de qualquer jeito, o que mascararia uma falta de guard real).
+    const sendInteractiveButtons = vi.fn(async () => ({ messageId: 'wamid-x' }));
+    mocks.getProviderForConversation.mockResolvedValue({
+      sendText: async () => ({ messageId: 'wamid-x' }),
+      sendInteractiveButtons,
+    });
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    const err = await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'interactive',
+      senderUserId: 'user-1',
+      interactivePayload: {
+        kind: 'buttons',
+        body: 'Pick one',
+        buttons: [{ id: 'a', title: 'A' }],
+      },
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SendMessageError);
+    expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
+    expect(sendInteractiveButtons).not.toHaveBeenCalled();
+  });
+
+  it('recusa mensagem de template em conversa de grupo, sem chamar o provider', async () => {
+    const sendTemplate = vi.fn(async () => ({ messageId: 'wamid-x' }));
+    mocks.getProviderForConversation.mockResolvedValue({
+      sendText: async () => ({ messageId: 'wamid-x' }),
+      sendTemplate,
+    });
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    const err = await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'template',
+      templateName: 'saudacao',
+      senderUserId: 'user-1',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SendMessageError);
+    expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
+    expect(sendTemplate).not.toHaveBeenCalled();
+  });
 });
