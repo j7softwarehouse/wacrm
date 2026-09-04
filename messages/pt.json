@@ -322,6 +322,7 @@
       "unnamed": "Sem nome",
       "editAction": "Editar",
       "deleteAction": "Deletar",
+      "goToConversationBtn": "Conversar",
       "showingPagination": "Mostrando {start}-{end} de {total}",
       "pageCount": "Página {page} de {total}",
       "deleteContactTitle": "Deletar Contato",
@@ -331,6 +332,7 @@
       "deleteBulkTitle": "Deletar Contatos",
       "deleteBulkDesc": "Tem certeza que deseja deletar {count} contatos selecionados? Esta ação não pode ser desfeita.",
       "toastFailedLoad": "Falha ao carregar contatos",
+      "toastFailedOpenConversation": "Falha ao abrir a conversa",
       "toastFailedDelete": "Falha ao deletar contato",
       "toastDeleted": "Contato deletado",
       "toastBulkFailedDelete": "Falha ao deletar contatos",
@@ -414,7 +416,7 @@
         "clickTagDesc": "Clique em uma tag para adicionar ou remover dela este contato.",
         "noTagsAvailable": "Nenhuma tag disponível. Crie tags em Configurações."
       },
-      "sendTemplateBtn": "Enviar modelo",
+      "goToConversationBtn": "Conversar",
       "saveChangesBtn": "Salvar Alterações",
       "saveCustomFieldsBtn": "Salvar Campos Personalizados",
       "toastPhoneRequired": "Número de telefone é obrigatório",
@@ -427,8 +429,7 @@
       "toastNoteDeleted": "Nota deletada",
       "toastCustomFieldsSaved": "Campos personalizados salvos",
       "toastCustomFieldsFailed": "Falha ao salvar campos personalizados",
-      "toastTemplateSent": "Modelo \"{name}\" enviado",
-      "toastTemplateFailed": "Falha ao enviar modelo: {reason}"
+      "toastOpenConversationFailed": "Falha ao abrir a conversa: {reason}"
     },
     "importModal": {
       "title": "Importar Contatos",

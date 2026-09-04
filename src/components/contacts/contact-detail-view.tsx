@@ -1,17 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
-import {
-  TemplatePicker,
-  type TemplateSendValues,
-} from '@/components/inbox/template-picker';
+import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
+import { openConversationForContact } from '@/lib/contacts/open-conversation';
 import {
   Sheet,
   SheetContent,
@@ -39,7 +37,7 @@ import {
   Save,
   X,
   DollarSign,
-  LayoutTemplate,
+  MessageCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -57,6 +55,7 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
+  const router = useRouter();
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -64,11 +63,12 @@ export function ContactDetailView({
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
 
-  // Send template — lets the business initiate (or re-open) a conversation
-  // with this contact by sending an approved template. The send route
-  // find-or-creates the conversation, so no inbound message is required.
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const [sendingTemplate, setSendingTemplate] = useState(false);
+  // "Conversar" — jumps to this contact's thread in the Inbox, finding or
+  // creating it server-side first so a contact with no prior conversation
+  // still opens straight into a composer the user can type into (free-form
+  // text, no template — the Inbox composer only asks for one when the
+  // channel actually requires it).
+  const [openingConversation, setOpeningConversation] = useState(false);
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -335,45 +335,16 @@ export function ContactDetailView({
     setSavingCustom(false);
   }
 
-  async function handleSendTemplate(
-    template: MessageTemplate,
-    values: TemplateSendValues,
-  ) {
+  async function handleGoToConversation() {
     if (!contactId) return;
-    setSendingTemplate(true);
+    setOpeningConversation(true);
     try {
-      const res = await fetch('/api/whatsapp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // No conversation_id — the route find-or-creates one for this
-          // contact, mirroring the inbox template-send payload otherwise.
-          contact_id: contactId,
-          message_type: 'template',
-          template_name: template.name,
-          template_language: template.language,
-          template_message_params: {
-            body: values.body,
-            headerText: values.headerText,
-            buttonParams: values.buttonParams,
-          },
-          template_params: values.body,
-        }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const reason = payload?.error || `HTTP ${res.status}`;
-        toast.error(t('toastTemplateFailed', { reason }));
-        return;
-      }
-
-      toast.success(t('toastTemplateSent', { name: template.name }));
+      const conversationId = await openConversationForContact(contactId);
+      router.push(`/inbox?c=${conversationId}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'network error';
-      toast.error(`Failed to send template: ${reason}`);
-    } finally {
-      setSendingTemplate(false);
+      toast.error(t('toastOpenConversationFailed', { reason }));
+      setOpeningConversation(false);
     }
   }
 
@@ -388,7 +359,6 @@ export function ContactDetailView({
   }
 
   return (
-    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
@@ -446,16 +416,16 @@ export function ContactDetailView({
               <div className="mt-3">
                 <Button
                   size="sm"
-                  onClick={() => setTemplatePickerOpen(true)}
-                  disabled={sendingTemplate}
+                  onClick={handleGoToConversation}
+                  disabled={openingConversation}
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
-                  {sendingTemplate ? (
+                  {openingConversation ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    <LayoutTemplate className="size-4" />
+                    <MessageCircle className="size-4" />
                   )}
-                  {t('sendTemplateBtn')}
+                  {t('goToConversationBtn')}
                 </Button>
               </div>
             </SheetHeader>
@@ -760,11 +730,5 @@ export function ContactDetailView({
         )}
       </SheetContent>
     </Sheet>
-    <TemplatePicker
-      open={templatePickerOpen}
-      onOpenChange={setTemplatePickerOpen}
-      onSelect={handleSendTemplate}
-    />
-    </>
   );
 }
