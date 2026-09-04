@@ -43,6 +43,21 @@ function toSendResult(response: UazapiSendResponse): SendResult {
   return { messageId: response.messageid ?? response.id ?? "" };
 }
 
+/**
+ * Schema real de `GET /group/list` (Go/Baileys, PascalCase — confirmado
+ * contra a instância j7softwarehouse.uazapi.com). Só os campos usados
+ * no mapeamento estão listados; a resposta tem mais (Participants,
+ * OwnerJID, ParticipantCount, ...) que o CRM ainda não consome.
+ */
+interface UazapiGroup {
+  JID: string;
+  Name?: string;
+}
+
+interface UazapiGroupListResponse {
+  groups: UazapiGroup[];
+}
+
 export function createUazapiProvider(
   config: UazapiProviderConfig,
 ): WhatsAppProvider {
@@ -151,6 +166,17 @@ export function createUazapiProvider(
         parsed.mediaType,
         parsed.mimetype,
       );
+    },
+
+    async listGroups() {
+      const response = await client.get<UazapiGroupListResponse>("/group/list");
+      return response.groups.map((group) => ({
+        groupJid: group.JID,
+        name: group.Name,
+        // O endpoint não devolve foto/avatar — não é uma lacuna do
+        // mapeamento, é a API real.
+        avatarUrl: undefined,
+      }));
     },
   };
 }

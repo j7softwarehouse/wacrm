@@ -134,6 +134,12 @@ interface MessageComposerProps {
    * nothing.
    */
   channelWarning?: string | null;
+  /**
+   * True numa conversa de grupo. Fase 2 permite texto e mídia em grupo,
+   * mas o construtor de mensagem interativa fica de fora: botão em grupo
+   * tem semântica confusa (qualquer participante pode clicar).
+   */
+  isGroup?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -159,6 +165,7 @@ export function MessageComposer({
   templatesSupported = true,
   channelUnavailable,
   channelWarning,
+  isGroup = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -214,12 +221,13 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
+  const sendBlocked = channelUnavailable;
   // Media (like free-form text) is only allowed inside the 24h window.
   // `channelUnavailable` folds in the two channel-level reasons sending
   // can't happen — channel disconnected, or its channel_id was set to
   // null because the channel was removed from Settings — on top of the
   // existing role/session gates.
-  const inputsDisabled = readOnly || sessionExpired || channelUnavailable;
+  const inputsDisabled = readOnly || sessionExpired || sendBlocked;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -251,7 +259,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired || channelUnavailable) return;
+    if (!trimmed || sending || sessionExpired || sendBlocked) return;
 
     setSending(true);
     try {
@@ -263,7 +271,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, channelUnavailable, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, sendBlocked, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -596,6 +604,7 @@ export function MessageComposer({
             <Button
               variant="ghost"
               size="sm"
+              disabled={sendBlocked}
               className="h-7 text-xs text-amber-400 hover:text-amber-300"
               onClick={onOpenTemplates}
             >
@@ -643,7 +652,7 @@ export function MessageComposer({
           draft={draft}
           busy={busy}
           readOnly={readOnly}
-          channelUnavailable={channelUnavailable}
+          channelUnavailable={sendBlocked}
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
@@ -730,10 +739,12 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
-                <MessageSquareDashed className="mr-2 h-4 w-4" />
-                {t("interactiveMessage")}
-              </DropdownMenuItem>
+              {!isGroup && (
+                <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                  <MessageSquareDashed className="mr-2 h-4 w-4" />
+                  {t("interactiveMessage")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -747,8 +758,12 @@ export function MessageComposer({
               size="sm"
               canAct={!readOnly}
               gateReason="send messages"
-              disabled={channelUnavailable}
-              title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
+              disabled={sendBlocked}
+              title={
+                readOnly
+                  ? undefined
+                  : channelWarning ?? t("sendTemplate")
+              }
               className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
               onClick={onOpenTemplates}
             >
@@ -761,8 +776,12 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={drafting || channelUnavailable}
-            title={readOnly ? undefined : channelWarning ?? t("draftWithAI")}
+            disabled={drafting || sendBlocked}
+            title={
+              readOnly
+                ? undefined
+                : channelWarning ?? t("draftWithAI")
+            }
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
           >
@@ -808,7 +827,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || channelUnavailable || sending}
+            disabled={!text.trim() || sessionExpired || sendBlocked || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
@@ -864,6 +883,7 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+        hideInteractive={isGroup}
       />
     </div>
   );

@@ -3,10 +3,11 @@ import { ProviderUnsupportedError } from "./types";
 import { createUazapiProvider } from "./uazapi";
 
 const post = vi.fn(async () => ({ messageid: "MSG123" }));
+const get = vi.fn(async () => ({ groups: [] as unknown[] }));
 
 vi.mock("@/lib/whatsapp/uazapi/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/whatsapp/uazapi/client")>();
-  return { ...actual, createUazapiClient: () => ({ post, get: vi.fn() }) };
+  return { ...actual, createUazapiClient: () => ({ post, get }) };
 });
 
 const config = {
@@ -104,5 +105,46 @@ describe("createUazapiProvider", () => {
     await expect(
       provider.sendTemplate({ to: "55119", templateName: "x", language: "pt_BR" }),
     ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+  });
+
+  it("lista grupos via GET /group/list mapeando JID/Name — sem avatarUrl", async () => {
+    // Schema real (Go/Baileys, PascalCase) confirmado contra a instância
+    // j7softwarehouse.uazapi.com com um grupo de teste. Este endpoint não
+    // devolve foto/avatar — avatarUrl fica sempre undefined.
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          OwnerJID: "81811157827760@lid",
+          Participants: [
+            {
+              JID: "81811157827760@lid",
+              PhoneNumber: "553183886076@s.whatsapp.net",
+              IsAdmin: true,
+            },
+          ],
+          ParticipantCount: 2,
+        },
+      ],
+    });
+
+    const provider = createUazapiProvider(config);
+    const result = await provider.listGroups();
+
+    expect(get).toHaveBeenCalledWith("/group/list");
+    expect(result).toEqual([
+      {
+        groupJid: "120363429748080632@g.us",
+        name: "Teste",
+        avatarUrl: undefined,
+      },
+    ]);
+  });
+
+  it("lista vazia quando a conta não participa de nenhum grupo", async () => {
+    get.mockResolvedValueOnce({ groups: [] });
+    const provider = createUazapiProvider(config);
+    await expect(provider.listGroups()).resolves.toEqual([]);
   });
 });

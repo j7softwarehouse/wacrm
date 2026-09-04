@@ -230,7 +230,8 @@
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
       "openMedia": "Abrir em tamanho real",
       "downloadMedia": "Baixar",
-      "closeMedia": "Fechar"
+      "closeMedia": "Fechar",
+      "participant": "Participante"
     },
     "actions": {
       "reply": "Responder",
@@ -321,6 +322,7 @@
       "unnamed": "Sem nome",
       "editAction": "Editar",
       "deleteAction": "Deletar",
+      "goToConversationBtn": "Conversar",
       "showingPagination": "Mostrando {start}-{end} de {total}",
       "pageCount": "Página {page} de {total}",
       "deleteContactTitle": "Deletar Contato",
@@ -330,6 +332,7 @@
       "deleteBulkTitle": "Deletar Contatos",
       "deleteBulkDesc": "Tem certeza que deseja deletar {count} contatos selecionados? Esta ação não pode ser desfeita.",
       "toastFailedLoad": "Falha ao carregar contatos",
+      "toastFailedOpenConversation": "Falha ao abrir a conversa",
       "toastFailedDelete": "Falha ao deletar contato",
       "toastDeleted": "Contato deletado",
       "toastBulkFailedDelete": "Falha ao deletar contatos",
@@ -413,7 +416,7 @@
         "clickTagDesc": "Clique em uma tag para adicionar ou remover dela este contato.",
         "noTagsAvailable": "Nenhuma tag disponível. Crie tags em Configurações."
       },
-      "sendTemplateBtn": "Enviar modelo",
+      "goToConversationBtn": "Conversar",
       "saveChangesBtn": "Salvar Alterações",
       "saveCustomFieldsBtn": "Salvar Campos Personalizados",
       "toastPhoneRequired": "Número de telefone é obrigatório",
@@ -426,8 +429,7 @@
       "toastNoteDeleted": "Nota deletada",
       "toastCustomFieldsSaved": "Campos personalizados salvos",
       "toastCustomFieldsFailed": "Falha ao salvar campos personalizados",
-      "toastTemplateSent": "Modelo \"{name}\" enviado",
-      "toastTemplateFailed": "Falha ao enviar modelo: {reason}"
+      "toastOpenConversationFailed": "Falha ao abrir a conversa: {reason}"
     },
     "importModal": {
       "title": "Importar Contatos",
@@ -1286,6 +1288,7 @@
       "connected": "Conectado",
       "needsReconnecting": "Precisa reconectar",
       "viewTeamMembers": "Ver membros da equipe",
+      "manageGroups": "Gerenciar grupos de WhatsApp",
       "membersCount": "{count} {count, plural, =1 {membro} other {membros}}",
       "pendingInvites": "{count} {count, plural, =1 {convite} other {convites}} pendente",
       "manageTemplates": "Gerenciar modelos de mensagens",
@@ -1621,6 +1624,7 @@
       "security": "Entrada e segurança",
       "appearance": "Aparência",
       "whatsapp": "WhatsApp",
+      "groups": "Grupos",
       "templates": "Modelos",
       "quick-replies": "Respostas rápidas",
       "fields": "Campos e tags",
@@ -1630,7 +1634,24 @@
     },
     "groups": {
       "account": "Conta",
-      "workspace": "Espaço de trabalho"
+      "workspace": "Espaço de trabalho",
+      "title": "Grupos",
+      "description": "Escolha quais grupos de WhatsApp aparecem na caixa de entrada.",
+      "sync": "Sincronizar grupos",
+      "syncing": "Sincronizando...",
+      "syncSuccess": "{count} {count, plural, =1 {grupo sincronizado} other {grupos sincronizados}}",
+      "syncEmpty": "Nenhum grupo encontrado no WhatsApp conectado.",
+      "syncError": "Não foi possível sincronizar os grupos.",
+      "loadError": "Não foi possível carregar os grupos.",
+      "networkError": "Não foi possível alcançar o servidor.",
+      "updateError": "Não foi possível atualizar o grupo.",
+      "empty": "Nenhum grupo encontrado. Sincronize ou aguarde alguém escrever em um grupo.",
+      "enabled": "Na caixa de entrada",
+      "hasPhoto": "Com foto",
+      "noPhoto": "Sem foto",
+      "unnamed": "Grupo sem nome",
+      "readOnly": "Somente leitura por enquanto — o envio em grupo chega numa próxima etapa.",
+      "adminOnlyHint": "Apenas administradores da conta podem sincronizar ou habilitar grupos."
     },
     "profile": {
       "title": "Seu perfil",

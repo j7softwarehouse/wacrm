@@ -60,5 +60,9 @@ export function createFakeProvider(
       calls.push({ method: "resolveInboundMediaUrl", args: ref });
       return `/fake-media/${ref}`;
     },
+    async listGroups() {
+      calls.push({ method: "listGroups", args: undefined });
+      return [{ groupJid: "1111@g.us", name: "Grupo Fake" }];
+    },
   };
 }

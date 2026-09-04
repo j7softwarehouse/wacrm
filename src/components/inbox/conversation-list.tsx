@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
   channelLabel,
+  conversationDisplayName,
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
@@ -457,7 +458,7 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
 

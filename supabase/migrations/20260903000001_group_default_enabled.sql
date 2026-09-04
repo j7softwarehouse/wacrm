@@ -1,0 +1,17 @@
+-- ============================================================
+-- Sincronizar um grupo (botão "Sincronizar" em Configurações)
+-- passa a trazê-lo já habilitado por padrão — espelha o próprio
+-- WhatsApp: "participo do grupo, já vejo as mensagens".
+--
+-- Só afeta o caminho de sincronização manual, que faz upsert
+-- omitindo a coluna `enabled` (por isso herda o DEFAULT em toda
+-- linha nova, e preserva o valor existente em conflito).
+--
+-- O caminho de descoberta PASSIVA (mensagem chega de um grupo
+-- desconhecido via webhook, `resolveGroupConversation`) continua
+-- gravando `enabled: false` explicitamente no código — não
+-- depende deste DEFAULT — e por isso continua protegido: alguém
+-- adicionar o número conectado a um grupo aleatório/spam sem o
+-- dono saber não faz esse grupo aparecer sozinho na inbox.
+-- ============================================================
+ALTER TABLE whatsapp_groups ALTER COLUMN enabled SET DEFAULT true;

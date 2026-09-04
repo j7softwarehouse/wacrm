@@ -237,5 +237,6 @@ async function handleEvent(channel: WhatsAppChannel, body: unknown) {
     timestamp: normalized.timestamp,
     content,
     replyToProviderMessageId: normalized.replyToProviderMessageId,
+    group: normalized.group,
   });
 }

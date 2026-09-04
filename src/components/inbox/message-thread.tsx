@@ -7,7 +7,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
-import { channelLabel } from "@/lib/inbox/conversations";
+import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
 import type {
   Conversation,
   Message,
@@ -190,6 +190,7 @@ export function MessageThread({
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
+  const tBubble = useTranslations("Inbox.bubble");
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -244,6 +245,40 @@ export function MessageThread({
       cancelled = true;
     };
   }, []);
+
+  // Group-conversation members (`group_participants`, migration
+  // 20260829000001). Scoped to the active conversation's `group_id` —
+  // refetches when the selected group changes; cleared when the thread
+  // isn't a group conversation (1:1, or nothing selected).
+  const [groupParticipants, setGroupParticipants] = useState<
+    { id: string; display_name: string | null; phone: string | null }[]
+  >([]);
+  const activeGroupId = conversation?.group_id ?? null;
+  useEffect(() => {
+    if (!activeGroupId) {
+      setGroupParticipants([]);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("group_participants")
+      .select("id, display_name, phone")
+      .eq("group_id", activeGroupId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to fetch group participants:", error);
+          return;
+        }
+        setGroupParticipants(
+          (data as { id: string; display_name: string | null; phone: string | null }[]) ?? [],
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGroupId]);
 
   /**
    * The channel this conversation came in on. Resolved here (not further
@@ -782,6 +817,21 @@ export function MessageThread({
     return map;
   }, [profiles]);
 
+  // participant_id -> nome, mesmo padrão do `authorNames` acima mas para
+  // membros de grupo (`group_participants`). Fallback em cadeia:
+  // display_name (o nome salvo pelo WhatsApp) -> phone (quando o
+  // participante usa @s.whatsapp.net) -> rótulo genérico i18n — um
+  // participante sempre resolve para algo, ao contrário do autor
+  // operador (que pode legitimamente ficar sem rótulo, ver comentário em
+  // MessageBubble).
+  const participantNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of groupParticipants) {
+      map[p.id] = p.display_name || p.phone || tBubble("participant");
+    }
+    return map;
+  }, [groupParticipants, tBubble]);
+
   // `sender_type` da mensagem inclui 'bot' (automação/Flow), que para fins
   // de agrupamento de autor conta como agente — a distinção que importa
   // aqui é "veio do contato" vs. "saiu da nossa conta".
@@ -789,6 +839,7 @@ export function MessageThread({
     return {
       sender_type: m.sender_type === "customer" ? "customer" : "agent",
       sender_id: m.sender_id ?? null,
+      participant_id: m.participant_id ?? null,
     };
   }, []);
 
@@ -915,7 +966,12 @@ export function MessageThread({
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
-  if (!conversation || !contact) {
+  // Um grupo não tem `contact` (contact_id é null pra ele — ver
+  // `conversations_contact_xor_group`); sem esta exceção o thread inteiro
+  // caía no placeholder "selecione uma conversa" pra toda conversa de
+  // grupo, mesmo já selecionada. Achado durante a correção do Bug 2 da
+  // Tarefa 12 (a lista já mostrava "Desconhecido" pelo mesmo motivo).
+  if (!conversation || (!contact && !conversation.group_id)) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -931,7 +987,7 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = conversationDisplayName(conversation) || "Unknown";
 
   // Which channel this conversation came in on, and whether sending is
   // currently possible on it. `channel_id === null` means the channel was
@@ -1005,7 +1061,7 @@ export function MessageThread({
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <p className="truncate text-xs text-muted-foreground">{contact?.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
@@ -1221,9 +1277,11 @@ export function MessageThread({
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
                     const showAuthor = shouldShowAuthor(toAuthorable(msg));
-                    const authorName = msg.sender_id
-                      ? authorNames[msg.sender_id]
-                      : undefined;
+                    const authorName = msg.participant_id
+                      ? participantNames[msg.participant_id]
+                      : msg.sender_id
+                        ? authorNames[msg.sender_id]
+                        : undefined;
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
@@ -1279,13 +1337,15 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
+      {/* Composer — Fase 2 de grupos permite texto e mídia; o construtor
+          de mensagem interativa fica oculto em grupo (isGroup). */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         templatesSupported={templatesSupported}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
+        isGroup={!!conversation.group_id}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

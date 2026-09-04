@@ -230,7 +230,8 @@
       "aiBadgeTitle": "Sent automatically by the AI assistant",
       "openMedia": "Open full size",
       "downloadMedia": "Download",
-      "closeMedia": "Close"
+      "closeMedia": "Close",
+      "participant": "Participant"
     },
     "actions": {
       "reply": "Reply",
@@ -320,6 +321,7 @@
       "addFirstContact": "Add your first contact",
       "unnamed": "Unnamed",
       "editAction": "Edit",
+      "goToConversationBtn": "Chat",
       "deleteAction": "Delete",
       "showingPagination": "Showing {start}-{end} of {total}",
       "pageCount": "Page {page} of {total}",
@@ -330,6 +332,7 @@
       "deleteBulkTitle": "Delete Contacts",
       "deleteBulkDesc": "Are you sure you want to delete {count} selected contacts? This action cannot be undone.",
       "toastFailedLoad": "Failed to load contacts",
+      "toastFailedOpenConversation": "Failed to open the conversation",
       "toastFailedDelete": "Failed to delete contact",
       "toastDeleted": "Contact deleted",
       "toastBulkFailedDelete": "Failed to delete contacts",
@@ -413,7 +416,7 @@
         "clickTagDesc": "Click a tag to add or remove it from this contact.",
         "noTagsAvailable": "No tags available. Create tags in Settings."
       },
-      "sendTemplateBtn": "Send template",
+      "goToConversationBtn": "Chat",
       "saveChangesBtn": "Save Changes",
       "saveCustomFieldsBtn": "Save Custom Fields",
       "toastPhoneRequired": "Phone number is required",
@@ -426,8 +429,7 @@
       "toastNoteDeleted": "Note deleted",
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
-      "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastOpenConversationFailed": "Failed to open the conversation: {reason}"
     },
     "importModal": {
       "title": "Import Contacts",
@@ -1286,6 +1288,7 @@
       "connected": "Connected",
       "needsReconnecting": "Needs reconnecting",
       "viewTeamMembers": "View team members",
+      "manageGroups": "Manage WhatsApp groups",
       "membersCount": "{count} {count, plural, =1 {member} other {members}}",
       "pendingInvites": "{count} pending {count, plural, =1 {invite} other {invites}}",
       "manageTemplates": "Manage message templates",
@@ -1631,6 +1634,7 @@
       "security": "Login & security",
       "appearance": "Appearance",
       "whatsapp": "WhatsApp",
+      "groups": "Groups",
       "templates": "Templates",
       "quick-replies": "Quick replies",
       "fields": "Fields & tags",
@@ -1640,7 +1644,24 @@
     },
     "groups": {
       "account": "Account",
-      "workspace": "Workspace"
+      "workspace": "Workspace",
+      "title": "Groups",
+      "description": "Choose which WhatsApp groups show up in the inbox.",
+      "sync": "Sync groups",
+      "syncing": "Syncing...",
+      "syncSuccess": "{count} {count, plural, =1 {group synced} other {groups synced}}",
+      "syncEmpty": "No groups found on the connected WhatsApp.",
+      "syncError": "Could not sync groups.",
+      "loadError": "Could not load groups.",
+      "networkError": "Could not reach the server.",
+      "updateError": "Could not update the group.",
+      "empty": "No groups found yet. Sync, or wait for someone to write in a group.",
+      "enabled": "In the inbox",
+      "hasPhoto": "Has photo",
+      "noPhoto": "No photo",
+      "unnamed": "Unnamed group",
+      "readOnly": "Read-only for now — sending to groups arrives in a later phase.",
+      "adminOnlyHint": "Only account admins can sync or enable groups."
     },
     "profile": {
       "title": "Your profile",

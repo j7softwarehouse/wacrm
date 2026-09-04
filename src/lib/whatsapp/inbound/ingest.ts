@@ -22,6 +22,10 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 import { CONTACT_SOURCE } from "@/lib/contacts/source";
 import { dispatchInboundToFlows } from "@/lib/flows/engine";
+import {
+  resolveGroupConversation,
+  type ResolvedGroupConversation,
+} from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { dispatchWebhookEvent } from "@/lib/webhooks/deliver";
 import type { WhatsAppChannel } from "@/types";
 
@@ -62,6 +66,15 @@ export interface IngestParams {
   timestamp: number;
   content: InboundContent;
   replyToProviderMessageId?: string;
+  /**
+   * Presente só quando a mensagem veio de um grupo. Ausente = 1:1,
+   * exatamente como antes — o caminho existente não muda.
+   */
+  group?: {
+    groupJid: string;
+    participantJid: string;
+    participantName?: string;
+  };
 }
 
 export interface IngestResult {
@@ -80,6 +93,18 @@ export interface IngestResult {
 export function buildConversationPreview(content: InboundContent): string {
   if (content.text) return content.text;
   return `[${content.type}]`;
+}
+
+/**
+ * Mensagem de grupo NUNCA aciona flows, automations ou resposta
+ * automática de IA. Fase 1 é leitura; um motor respondendo dentro de
+ * um grupo é o pior erro possível desta entrega, porque a mensagem
+ * indevida chega a terceiros e não há como desfazer.
+ */
+export function shouldDispatchEngines(params: {
+  group?: { groupJid: string; participantJid: string; participantName?: string };
+}): boolean {
+  return !params.group;
 }
 
 /**
@@ -462,6 +487,61 @@ async function findOrCreateConversation(
 }
 
 /**
+ * Grava a mensagem de um grupo já resolvido (conversa + participante).
+ * Caminho deliberadamente separado do 1:1: não há contato a achar ou
+ * criar — o participante mora em `group_participants`, nunca em
+ * `contacts`. Não dispara flows/automations/IA (isso é decidido antes,
+ * por `shouldDispatchEngines`, no caminho comum de quem chama).
+ */
+async function ingestGroupMessage(
+  db: SupabaseClient,
+  params: IngestParams,
+  resolved: ResolvedGroupConversation,
+): Promise<IngestResult | null> {
+  const { data: message, error } = await db
+    .from("messages")
+    .insert({
+      conversation_id: resolved.conversationId,
+      sender_type: "customer",
+      participant_id: resolved.participantId,
+      content_type: toDbContentType(params.content.type),
+      content_text: params.content.text ?? null,
+      media_url: params.content.mediaUrl ?? null,
+      message_id: params.providerMessageId,
+      // 'received' nunca existiu na CHECK constraint de messages.status
+      // (só 'sending'|'sent'|'delivered'|'read'|'failed' — schema
+      // original, nunca alterado). O insert violava a constraint e a
+      // função devolvia null silenciosamente: participante e conversa
+      // eram criados, mas a mensagem em si nunca era gravada. O caminho
+      // 1:1 (ingestInboundMessage, abaixo) já usa 'delivered' para o
+      // mesmo cenário — mensagem recebida de um cliente.
+      status: "delivered",
+    })
+    .select("id")
+    .single();
+
+  if (error || !message) return null;
+
+  await db
+    .from("conversations")
+    .update({
+      last_message_text: buildConversationPreview(params.content),
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", resolved.conversationId);
+
+  return {
+    messageId: message.id,
+    conversationId: resolved.conversationId,
+    // Conversa de grupo não tem contato — o campo existe no contrato
+    // por causa do caminho 1:1.
+    contactId: "",
+    deduped: false,
+  };
+}
+
+/**
  * Ingere uma mensagem recebida, venha de qual provedor vier.
  *
  * Devolve `null` quando nada foi ingerido — contato/conversa não
@@ -482,6 +562,25 @@ export async function ingestInboundMessage(
   // NOT NULL (contacts, conversations). Sempre o admin que salvou a
   // configuração do canal; a escolha é arbitrária pós-017 mas estável.
   const configOwnerUserId = channel.user_id;
+
+  // Grupo tem caminho próprio: não há contato a criar, e o
+  // participante mora em `group_participants`. Precisa vir antes de
+  // findOrCreateContact — senão um "contato" seria criado a partir do
+  // telefone do participante do grupo, violando a restrição de
+  // produto de que participante nunca vira contato.
+  if (params.group) {
+    const resolved = await resolveGroupConversation(
+      db,
+      accountId,
+      channel.id,
+      configOwnerUserId,
+      params.group,
+    );
+    // Grupo não habilitado (ou recém-descoberto): nada entra na inbox.
+    if (!resolved) return null;
+
+    return await ingestGroupMessage(db, params, resolved);
+  }
 
   // Acha ou cria o contato
   const contactOutcome = await findOrCreateContact(
@@ -634,114 +733,119 @@ export async function ingestInboundMessage(
     console.error("Error updating conversation:", convError);
   }
 
-  // Se este contato recebeu um broadcast recente, marca a resposta
-  // para o `replied_count` do broadcast avançar (via o trigger de
-  // agregação instalado na migração 003).
-  await flagBroadcastReplyIfAny(db, accountId, contactRecord.id);
+  // Grupo nunca aciona os motores (flows, automations, IA). Ver
+  // `shouldDispatchEngines`: defesa em profundidade enquanto grupo
+  // ainda passa por este mesmo caminho de ingestão do 1:1.
+  if (shouldDispatchEngines(params)) {
+    // Se este contato recebeu um broadcast recente, marca a resposta
+    // para o `replied_count` do broadcast avançar (via o trigger de
+    // agregação instalado na migração 003).
+    await flagBroadcastReplyIfAny(db, accountId, contactRecord.id);
 
-  // ============================================================
-  // Dispatch do runner de flows.
-  //
-  // Se o runner consumir a mensagem (avançou uma execução ativa ou
-  // iniciou uma nova), suprimimos os triggers `new_message_received` +
-  // `keyword_match` para esta entrada. O cliente está navegando o menu
-  // do bot, não mandando uma palavra-gatilho nova que deveria se
-  // ramificar em automations.
-  //
-  // Os triggers de relacionamento (`new_contact_created`,
-  // `first_inbound_message`) continuam disparando mesmo quando
-  // consumida — eles são sobre QUEM está escrevendo, não sobre o quê.
-  //
-  // Aguardado (não fire-and-forget) porque precisamos do resultado
-  // `consumed` antes de decidir se disparamos as automations. O runner
-  // tem o próprio try/catch e nunca lança. Contas sem flows ativos
-  // pegam o atalho "no_match" praticamente de graça (um SELECT
-  // indexado pela execução ativa).
-  // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message: interactiveReplyId
-      ? {
-          kind: "interactive_reply",
-          reply_id: interactiveReplyId,
-          reply_title: contentText ?? "",
-          meta_message_id: providerMessageId,
-        }
-      : {
-          kind: "text",
-          text: contentText ?? "",
-          meta_message_id: providerMessageId,
-        },
-    isFirstInboundMessage,
-  });
-  const flowConsumed = flowResult.consumed;
-
-  // Dispara as automations que reagem a este evento. Todos os
-  // dispatches ficam aqui (não antes) para que contato, conversa e
-  // mensagem já existam antes de qualquer passo — inclusive
-  // send_message — rodar. Fire-and-forget: uma automation lenta ou com
-  // falha não pode segurar o 200 OK do webhook.
-  const inboundText = contentText ?? "";
-  const automationTriggers: (
-    | "new_contact_created"
-    | "first_inbound_message"
-    | "new_message_received"
-    | "keyword_match"
-    | "interactive_reply"
-  )[] = [];
-  // Triggers de conteúdo são suprimidos quando um flow consumiu a
-  // mensagem — ver o bloco de comentário acima.
-  if (!flowConsumed) {
-    automationTriggers.push("new_message_received", "keyword_match");
-    // Toque em interativo → dispara também o trigger interactive_reply
-    // (só faz sentido quando uma resposta de botão/lista realmente
-    // chegou). Habilita menus encadeados só com automations; quando um
-    // Flow é dono do menu ele terá consumido a resposta e isto é
-    // pulado.
-    if (interactiveReplyId) {
-      automationTriggers.push("interactive_reply");
-    }
-  }
-  // new_contact_created dispara só quando o webhook acabou de criar a
-  // linha do contato. first_inbound_message dispara sempre que esta é
-  // a primeira mensagem enviada pelo cliente — um superconjunto que
-  // também pega contatos importados manualmente escrevendo pela
-  // primeira vez. Disparamos os dois para o usuário escolher a
-  // semântica que quiser; uma automation que escuta só um dos dois
-  // roda só quando aquele trigger casa.
-  if (contactOutcome.wasCreated)
-    automationTriggers.unshift("new_contact_created");
-  if (isFirstInboundMessage) automationTriggers.unshift("first_inbound_message");
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
+    // ============================================================
+    // Dispatch do runner de flows.
+    //
+    // Se o runner consumir a mensagem (avançou uma execução ativa ou
+    // iniciou uma nova), suprimimos os triggers `new_message_received` +
+    // `keyword_match` para esta entrada. O cliente está navegando o menu
+    // do bot, não mandando uma palavra-gatilho nova que deveria se
+    // ramificar em automations.
+    //
+    // Os triggers de relacionamento (`new_contact_created`,
+    // `first_inbound_message`) continuam disparando mesmo quando
+    // consumida — eles são sobre QUEM está escrevendo, não sobre o quê.
+    //
+    // Aguardado (não fire-and-forget) porque precisamos do resultado
+    // `consumed` antes de decidir se disparamos as automations. O runner
+    // tem o próprio try/catch e nunca lança. Contas sem flows ativos
+    // pegam o atalho "no_match" praticamente de graça (um SELECT
+    // indexado pela execução ativa).
+    // ============================================================
+    const flowResult = await dispatchInboundToFlows({
       accountId,
-      triggerType,
+      userId: configOwnerUserId,
       contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-        // Só preenchido em toques em interativo; dirige o match exato
-        // por id do trigger interactive_reply.
-        interactive_reply_id: interactiveReplyId ?? undefined,
-      },
-    }).catch((err) => console.error("[automations] dispatch failed:", err));
-  }
-
-  // Resposta automática por IA. Roda só para texto puro que o runner
-  // determinístico NÃO consumiu (flows ganham do LLM), e só quando a
-  // conta habilitou. Aguardado dentro do `after()` da rota (mesmo
-  // motivo do webhook abaixo); `dispatchInboundToAiReply` é dono dos
-  // próprios gates de elegibilidade + try/catch e nunca lança.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
       conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
+      message: interactiveReplyId
+        ? {
+            kind: "interactive_reply",
+            reply_id: interactiveReplyId,
+            reply_title: contentText ?? "",
+            meta_message_id: providerMessageId,
+          }
+        : {
+            kind: "text",
+            text: contentText ?? "",
+            meta_message_id: providerMessageId,
+          },
+      isFirstInboundMessage,
     });
+    const flowConsumed = flowResult.consumed;
+
+    // Dispara as automations que reagem a este evento. Todos os
+    // dispatches ficam aqui (não antes) para que contato, conversa e
+    // mensagem já existam antes de qualquer passo — inclusive
+    // send_message — rodar. Fire-and-forget: uma automation lenta ou com
+    // falha não pode segurar o 200 OK do webhook.
+    const inboundText = contentText ?? "";
+    const automationTriggers: (
+      | "new_contact_created"
+      | "first_inbound_message"
+      | "new_message_received"
+      | "keyword_match"
+      | "interactive_reply"
+    )[] = [];
+    // Triggers de conteúdo são suprimidos quando um flow consumiu a
+    // mensagem — ver o bloco de comentário acima.
+    if (!flowConsumed) {
+      automationTriggers.push("new_message_received", "keyword_match");
+      // Toque em interativo → dispara também o trigger interactive_reply
+      // (só faz sentido quando uma resposta de botão/lista realmente
+      // chegou). Habilita menus encadeados só com automations; quando um
+      // Flow é dono do menu ele terá consumido a resposta e isto é
+      // pulado.
+      if (interactiveReplyId) {
+        automationTriggers.push("interactive_reply");
+      }
+    }
+    // new_contact_created dispara só quando o webhook acabou de criar a
+    // linha do contato. first_inbound_message dispara sempre que esta é
+    // a primeira mensagem enviada pelo cliente — um superconjunto que
+    // também pega contatos importados manualmente escrevendo pela
+    // primeira vez. Disparamos os dois para o usuário escolher a
+    // semântica que quiser; uma automation que escuta só um dos dois
+    // roda só quando aquele trigger casa.
+    if (contactOutcome.wasCreated)
+      automationTriggers.unshift("new_contact_created");
+    if (isFirstInboundMessage) automationTriggers.unshift("first_inbound_message");
+    for (const triggerType of automationTriggers) {
+      runAutomationsForTrigger({
+        accountId,
+        triggerType,
+        contactId: contactRecord.id,
+        context: {
+          message_text: inboundText,
+          conversation_id: conversation.id,
+          // Só preenchido em toques em interativo; dirige o match exato
+          // por id do trigger interactive_reply.
+          interactive_reply_id: interactiveReplyId ?? undefined,
+        },
+      }).catch((err) => console.error("[automations] dispatch failed:", err));
+    }
+
+    // Resposta automática por IA. Roda só para texto puro que o runner
+    // determinístico NÃO consumiu (flows ganham do LLM), e só quando a
+    // conta habilitou. Aguardado dentro do `after()` da rota (mesmo
+    // motivo do webhook abaixo); `dispatchInboundToAiReply` é dono dos
+    // próprios gates de elegibilidade + try/catch e nunca lança.
+    if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+      await dispatchInboundToAiReply({
+        accountId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        configOwnerUserId,
+      });
+    }
   }
 
   // Webhook message.received (API pública). Aguardado — não

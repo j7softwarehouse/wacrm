@@ -221,10 +221,10 @@ export async function sendMessageToConversation(
 
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
 
-  // Conversation + contact, account-scoped.
+  // Conversation + contact + (Fase 2) group, account-scoped.
   const { data: conversation, error: convError } = await db
     .from('conversations')
-    .select('*, contact:contacts(*)')
+    .select('*, contact:contacts(*), group:whatsapp_groups(id, group_jid)')
     .eq('id', conversationId)
     .eq('account_id', accountId)
     .single();
@@ -233,22 +233,59 @@ export async function sendMessageToConversation(
     throw new SendMessageError('not_found', 'Conversation not found', 404);
   }
 
-  const contact = conversation.contact;
-  if (!contact?.phone) {
-    throw new SendMessageError(
-      'bad_request',
-      'Contact phone number not found',
-      400
-    );
-  }
+  // Conversa de grupo resolve o destino pelo JID; 1:1 pelo telefone do
+  // contato. `conversations_contact_xor_group` garante que exatamente um
+  // dos dois existe, então os dois ramos são mutuamente exclusivos.
+  const group = conversation.group as { group_jid?: string } | null;
+  const isGroupConversation = Boolean(conversation.group_id);
 
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
-    throw new SendMessageError(
-      'bad_request',
-      'Invalid phone number format',
-      400
-    );
+  let destination: string;
+  const contact = conversation.contact;
+
+  if (isGroupConversation) {
+    if (!group?.group_jid) {
+      throw new SendMessageError(
+        'bad_request',
+        'Group not found for this conversation',
+        400
+      );
+    }
+    // Interativo (botões/listas) e template ficam fora de escopo em grupo
+    // por decisão de produto (uazapi suportaria tecnicamente) — botão em
+    // grupo tem semântica confusa, qualquer participante pode clicar. A UI
+    // já esconde os dois caminhos que levariam aqui ("Mensagem interativa"
+    // e "Respostas rápidas" do tipo interativo), mas a trava real precisa
+    // estar aqui: nenhum outro caminho (ex.: chamada direta à API) pode
+    // contornar a decisão de produto.
+    if (messageType === 'interactive' || messageType === 'template') {
+      throw new SendMessageError(
+        'bad_request',
+        `${messageType} messages are not supported in group conversations`,
+        400
+      );
+    }
+    // O JID vai como está: a uazapi aceita com ou sem o sufixo `@g.us`
+    // (verificado contra a instância real) e normaliza sozinha. Nada de
+    // `sanitizePhoneForMeta`/`isValidE164` aqui — o JID tem 18+ dígitos
+    // e seria recusado por uma validação feita para telefone.
+    destination = group.group_jid;
+  } else {
+    if (!contact?.phone) {
+      throw new SendMessageError(
+        'bad_request',
+        'Contact phone number not found',
+        400
+      );
+    }
+    const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
+    if (!isValidE164(sanitizedPhone)) {
+      throw new SendMessageError(
+        'bad_request',
+        'Invalid phone number format',
+        400
+      );
+    }
+    destination = sanitizedPhone;
   }
 
   let provider;
@@ -393,47 +430,66 @@ export async function sendMessageToConversation(
 
   // Send via Meta — retry across phone-number variants if Meta rejects
   // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
+  // back to the contact so the next send goes straight through. Group
+  // conversations skip all of this: single attempt, no `contacts` row
+  // to fix up.
   let waMessageId = '';
-  let workingPhone = sanitizedPhone;
-  try {
-    const variants = phoneVariants(sanitizedPhone);
-    let lastError: unknown = null;
 
-    for (const variant of variants) {
-      try {
-        waMessageId = await attempt(variant);
-        workingPhone = variant;
-        lastError = null;
-        break;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isRecipientNotAllowedError(message)) {
-          throw err;
+  if (isGroupConversation) {
+    // Tentativa única: `phoneVariants` existe para o trunk prefix de
+    // telefone no sandbox da Meta, que não se aplica a um JID de grupo.
+    try {
+      waMessageId = await attempt(destination);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unknown provider error';
+      console.error('[send-message] envio em grupo falhou:', message);
+      throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    }
+  } else {
+    // Caminho 1:1 — lógica idêntica à de hoje, apenas indentada para
+    // dentro deste `else` e usando `destination` no lugar de
+    // `sanitizedPhone` (que passou a ser local do ramo 1:1 acima).
+    let workingPhone = destination;
+    try {
+      const variants = phoneVariants(destination);
+      let lastError: unknown = null;
+
+      for (const variant of variants) {
+        try {
+          waMessageId = await attempt(variant);
+          workingPhone = variant;
+          lastError = null;
+          break;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!isRecipientNotAllowedError(message)) {
+            throw err;
+          }
+          lastError = err;
+          console.warn(
+            `[send-message] variant "${variant}" rejected by Meta, trying next…`
+          );
         }
-        lastError = err;
-        console.warn(
-          `[send-message] variant "${variant}" rejected by Meta, trying next…`
-        );
       }
+
+      if (lastError) throw lastError;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unknown Meta API error';
+      console.error('[send-message] Meta send failed for all variants:', message);
+      throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
     }
 
-    if (lastError) throw lastError;
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
-  }
-
-  if (workingPhone !== sanitizedPhone) {
-    console.log(
-      `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
-    );
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
+    if (workingPhone !== destination) {
+      console.log(
+        `[send-message] Auto-corrected contact phone: ${destination} → ${workingPhone}`
+      );
+      await db
+        .from('contacts')
+        .update({ phone: workingPhone })
+        .eq('id', contact!.id);
+    }
   }
 
   // Persist the sent message. Field names MUST match the messages
@@ -488,25 +544,30 @@ export async function sendMessageToConversation(
 
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort.
-  try {
-    const { error: pauseErr } = await supabaseAdmin()
-      .from('flow_runs')
-      .update({
-        status: 'paused_by_agent',
-        ended_at: new Date().toISOString(),
-        end_reason: 'agent_replied',
-      })
-      .eq('account_id', accountId)
-      .eq('contact_id', contact.id)
-      .eq('status', 'active');
-    if (pauseErr) {
-      console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+  // Group conversations have no contact (Flow runs are keyed by
+  // contact_id), so there's nothing to pause — skip rather than let
+  // `contact.id` throw on a null contact.
+  if (contact) {
+    try {
+      const { error: pauseErr } = await supabaseAdmin()
+        .from('flow_runs')
+        .update({
+          status: 'paused_by_agent',
+          ended_at: new Date().toISOString(),
+          end_reason: 'agent_replied',
+        })
+        .eq('account_id', accountId)
+        .eq('contact_id', contact.id)
+        .eq('status', 'active');
+      if (pauseErr) {
+        console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+      }
+    } catch (err) {
+      console.error(
+        '[flows] pause-on-agent-send threw:',
+        err instanceof Error ? err.message : err
+      );
     }
-  } catch (err) {
-    console.error(
-      '[flows] pause-on-agent-send threw:',
-      err instanceof Error ? err.message : err
-    );
   }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };

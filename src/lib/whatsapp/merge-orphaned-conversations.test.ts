@@ -177,4 +177,49 @@ describe("mergeOrphanedConversations", () => {
       mergeOrphanedConversations(client, "acc-1", "chan-1"),
     ).resolves.toBeUndefined();
   });
+
+  it("não mescla conversas de grupo (contact_id null) — dedupe por contato não deve colidir em contact_id null", async () => {
+    // Bug: duas conversas de grupo diferentes (ambas com contact_id: null)
+    // colidiam na mesma chave do Map, causando mesclagem incorreta.
+    // A correção exclui contact_id === null da deduplicação 1:1 por contato.
+    const conversations: FakeConversation[] = [
+      {
+        id: "group-orphan-1",
+        contact_id: null as unknown as string, // grupo órfão
+        channel_id: null,
+        last_message_text: "grupo 1",
+        last_message_at: "2026-07-29T01:55:51+00:00",
+      },
+      {
+        id: "group-orphan-2",
+        contact_id: null as unknown as string, // outro grupo órfão diferente
+        channel_id: null,
+        last_message_text: "grupo 2",
+        last_message_at: "2026-07-29T01:55:50+00:00",
+      },
+      {
+        id: "group-in-channel",
+        contact_id: null as unknown as string, // grupo no canal sendo removido
+        channel_id: "chan-1",
+        last_message_text: "grupo 3",
+        last_message_at: "2026-07-29T01:55:49+00:00",
+      },
+    ];
+    const messages = [
+      { id: "m1", conversation_id: "group-orphan-1" },
+      { id: "m2", conversation_id: "group-orphan-2" },
+      { id: "m3", conversation_id: "group-in-channel" },
+    ];
+    const { client, conversationDeletes, messageUpdates } = fakeSupabase(
+      conversations,
+      messages,
+    );
+
+    await mergeOrphanedConversations(client, "acc-1", "chan-1");
+
+    // A função deve fazer nada com conversas de grupo.
+    // Nenhuma mesclagem, nenhuma exclusão, nenhuma atualização de mensagens.
+    expect(messageUpdates).toEqual([]);
+    expect(conversationDeletes).toEqual([]);
+  });
 });
