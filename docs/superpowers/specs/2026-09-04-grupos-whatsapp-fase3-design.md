@@ -29,14 +29,28 @@ documentada abaixo, que virou um incidente):
   `{ groupjid, action, participants }`, onde `action` é uma de
   `"add"`, `"remove"`, `"promote"`, `"demote"` (confirmado: qualquer
   outro valor devolve `400 {"error":"Invalid action"}`) e
-  `participants` é um array de telefones (testei um telefone puro,
-  sem `+`, ex. `"5511999999999"` — passou da validação de formato).
+  `participants` é um array de telefones **sem `+` e sem o 9º dígito
+  quando o número real não usa (confirmado com um número de teste
+  real do grupo "Teste": `"553183839660"` — formato exatamente igual
+  ao que `/group/list` já devolve em `PhoneNumber`, menos o sufixo
+  `@s.whatsapp.net`)**.
   Com JID de grupo inexistente: `add`/`remove` devolvem
   `500 {"error":"...info query returned status 404: item-not-found"}`;
   `promote`/`demote` devolvem
   `500 {"error":"...info query returned status 403: forbidden"}` —
   ou seja, **este endpoint valida a existência do grupo e (para
   promote/demote) a permissão antes de agir**.
+  **Descoberta importante sobre o formato da resposta de sucesso:**
+  testei `action: "add"` com um telefone que já era participante do
+  grupo real "Teste" (sem adicionar ninguém novo, sem efeito
+  colateral) e a resposta veio `200`, mas o resultado real está
+  aninhado — `{ group: {...}, groupUpdated: [{ JID, PhoneNumber,
+  IsAdmin, Error, ... }], needs_refresh: boolean }`. O elemento de
+  `groupUpdated` para o telefone testado veio com `Error: 409`
+  (conflito — "já é participante"), não um erro de nível HTTP.
+  **O status HTTP sozinho não diz se a ação teve efeito — é preciso
+  ler `groupUpdated[].Error` (`0` = sucesso, qualquer outro valor =
+  falha) por telefone.**
 - **`POST /group/updateName`** — corpo `{ groupjid, name }`. Mesmo
   padrão: JID inexistente devolve
   `500 {"error":"...info query returned status 404: item-not-found"}`.
@@ -99,7 +113,19 @@ updateGroupParticipants(args: UpdateGroupParticipantsArgs): Promise<void>;
 updateGroupName(groupJid: string, name: string): Promise<void>;
 ```
 
-`src/lib/whatsapp/providers/uazapi.ts` — implementação real:
+`src/lib/whatsapp/providers/uazapi.ts` — implementação real. Novo tipo
+de resposta (schema real confirmado empiricamente, ver seção 1):
+
+```ts
+interface UazapiUpdateParticipantsResponse {
+  groupUpdated?: Array<{
+    PhoneNumber?: string;
+    IsAdmin?: boolean;
+    /** 0 = sucesso; qualquer outro valor = falha (ex.: 409 = já é participante). */
+    Error: number;
+  }>;
+}
+```
 
 ```ts
 async leaveGroup(groupJid: string) {
@@ -110,11 +136,22 @@ async leaveGroup(groupJid: string) {
 },
 
 async updateGroupParticipants({ groupJid, action, phone }) {
-  await client.post("/group/updateParticipants", {
-    groupjid: groupJid,
-    action,
-    participants: [phone],
-  });
+  const result = await client.post<UazapiUpdateParticipantsResponse>(
+    "/group/updateParticipants",
+    { groupjid: groupJid, action, participants: [phone] },
+  );
+  // HTTP 200 não significa sucesso — confirmado empiricamente (ver
+  // spec §1): o resultado real vem aninhado por telefone. Só um
+  // telefone foi enviado, mas casa por PhoneNumber em vez de pegar o
+  // primeiro item às cegas — mais robusto a qualquer reordenação.
+  const entry = result.groupUpdated?.find((p) =>
+    p.PhoneNumber?.startsWith(phone),
+  );
+  if (!entry || entry.Error !== 0) {
+    throw new Error(
+      `uazapi recusou a ação "${action}" para ${phone} (Error: ${entry?.Error ?? "ausente"})`,
+    );
+  }
 },
 
 async updateGroupName(groupJid: string, name: string) {
@@ -186,14 +223,20 @@ conta pode ver a lista; só as ações de escrita exigem admin.
 3. Carrega o grupo (404 se não achar ou `left_at` preenchido — não faz
    sentido gerenciar participante de um grupo que já saímos).
 4. `provider.updateGroupParticipants({ groupJid, action, phone })`.
-   Erros do provider (404 grupo sumiu, 403 sem permissão) sobem como
-   erro HTTP claro — **não** um "sucesso" genérico.
-5. Chama `provider.listGroups()` de novo, confirma que o `Participants`
+   Erros HTTP do provider (404 grupo sumiu, 403 sem permissão) sobem
+   como erro HTTP claro — **não** um "sucesso" genérico.
+5. **Mesmo com HTTP 200, o provider precisa checar o `Error` aninhado
+   por telefone** (`groupUpdated[].Error`, confirmado empiricamente —
+   ver seção 1): `0` é sucesso; qualquer outro valor (ex.: `409` já é
+   participante) é falha e deve virar um `SendMessageError`-like erro
+   claro da rota, nunca um sucesso silencioso. `provider.updateGroupParticipants`
+   já resolve isso internamente e lança se `Error !== 0`, para a rota
+   não precisar conhecer o formato bruto da uazapi.
+6. Chama `provider.listGroups()` de novo, confirma que o `Participants`
    do grupo reflete a mudança esperada (telefone presente/ausente,
-   `IsAdmin` mudou) antes de devolver sucesso — mesma disciplina do
-   `leave`, por precaução, mesmo este endpoint parecendo validar
-   melhor.
-6. Resposta `200 { participants: [...] }` — a lista atualizada, para a
+   `IsAdmin` mudou) antes de devolver sucesso — defesa em profundidade
+   adicional, mesmo já checando o `Error` aninhado no passo 5.
+7. Resposta `200 { participants: [...] }` — a lista atualizada, para a
    UI não precisar de uma segunda chamada.
 
 ### 3.5 `POST /api/whatsapp/groups/[id]/name`
@@ -286,7 +329,7 @@ específico de `left_at` (saiu de verdade) ganha o bloqueio de envio.
 | Risco | Mitigação |
 | --- | --- |
 | `/group/leave` sempre reporta sucesso mesmo sem efeito | Rota reconfirma via `listGroups()` antes de gravar `left_at`; nunca confia só na resposta da chamada |
-| Formato exato de telefone em `participants` não 100% confirmado (testei sem `+`, mas nunca cheguei a um `add` bem-sucedido) | Task 1 do plano de implementação inclui uma verificação empírica controlada, com aprovação explícita do usuário, contra o grupo real "Teste" |
+| HTTP 200 de `updateParticipants` não significa sucesso — o resultado real vem aninhado em `groupUpdated[].Error` (confirmado empiricamente contra o grupo real, sem efeito colateral: testei `action: "add"` com um telefone já participante, veio `200` com `Error: 409`) | `provider.updateGroupParticipants` sempre confere `Error === 0` antes de resolver a Promise; a rota nunca reporta sucesso baseada só no status HTTP |
 | Admin do número conectado pode mudar fora do CRM a qualquer momento (alguém rebaixa pelo celular) | UI busca status ao vivo toda vez que abre o painel; rota trata 403 da uazapi como erro claro, nunca assume sucesso |
 | Ação em grupo que o número já não é membro (`left_at` preenchido) | As três rotas novas recusam com 404/400 se `left_at` estiver preenchido, antes de qualquer chamada à uazapi |
 
