@@ -17,12 +17,14 @@ import {
 
 import {
   ProviderUnsupportedError,
+  type GroupParticipant,
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
   type SendMediaArgs,
   type SendReactionArgs,
   type SendResult,
   type SendTextArgs,
+  type UpdateGroupParticipantsArgs,
   type WhatsAppProvider,
 } from "./types";
 
@@ -52,10 +54,20 @@ function toSendResult(response: UazapiSendResponse): SendResult {
 interface UazapiGroup {
   JID: string;
   Name?: string;
+  Participants?: Array<{ PhoneNumber?: string; IsAdmin?: boolean }>;
 }
 
 interface UazapiGroupListResponse {
   groups: UazapiGroup[];
+}
+
+interface UazapiUpdateParticipantsResponse {
+  groupUpdated?: Array<{
+    PhoneNumber?: string;
+    IsAdmin?: boolean;
+    /** 0 = sucesso; qualquer outro valor = falha (ex.: 409 = já é participante). */
+    Error: number;
+  }>;
 }
 
 export function createUazapiProvider(
@@ -176,6 +188,73 @@ export function createUazapiProvider(
         // O endpoint não devolve foto/avatar — não é uma lacuna do
         // mapeamento, é a API real.
         avatarUrl: undefined,
+      }));
+    },
+
+    async leaveGroup(groupJid: string): Promise<void> {
+      // Sem retorno útil — a UAZAPI responde "successful" mesmo se nada
+      // mudou (confirmado empiricamente contra a instância real — ver
+      // spec da Fase 3, seção 1). O chamador confirma via
+      // listGroups()/getGroupParticipants() antes de considerar a
+      // saída bem-sucedida.
+      await client.post("/group/leave", { groupjid: groupJid });
+    },
+
+    async updateGroupParticipants(
+      args: UpdateGroupParticipantsArgs,
+    ): Promise<void> {
+      const result = await client.post<UazapiUpdateParticipantsResponse>(
+        "/group/updateParticipants",
+        {
+          groupjid: args.groupJid,
+          action: args.action,
+          participants: [args.phone],
+        },
+      );
+      // HTTP 200 não significa sucesso — confirmado empiricamente: o
+      // resultado real vem aninhado por telefone. Casa por
+      // PhoneNumber (que começa com o telefone enviado) em vez de
+      // pegar o primeiro item às cegas.
+      const entry = result.groupUpdated?.find((p) =>
+        p.PhoneNumber?.startsWith(args.phone),
+      );
+      if (!entry || entry.Error !== 0) {
+        throw new Error(
+          `uazapi recusou a ação "${args.action}" para ${args.phone} (Error: ${entry?.Error ?? "ausente"})`,
+        );
+      }
+    },
+
+    async updateGroupName(groupJid: string, name: string): Promise<void> {
+      await client.post("/group/updateName", { groupjid: groupJid, name });
+    },
+
+    async getConnectedNumber(): Promise<string> {
+      const status = await client.get<{ instance?: { owner?: string } }>(
+        "/instance/status",
+      );
+      if (!status.instance?.owner) {
+        throw new Error("uazapi não devolveu o número do WhatsApp conectado.");
+      }
+      return status.instance.owner;
+    },
+
+    async getGroupParticipants(
+      groupJid: string,
+    ): Promise<GroupParticipant[]> {
+      // Mesmo endpoint de listGroups(), mas este método lê o campo
+      // Participants que listGroups() descarta deliberadamente (ver
+      // comentário em UazapiGroup) — método próprio para não misturar
+      // responsabilidades com o contrato leve já testado de
+      // listGroups().
+      const response = await client.get<UazapiGroupListResponse>("/group/list");
+      const group = response.groups.find((g) => g.JID === groupJid);
+      if (!group) {
+        throw new Error(`Grupo ${groupJid} não encontrado na lista da uazapi.`);
+      }
+      return (group.Participants ?? []).map((p) => ({
+        phoneNumber: (p.PhoneNumber ?? "").replace("@s.whatsapp.net", ""),
+        isAdmin: !!p.IsAdmin,
       }));
     },
   };

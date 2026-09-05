@@ -81,4 +81,23 @@ describe("ProviderUnsupportedError na Meta", () => {
       provider.sendTemplate({ to: "55119", templateName: "hello", language: "pt_BR" }),
     ).resolves.toEqual({ messageId: "wamid.TPL" });
   });
+
+  it("recusa leaveGroup, updateGroupParticipants, updateGroupName, getConnectedNumber e getGroupParticipants", async () => {
+    const provider = createMetaProvider(config);
+    await expect(provider.leaveGroup("x@g.us")).rejects.toBeInstanceOf(
+      ProviderUnsupportedError,
+    );
+    await expect(
+      provider.updateGroupParticipants({ groupJid: "x@g.us", action: "add", phone: "1" }),
+    ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+    await expect(
+      provider.updateGroupName("x@g.us", "Nome"),
+    ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+    await expect(provider.getConnectedNumber()).rejects.toBeInstanceOf(
+      ProviderUnsupportedError,
+    );
+    await expect(
+      provider.getGroupParticipants("x@g.us"),
+    ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+  });
 });

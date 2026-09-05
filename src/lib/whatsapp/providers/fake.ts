@@ -6,6 +6,7 @@
 // ============================================================
 
 import type {
+  GroupParticipant,
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
   SendMediaArgs,
@@ -13,6 +14,7 @@ import type {
   SendResult,
   SendTemplateArgs,
   SendTextArgs,
+  UpdateGroupParticipantsArgs,
   WhatsAppProvider,
 } from "./types";
 
@@ -63,6 +65,23 @@ export function createFakeProvider(
     async listGroups() {
       calls.push({ method: "listGroups", args: undefined });
       return [{ groupJid: "1111@g.us", name: "Grupo Fake" }];
+    },
+    async leaveGroup(groupJid: string) {
+      calls.push({ method: "leaveGroup", args: groupJid });
+    },
+    async updateGroupParticipants(args: UpdateGroupParticipantsArgs) {
+      calls.push({ method: "updateGroupParticipants", args });
+    },
+    async updateGroupName(groupJid: string, name: string) {
+      calls.push({ method: "updateGroupName", args: { groupJid, name } });
+    },
+    async getConnectedNumber() {
+      calls.push({ method: "getConnectedNumber", args: undefined });
+      return "5511999999999";
+    },
+    async getGroupParticipants(groupJid: string): Promise<GroupParticipant[]> {
+      calls.push({ method: "getGroupParticipants", args: groupJid });
+      return [{ phoneNumber: "5511999999999", isAdmin: true }];
     },
   };
 }

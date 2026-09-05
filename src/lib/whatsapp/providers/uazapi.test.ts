@@ -147,4 +147,123 @@ describe("createUazapiProvider", () => {
     const provider = createUazapiProvider(config);
     await expect(provider.listGroups()).resolves.toEqual([]);
   });
+
+  it("sai do grupo via POST /group/leave", async () => {
+    post.mockResolvedValueOnce({ response: "Group leave successful" } as any);
+    const provider = createUazapiProvider(config);
+    await provider.leaveGroup("120363429748080632@g.us");
+    expect(post).toHaveBeenCalledWith("/group/leave", {
+      groupjid: "120363429748080632@g.us",
+    });
+  });
+
+  it("atualiza participante via POST /group/updateParticipants quando Error=0", async () => {
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        { PhoneNumber: "5511999999999@s.whatsapp.net", IsAdmin: false, Error: 0 },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await provider.updateGroupParticipants({
+      groupJid: "120363429748080632@g.us",
+      action: "add",
+      phone: "5511999999999",
+    });
+    expect(post).toHaveBeenCalledWith("/group/updateParticipants", {
+      groupjid: "120363429748080632@g.us",
+      action: "add",
+      participants: ["5511999999999"],
+    });
+  });
+
+  it("lança quando updateParticipants devolve Error != 0 mesmo com HTTP 200", async () => {
+    // Achado empírico (spec §1): a uazapi responde 200 mesmo quando a
+    // ação falhou -- o resultado real vem aninhado por telefone.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        { PhoneNumber: "553183839660@s.whatsapp.net", IsAdmin: true, Error: 409 },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "add",
+        phone: "553183839660",
+      }),
+    ).rejects.toThrow(/409/);
+  });
+
+  it("lança quando updateParticipants nao devolve entrada para o telefone enviado", async () => {
+    post.mockResolvedValueOnce({ group: {}, groupUpdated: [], needs_refresh: false } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "remove",
+        phone: "5511999999999",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("renomeia grupo via POST /group/updateName", async () => {
+    post.mockResolvedValueOnce({} as any);
+    const provider = createUazapiProvider(config);
+    await provider.updateGroupName("120363429748080632@g.us", "Novo Nome");
+    expect(post).toHaveBeenCalledWith("/group/updateName", {
+      groupjid: "120363429748080632@g.us",
+      name: "Novo Nome",
+    });
+  });
+
+  it("lê o número conectado via GET /instance/status", async () => {
+    get.mockResolvedValueOnce({ instance: { owner: "553183886076" } } as any);
+    const provider = createUazapiProvider(config);
+    await expect(provider.getConnectedNumber()).resolves.toBe("553183886076");
+    expect(get).toHaveBeenCalledWith("/instance/status");
+  });
+
+  it("lança quando /instance/status nao devolve owner", async () => {
+    get.mockResolvedValueOnce({ instance: {} } as any);
+    const provider = createUazapiProvider(config);
+    await expect(provider.getConnectedNumber()).rejects.toThrow();
+  });
+
+  it("lê participantes de um grupo via GET /group/list, filtrando pelo JID", async () => {
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "outro@g.us",
+          Name: "Outro",
+          Participants: [{ PhoneNumber: "5500000000000@s.whatsapp.net", IsAdmin: true }],
+        },
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { PhoneNumber: "553183886076@s.whatsapp.net", IsAdmin: false },
+            { PhoneNumber: "553183839660@s.whatsapp.net", IsAdmin: true },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "553183886076", isAdmin: false },
+      { phoneNumber: "553183839660", isAdmin: true },
+    ]);
+  });
+
+  it("lança quando getGroupParticipants nao acha o grupo na lista", async () => {
+    get.mockResolvedValueOnce({ groups: [] } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.getGroupParticipants("nao-existe@g.us"),
+    ).rejects.toThrow();
+  });
 });

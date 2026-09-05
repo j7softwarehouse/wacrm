@@ -19,6 +19,7 @@ import type { SendTimeParams } from "@/lib/whatsapp/template-send-builder";
 
 import {
   ProviderUnsupportedError,
+  type GroupParticipant,
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
   type SendMediaArgs,
@@ -26,6 +27,7 @@ import {
   type SendResult,
   type SendTemplateArgs,
   type SendTextArgs,
+  type UpdateGroupParticipantsArgs,
   type WhatsAppProvider,
 } from "./types";
 
@@ -123,6 +125,22 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       // funcionalidade em canais Meta; isto é a rede de proteção para
       // um caminho que não deveria ser alcançável.
       throw new ProviderUnsupportedError("meta", "listGroups");
+    },
+
+    async leaveGroup(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "leaveGroup");
+    },
+    async updateGroupParticipants(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "updateGroupParticipants");
+    },
+    async updateGroupName(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "updateGroupName");
+    },
+    async getConnectedNumber(): Promise<string> {
+      throw new ProviderUnsupportedError("meta", "getConnectedNumber");
+    },
+    async getGroupParticipants(): Promise<GroupParticipant[]> {
+      throw new ProviderUnsupportedError("meta", "getGroupParticipants");
     },
   };
 }
