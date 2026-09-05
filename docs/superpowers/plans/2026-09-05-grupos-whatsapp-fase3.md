@@ -1544,7 +1544,8 @@ Em `messages/pt.json`, dentro de `"Settings": { "groups": { ... } }` (mesmo bloc
     "renameSave": "Salvar",
     "renameSuccess": "Nome atualizado.",
     "renameError": "Não foi possível renomear o grupo.",
-    "notAdminHint": "O número conectado não é admin deste grupo — apenas sair está disponível."
+    "notAdminHint": "O número conectado não é admin deste grupo — apenas sair está disponível.",
+    "cancel": "Cancelar"
 ```
 
 Em `messages/en.json`, mesmo bloco, tradução equivalente:
@@ -1581,7 +1582,8 @@ Em `messages/en.json`, mesmo bloco, tradução equivalente:
     "renameSave": "Save",
     "renameSuccess": "Name updated.",
     "renameError": "Could not rename the group.",
-    "notAdminHint": "The connected number is not an admin of this group — only leaving is available."
+    "notAdminHint": "The connected number is not an admin of this group — only leaving is available.",
+    "cancel": "Cancel"
 ```
 
 Em `messages/ko.json`, mesmo bloco:
@@ -1618,7 +1620,8 @@ Em `messages/ko.json`, mesmo bloco:
     "renameSave": "저장",
     "renameSuccess": "이름이 업데이트되었습니다.",
     "renameError": "그룹 이름을 변경할 수 없습니다.",
-    "notAdminHint": "연결된 번호가 이 그룹의 관리자가 아닙니다 — 나가기만 가능합니다."
+    "notAdminHint": "연결된 번호가 이 그룹의 관리자가 아닙니다 — 나가기만 가능합니다.",
+    "cancel": "취소"
 ```
 
 - [ ] **Step 2: Estender `WhatsAppGroup` e mostrar o badge "Você saiu"**
@@ -1937,61 +1940,61 @@ function GroupManageDialog({
         </div>
       </DialogContent>
 
-      <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('removeConfirmTitle')}</AlertDialogTitle>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
+      <Dialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('removeConfirmTitle')}</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRemove(null)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="destructive"
               onClick={() => confirmRemove && handleAction('remove', confirmRemove)}
             >
               {t('removeConfirmAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <AlertDialog open={confirmLeave} onOpenChange={setConfirmLeave}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('leaveConfirmTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('leaveConfirmBody')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={leaving}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleLeave} disabled={leaving}>
+      <Dialog open={confirmLeave} onOpenChange={setConfirmLeave}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('leaveConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('leaveConfirmBody')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmLeave(false)} disabled={leaving}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleLeave} disabled={leaving}>
               {leaving ? <Loader2 className="size-4 animate-spin" /> : t('leaveConfirmAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
 ```
 
-Acrescentar os imports novos no topo do arquivo:
+Acrescentar os imports novos no topo do arquivo (não existe `alert-dialog.tsx` neste repo — confirmado; os diálogos de confirmação usam o mesmo `Dialog` normal, igual ao padrão já usado em `src/app/(dashboard)/contacts/page.tsx` para o diálogo de "excluir contato"):
 
 ```ts
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 ```
 
-(Conferir os nomes exatos exportados por `@/components/ui/alert-dialog`, `@/components/ui/dialog` e `@/components/ui/input` no repo antes de colar — este plano assume os mesmos nomes já usados em `message-composer.tsx`/`quick-reply-picker.tsx`; ajustar se o projeto usa outra convenção de export.)
-
-A chave `t('cancel')` já existe em `Settings.groups`? Se não existir neste namespace, usar `Settings.groups.cancel` — acrescentar `"cancel": "Cancelar"` (pt) / `"Cancel"` (en) / `"취소"` (ko) junto das outras chaves do Step 1 se ainda não houver uma chave de cancelar genérica reaproveitável no mesmo arquivo.
+A chave `Settings.groups.cancel` **não existe ainda** (confirmado) — acrescentar `"cancel": "Cancelar"` (pt) / `"Cancel"` (en) / `"취소"` (ko) junto das outras chaves do Step 1.
 
 - [ ] **Step 5: Renderizar o Dialog em `GroupsManager`**
 
