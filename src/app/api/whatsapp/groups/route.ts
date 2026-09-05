@@ -76,7 +76,7 @@ export async function GET(_request: Request) {
 
     const { data, error } = await supabase
       .from("whatsapp_groups")
-      .select("id, group_jid, name, avatar_url, enabled")
+      .select("id, group_jid, name, avatar_url, enabled, left_at")
       .eq("account_id", profile.accountId)
       .order("name", { ascending: true });
 

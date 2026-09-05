@@ -91,6 +91,17 @@ describe('GET /api/whatsapp/groups', () => {
 
     expect(res.status).toBe(403);
   });
+
+  it('inclui left_at na resposta', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false, left_at: '2026-09-05T00:00:00Z' }]),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const body = await res.json();
+
+    expect(body.groups[0].left_at).toBe('2026-09-05T00:00:00Z');
+  });
 });
 
 describe('PATCH /api/whatsapp/groups', () => {
