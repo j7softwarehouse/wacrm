@@ -93,14 +93,39 @@ describe('GET /api/whatsapp/groups', () => {
   });
 
   it('inclui left_at na resposta', async () => {
-    mocks.createClient.mockResolvedValue(
-      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false, left_at: '2026-09-05T00:00:00Z' }]),
-    );
+    const selectSpy = vi.fn();
+
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => ({
+        select: (cols: string) => {
+          selectSpy(cols);
+          return {
+            eq: () => ({
+              order: async () => ({
+                data: [{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false, left_at: '2026-09-05T00:00:00Z' }],
+                error: null,
+              }),
+              maybeSingle: async () => ({
+                data: { account_id: 'acct-1', account_role: 'admin' },
+                error: null,
+              }),
+            }),
+            maybeSingle: async () => ({
+              data: { account_id: 'acct-1', account_role: 'admin' },
+              error: null,
+            }),
+          };
+        },
+      }),
+    });
 
     const res = await GET(new Request('https://x/api/whatsapp/groups'));
     const body = await res.json();
 
     expect(body.groups[0].left_at).toBe('2026-09-05T00:00:00Z');
+    // Prova que a query REAL pede left_at, não só que o JSON de saída não filtra campos.
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('left_at'));
   });
 });
 
