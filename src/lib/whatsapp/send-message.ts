@@ -224,7 +224,7 @@ export async function sendMessageToConversation(
   // Conversation + contact + (Fase 2) group, account-scoped.
   const { data: conversation, error: convError } = await db
     .from('conversations')
-    .select('*, contact:contacts(*), group:whatsapp_groups(id, group_jid)')
+    .select('*, contact:contacts(*), group:whatsapp_groups(id, group_jid, left_at)')
     .eq('id', conversationId)
     .eq('account_id', accountId)
     .single();
@@ -236,7 +236,7 @@ export async function sendMessageToConversation(
   // Conversa de grupo resolve o destino pelo JID; 1:1 pelo telefone do
   // contato. `conversations_contact_xor_group` garante que exatamente um
   // dos dois existe, então os dois ramos são mutuamente exclusivos.
-  const group = conversation.group as { group_jid?: string } | null;
+  const group = conversation.group as { group_jid?: string; left_at?: string | null } | null;
   const isGroupConversation = Boolean(conversation.group_id);
 
   let destination: string;
@@ -261,6 +261,15 @@ export async function sendMessageToConversation(
       throw new SendMessageError(
         'bad_request',
         `${messageType} messages are not supported in group conversations`,
+        400
+      );
+    }
+    // (Fase 3 / Tarefa 3) `left_at` preenchido significa que o número já
+    // saiu de fato do grupo — não é mais possível enviar mensagem para lá.
+    if (group?.left_at) {
+      throw new SendMessageError(
+        'bad_request',
+        'You have left this group; sending is no longer possible',
         400
       );
     }

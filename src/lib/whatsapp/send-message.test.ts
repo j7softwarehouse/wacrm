@@ -652,4 +652,50 @@ describe('sendMessageToConversation — conversa de grupo', () => {
     expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
     expect(sendTemplate).not.toHaveBeenCalled();
   });
+
+  it('recusa envio quando o numero ja saiu do grupo (left_at preenchido)', async () => {
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+    const db = {
+      from: (table: string) => {
+        capture.tables.push(table);
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'cv-grupo',
+                    account_id: 'acct-1',
+                    contact_id: null,
+                    group_id: 'grp-1',
+                    contact: null,
+                    group: { id: 'grp-1', group_jid: '120363000000000000@g.us', left_at: '2026-09-05T00:00:00Z' },
+                  },
+                  error: null,
+                }),
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          insert: (row: Record<string, unknown>) => {
+            capture.rows.push(row);
+            return { select: () => ({ single: async () => ({ data: { id: 'msg-1', ...row }, error: null }) }) };
+          },
+          update: () => ({ eq: async () => ({ error: null }) }),
+        };
+      },
+    } as unknown as SupabaseClient;
+
+    const err = await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'oi',
+      senderUserId: 'user-1',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SendMessageError);
+    expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
+    expect(capture.tables).not.toContain('contacts');
+  });
 });
