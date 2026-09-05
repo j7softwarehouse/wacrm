@@ -1694,6 +1694,7 @@
       "renameSuccess": "Name updated.",
       "renameError": "Could not rename the group.",
       "notAdminHint": "The connected number is not an admin of this group — only leaving is available.",
+      "notAccountAdminHint": "Only account admins can manage this group.",
       "cancel": "Cancel"
     },
     "profile": {

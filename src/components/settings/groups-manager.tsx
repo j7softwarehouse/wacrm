@@ -64,11 +64,18 @@ interface GroupParticipant {
 
 function GroupManageDialog({
   group,
+  canManage,
   onClose,
   onLeft,
   onRenamed,
 }: {
   group: WhatsAppGroup;
+  // Admin da CONTA no CRM (useAuth().canEditSettings) — não confundir com
+  // `isAdmin` abaixo, que é admin do GRUPO no WhatsApp. As rotas de escrita
+  // (name/participants/leave) exigem `canEditSettings` no backend
+  // independente de quem for admin no WhatsApp, então toda ação de escrita
+  // aqui precisa checar as duas condições.
+  canManage: boolean;
   onClose: () => void;
   onLeft: () => void;
   onRenamed: (name: string) => void;
@@ -109,6 +116,10 @@ function GroupManageDialog({
   useEffect(() => {
     void loadParticipants();
   }, [loadParticipants]);
+
+  // Renomear e gerenciar participantes exigem admin do grupo no WhatsApp
+  // E admin da conta no CRM — as duas, porque o backend checa ambas.
+  const canManageParticipants = isAdmin && canManage;
 
   async function handleAction(action: 'add' | 'remove' | 'promote' | 'demote', phone: string) {
     setBusyPhone(phone);
@@ -213,9 +224,9 @@ function GroupManageDialog({
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                disabled={!isAdmin || savingName}
+                disabled={!canManageParticipants || savingName}
               />
-              {isAdmin && (
+              {canManageParticipants && (
                 <Button
                   size="sm"
                   onClick={handleRename}
@@ -227,8 +238,13 @@ function GroupManageDialog({
             </div>
           </div>
 
-          {!isAdmin && !loading && (
-            <p className="text-muted-foreground text-xs">{t('notAdminHint')}</p>
+          {!canManage ? (
+            <p className="text-muted-foreground text-xs">{t('notAccountAdminHint')}</p>
+          ) : (
+            !isAdmin &&
+            !loading && (
+              <p className="text-muted-foreground text-xs">{t('notAdminHint')}</p>
+            )
           )}
 
           <div>
@@ -249,7 +265,7 @@ function GroupManageDialog({
                         </span>
                       )}
                     </span>
-                    {isAdmin && (
+                    {canManageParticipants && (
                       <span className="flex shrink-0 gap-1">
                         <Button
                           variant="ghost"
@@ -278,7 +294,7 @@ function GroupManageDialog({
             )}
           </div>
 
-          {isAdmin && (
+          {canManageParticipants && (
             <div>
               <label className="text-muted-foreground text-xs">{t('addParticipant')}</label>
               <div className="mt-1 flex gap-2">
@@ -299,6 +315,7 @@ function GroupManageDialog({
             variant="destructive"
             className="w-full"
             onClick={() => setConfirmLeave(true)}
+            disabled={!canManage}
           >
             {t('leaveGroup')}
           </Button>
@@ -533,14 +550,16 @@ export function GroupsManager() {
                         />
                       </>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => openManage(group)}
-                      aria-label={t('manage')}
-                    >
-                      <Settings className="size-4" />
-                    </Button>
+                    {!group.left_at && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => openManage(group)}
+                        aria-label={t('manage')}
+                      >
+                        <Settings className="size-4" />
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -551,7 +570,9 @@ export function GroupsManager() {
 
       {manageGroup && (
         <GroupManageDialog
+          key={manageGroup.id}
           group={manageGroup}
+          canManage={canEditSettings}
           onClose={() => setManageGroup(null)}
           onLeft={() => {
             setManageGroup(null);

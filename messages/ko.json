@@ -1635,6 +1635,7 @@
       "renameSuccess": "이름이 업데이트되었습니다.",
       "renameError": "그룹 이름을 변경할 수 없습니다.",
       "notAdminHint": "연결된 번호가 이 그룹의 관리자가 아닙니다 — 나가기만 가능합니다.",
+      "notAccountAdminHint": "계정 관리자만 이 그룹을 관리할 수 있습니다.",
       "cancel": "취소"
     },
     "profile": {

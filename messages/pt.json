@@ -1684,6 +1684,7 @@
       "renameSuccess": "Nome atualizado.",
       "renameError": "Não foi possível renomear o grupo.",
       "notAdminHint": "O número conectado não é admin deste grupo — apenas sair está disponível.",
+      "notAccountAdminHint": "Apenas administradores da conta podem gerenciar este grupo.",
       "cancel": "Cancelar"
     },
     "profile": {
