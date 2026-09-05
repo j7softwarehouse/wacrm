@@ -212,12 +212,14 @@ export function createUazapiProvider(
         },
       );
       // HTTP 200 não significa sucesso — confirmado empiricamente: o
-      // resultado real vem aninhado por telefone. Casa por
-      // PhoneNumber (que começa com o telefone enviado) em vez de
-      // pegar o primeiro item às cegas.
-      const entry = result.groupUpdated?.find((p) =>
-        p.PhoneNumber?.startsWith(args.phone),
-      );
+      // resultado real vem aninhado por telefone. Pega pelo ÍNDICE (um
+      // telefone enviado -> uma entrada devolvida), não por valor: um
+      // participante identificado só por JID @lid tem seu telefone
+      // REAL resolvido na resposta (ex.: "5531...@s.whatsapp.net"),
+      // que nunca bate com ".startsWith(jidEnviado)" quando o valor
+      // enviado é o próprio "@lid" — confirmado empiricamente contra a
+      // instância real ao remover um participante assim.
+      const entry = result.groupUpdated?.[0];
       if (!entry || entry.Error !== 0) {
         throw new Error(
           `uazapi recusou a ação "${args.action}" para ${args.phone} (Error: ${entry?.Error ?? "ausente"})`,

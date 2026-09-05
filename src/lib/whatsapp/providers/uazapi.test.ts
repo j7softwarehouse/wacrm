@@ -210,6 +210,36 @@ describe("createUazapiProvider", () => {
     ).rejects.toThrow();
   });
 
+  it("remove participante @lid mesmo quando a resposta devolve o telefone JA RESOLVIDO (nao bate com o JID enviado)", async () => {
+    // Achado real, confirmado contra a instancia uazapi: ao remover um
+    // participante que só existia como JID @lid, o campo PhoneNumber da
+    // resposta vem com o telefone real JA RESOLVIDO pela uazapi
+    // (ex.: "553175011847@s.whatsapp.net"), que nunca vai bater com
+    // ".startsWith(jidEnviado)" quando jidEnviado é o próprio "@lid".
+    // Casar por índice (um telefone enviado -> uma entrada devolvida)
+    // em vez de por valor evita esse descasamento.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        {
+          JID: "36460128415934@lid",
+          PhoneNumber: "553175011847@s.whatsapp.net",
+          IsAdmin: false,
+          Error: 0,
+        },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "remove",
+        phone: "36460128415934@lid",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("renomeia grupo via POST /group/updateName", async () => {
     post.mockResolvedValueOnce({} as any);
     const provider = createUazapiProvider(config);
