@@ -115,14 +115,29 @@ export interface UpdateGroupParticipantsArgs {
   phone: string;
 }
 
-// ...
+export interface GroupParticipant {
+  /** Sem `+`, sem sufixo — mesmo formato aceito por `participants` em `updateGroupParticipants`. */
+  phoneNumber: string;
+  isAdmin: boolean;
+}
+
+// ... dentro de WhatsAppProvider, junto dos métodos existentes:
 
 leaveGroup(groupJid: string): Promise<void>;
 updateGroupParticipants(args: UpdateGroupParticipantsArgs): Promise<void>;
 updateGroupName(groupJid: string, name: string): Promise<void>;
 /** Número do WhatsApp conectado (ex.: "553183886076"), para comparar
- *  contra `PhoneNumber` de cada participante e saber se é admin. */
+ *  contra `phoneNumber` de cada participante e saber se é admin. */
 getConnectedNumber(): Promise<string>;
+/**
+ * Participantes de UM grupo. Método próprio, não uma extensão de
+ * `listGroups()` — `listGroups()` já tem contrato e testes
+ * estabelecidos (Fase 1) para a lista leve de sync; misturar
+ * responsabilidades ali quebraria isolamento por pouco ganho, já
+ * que `/group/list` (o mesmo endpoint por baixo) devolve todos os
+ * grupos de qualquer forma.
+ */
+getGroupParticipants(groupJid: string): Promise<GroupParticipant[]>;
 ```
 
 `src/lib/whatsapp/providers/uazapi.ts` — implementação real. Novo tipo
@@ -179,6 +194,31 @@ async getConnectedNumber() {
   }
   return status.instance.owner;
 },
+
+async getGroupParticipants(groupJid: string) {
+  // Mesmo endpoint de `listGroups()`, mas este método lê o campo
+  // `Participants` que `listGroups()` descarta (ver comentário em
+  // `UazapiGroup` — extensão necessária desta fase).
+  const response = await client.get<UazapiGroupListResponse>("/group/list");
+  const group = response.groups.find((g) => g.JID === groupJid);
+  if (!group) {
+    throw new Error(`Grupo ${groupJid} não encontrado na lista da uazapi.`);
+  }
+  return (group.Participants ?? []).map((p) => ({
+    phoneNumber: (p.PhoneNumber ?? "").replace("@s.whatsapp.net", ""),
+    isAdmin: !!p.IsAdmin,
+  }));
+},
+```
+
+`UazapiGroup` (já existente em `uazapi.ts`) precisa do campo novo:
+
+```ts
+interface UazapiGroup {
+  JID: string;
+  Name?: string;
+  Participants?: Array<{ PhoneNumber?: string; IsAdmin?: boolean }>;
+}
 ```
 
 `src/lib/whatsapp/providers/meta.ts` — os três métodos, cada um:
@@ -195,6 +235,9 @@ async updateGroupName() {
 },
 async getConnectedNumber() {
   throw new ProviderUnsupportedError("meta", "getConnectedNumber");
+},
+async getGroupParticipants() {
+  throw new ProviderUnsupportedError("meta", "getGroupParticipants");
 },
 ```
 
@@ -230,13 +273,13 @@ para quem realmente saiu).
 Um arquivo de rota só, com os dois métodos — mesmo padrão que
 `/api/whatsapp/groups/route.ts` já usa (`GET` + `PATCH` juntos).
 
-**`GET`** — busca ao vivo em `provider.listGroups()`, acha o grupo
-pelo `group_jid` local, devolve `{ participants: [...], isConnectedNumberAdmin: boolean }`.
-`isConnectedNumberAdmin` é calculado chamando também
-`provider.getConnectedNumber()` e comparando contra o `PhoneNumber` de
-cada participante (removendo o sufixo `@s.whatsapp.net`) até achar o
-que corresponde, checando seu `IsAdmin`. Não exige admin para **ler**
-— qualquer membro da conta pode ver a lista; só as ações de escrita
+**`GET`** — busca ao vivo em `provider.getGroupParticipants(group.group_jid)`
+e `provider.getConnectedNumber()` (em paralelo), devolve
+`{ participants: GroupParticipant[], isConnectedNumberAdmin: boolean }`.
+`isConnectedNumberAdmin` é calculado achando, na lista de
+`participants`, o item cujo `phoneNumber` bate com o número
+conectado, e lendo seu `isAdmin`. Não exige admin para **ler** —
+qualquer membro da conta pode ver a lista; só as ações de escrita
 exigem admin.
 
 **`POST`** — corpo `{ action: "add" | "remove" | "promote" | "demote", phone: string }`.
@@ -258,12 +301,13 @@ exigem admin.
    claro da rota, nunca um sucesso silencioso. `provider.updateGroupParticipants`
    já resolve isso internamente e lança se `Error !== 0`, para a rota
    não precisar conhecer o formato bruto da uazapi.
-6. Chama `provider.listGroups()` de novo, confirma que o `Participants`
-   do grupo reflete a mudança esperada (telefone presente/ausente,
-   `IsAdmin` mudou) antes de devolver sucesso — defesa em profundidade
+6. Chama `provider.getGroupParticipants(groupJid)` de novo, confirma
+   que a lista reflete a mudança esperada (telefone presente/ausente,
+   `isAdmin` mudou) antes de devolver sucesso — defesa em profundidade
    adicional, mesmo já checando o `Error` aninhado no passo 5.
-7. Resposta `200 { participants: [...] }` — a lista atualizada, para a
-   UI não precisar de uma segunda chamada.
+7. Resposta `200 { participants: GroupParticipant[] }` — a lista
+   atualizada (o mesmo resultado do passo 6), para a UI não precisar
+   de uma segunda chamada.
 
 ### 3.5 `POST /api/whatsapp/groups/[id]/name`
 
