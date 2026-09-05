@@ -14,7 +14,20 @@ vi.mock('@/lib/whatsapp/providers/resolve', async (importOriginal) => {
 
 import { POST } from './route';
 
-function comSessao(role: string, grupo: Record<string, unknown> | null) {
+// `updateSpy`, quando passado, é chamado com o payload de todo
+// `.update(...)` feito em `whatsapp_groups` -- usado para provar que a
+// rota NUNCA grava `left_at` sem antes confirmar via `listGroups()`.
+//
+// O filtro de `whatsapp_groups` respeita de fato os `.eq(coluna, valor)`
+// encadeados (comparando contra o `grupo` fornecido), simulando o AND
+// que o PostgREST aplica na query real -- assim um teste que passa um
+// `grupo` de OUTRA conta só "acha" o grupo se a rota não filtrar por
+// `account_id`, expondo a falta de isolamento por conta.
+function comSessao(
+  role: string,
+  grupo: Record<string, unknown> | null,
+  updateSpy?: (payload: unknown) => void,
+) {
   return {
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
     from: (table: string) => {
@@ -31,11 +44,24 @@ function comSessao(role: string, grupo: Record<string, unknown> | null) {
         };
       }
       // whatsapp_groups
+      const filtros: Record<string, unknown> = {};
       const chain = {
         select: () => chain,
-        eq: () => chain,
-        maybeSingle: async () => ({ data: grupo, error: null }),
-        update: () => ({ eq: async () => ({ error: null }) }),
+        eq: (coluna: string, valor: unknown) => {
+          filtros[coluna] = valor;
+          return chain;
+        },
+        maybeSingle: async () => {
+          if (!grupo) return { data: null, error: null };
+          const bate = Object.entries(filtros).every(
+            ([coluna, valor]) => grupo[coluna] === valor,
+          );
+          return { data: bate ? grupo : null, error: null };
+        },
+        update: (payload: unknown) => {
+          updateSpy?.(payload);
+          return { eq: async () => ({ error: null }) };
+        },
       };
       return chain;
     },
@@ -67,7 +93,17 @@ describe('POST /api/whatsapp/groups/[id]/leave', () => {
   });
 
   it('devolve 404 quando o grupo nao pertence a conta', async () => {
-    mocks.createClient.mockResolvedValue(comSessao('admin', null));
+    // O grupo EXISTE (mesmo id 'g-1') mas e de outra conta ('acct-OUTRA').
+    // A sessao e da 'acct-1' -- isso prova que o filtro .eq('account_id', ...)
+    // da rota bloqueia o acesso, e nao so que "grupo inexistente da 404".
+    mocks.createClient.mockResolvedValue(
+      comSessao('admin', {
+        id: 'g-1',
+        account_id: 'acct-OUTRA',
+        channel_id: 'chan-1',
+        group_jid: '1@g.us',
+      }),
+    );
     const res = await POST(request(), { params });
     expect(res.status).toBe(404);
   });
@@ -92,8 +128,13 @@ describe('POST /api/whatsapp/groups/[id]/leave', () => {
   it('devolve erro claro quando a uazapi diz sucesso mas o grupo continua na lista', async () => {
     // Achado empirico (spec Fase 3): /group/leave sempre "successful",
     // mesmo sem efeito. A rota nao pode confiar nisso.
+    const updateSpy = vi.fn();
     mocks.createClient.mockResolvedValue(
-      comSessao('admin', { id: 'g-1', account_id: 'acct-1', channel_id: 'chan-1', group_jid: '1@g.us' }),
+      comSessao(
+        'admin',
+        { id: 'g-1', account_id: 'acct-1', channel_id: 'chan-1', group_jid: '1@g.us' },
+        updateSpy,
+      ),
     );
     const leaveGroup = vi.fn(async () => {});
     const listGroups = vi.fn(async () => [{ groupJid: '1@g.us', name: 'Teste' }]); // ainda la
@@ -102,5 +143,8 @@ describe('POST /api/whatsapp/groups/[id]/leave', () => {
     const res = await POST(request(), { params });
 
     expect(res.status).toBe(502);
+    // Garantia real (nao so o sintoma): left_at NUNCA pode ser gravado
+    // quando a reconfirmacao via listGroups() mostra que o grupo continua la.
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 });
