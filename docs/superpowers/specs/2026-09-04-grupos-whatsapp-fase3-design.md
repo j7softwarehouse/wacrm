@@ -66,6 +66,15 @@ documentada abaixo, que virou um incidente):
   pelo usuário (readicionou o número e resincronizou). A conclusão
   fica registrada como decisão de design: **este endpoint não pode ser
   usado como fonte de verdade sobre se a saída realmente aconteceu.**
+- **`GET /instance/status`** (endpoint já usado por
+  `POST /api/whatsapp/channels` para validar credencial ao cadastrar
+  um canal — só o campo `instance.id` era consumido até agora).
+  Devolve, entre outros campos, `instance.owner` — o número do
+  WhatsApp conectado, no mesmo formato usado em `PhoneNumber` de
+  `/group/list` (ex.: `"553183886076"`, sem `+`, sem sufixo). **Esta é
+  a única fonte para saber se o número conectado é admin de um grupo
+  específico** — `whatsapp_channels` não guarda o número conectado em
+  nenhuma coluna hoje.
 
 Também confirmado: `GET /group/list` (já usado pela Fase 1) devolve,
 por grupo, um array `Participants` com `JID`, `PhoneNumber`, `IsAdmin`,
@@ -111,6 +120,9 @@ export interface UpdateGroupParticipantsArgs {
 leaveGroup(groupJid: string): Promise<void>;
 updateGroupParticipants(args: UpdateGroupParticipantsArgs): Promise<void>;
 updateGroupName(groupJid: string, name: string): Promise<void>;
+/** Número do WhatsApp conectado (ex.: "553183886076"), para comparar
+ *  contra `PhoneNumber` de cada participante e saber se é admin. */
+getConnectedNumber(): Promise<string>;
 ```
 
 `src/lib/whatsapp/providers/uazapi.ts` — implementação real. Novo tipo
@@ -157,6 +169,16 @@ async updateGroupParticipants({ groupJid, action, phone }) {
 async updateGroupName(groupJid: string, name: string) {
   await client.post("/group/updateName", { groupjid: groupJid, name });
 },
+
+async getConnectedNumber() {
+  const status = await client.get<{ instance?: { owner?: string } }>(
+    "/instance/status",
+  );
+  if (!status.instance?.owner) {
+    throw new Error("uazapi não devolveu o número do WhatsApp conectado.");
+  }
+  return status.instance.owner;
+},
 ```
 
 `src/lib/whatsapp/providers/meta.ts` — os três métodos, cada um:
@@ -170,6 +192,9 @@ async updateGroupParticipants() {
 },
 async updateGroupName() {
   throw new ProviderUnsupportedError("meta", "updateGroupName");
+},
+async getConnectedNumber() {
+  throw new ProviderUnsupportedError("meta", "getConnectedNumber");
 },
 ```
 
@@ -207,11 +232,12 @@ Um arquivo de rota só, com os dois métodos — mesmo padrão que
 
 **`GET`** — busca ao vivo em `provider.listGroups()`, acha o grupo
 pelo `group_jid` local, devolve `{ participants: [...], isConnectedNumberAdmin: boolean }`.
-`isConnectedNumberAdmin` é calculado comparando `PhoneNumber` de cada
-participante contra o número do canal conectado (`whatsapp_channels`
-já guarda isso em algum formato — o plano de implementação confirma
-o campo exato). Não exige admin para **ler** — qualquer membro da
-conta pode ver a lista; só as ações de escrita exigem admin.
+`isConnectedNumberAdmin` é calculado chamando também
+`provider.getConnectedNumber()` e comparando contra o `PhoneNumber` de
+cada participante (removendo o sufixo `@s.whatsapp.net`) até achar o
+que corresponde, checando seu `IsAdmin`. Não exige admin para **ler**
+— qualquer membro da conta pode ver a lista; só as ações de escrita
+exigem admin.
 
 **`POST`** — corpo `{ action: "add" | "remove" | "promote" | "demote", phone: string }`.
 
