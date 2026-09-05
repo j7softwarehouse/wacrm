@@ -14,6 +14,12 @@ vi.mock('@/lib/whatsapp/providers/resolve', async (importOriginal) => {
 
 import { GET, POST } from './route';
 
+// O filtro de `whatsapp_groups` respeita de fato os `.eq(coluna, valor)`
+// encadeados (comparando contra o `grupo` fornecido), simulando o AND
+// que o PostgREST aplica na query real -- assim um teste que passa um
+// `grupo` de OUTRA conta só "acha" o grupo se a rota não filtrar por
+// `account_id`, expondo a falta de isolamento por conta. Mesmo padrão
+// já validado em `leave/route.test.ts` (Tarefa 3).
 function comSessao(role: string, grupo: Record<string, unknown> | null) {
   return {
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
@@ -30,10 +36,21 @@ function comSessao(role: string, grupo: Record<string, unknown> | null) {
           }),
         };
       }
+      // whatsapp_groups
+      const filtros: Record<string, unknown> = {};
       const chain = {
         select: () => chain,
-        eq: () => chain,
-        maybeSingle: async () => ({ data: grupo, error: null }),
+        eq: (coluna: string, valor: unknown) => {
+          filtros[coluna] = valor;
+          return chain;
+        },
+        maybeSingle: async () => {
+          if (!grupo) return { data: null, error: null };
+          const bate = Object.entries(filtros).every(
+            ([coluna, valor]) => grupo[coluna] === valor,
+          );
+          return { data: bate ? grupo : null, error: null };
+        },
       };
       return chain;
     },
@@ -92,6 +109,17 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
     const res = await GET(new Request('https://x'), { params });
     expect(res.status).toBe(404);
   });
+
+  it('devolve 404 quando o grupo pertence a outra conta', async () => {
+    // O grupo EXISTE (mesmo id 'g-1') mas e de outra conta ('acct-OUTRA').
+    // A sessao e da 'acct-1' -- isso prova que o filtro .eq('account_id', ...)
+    // da rota bloqueia o acesso, e nao so que "grupo inexistente da 404".
+    mocks.createClient.mockResolvedValue(
+      comSessao('viewer', { ...grupoBase, account_id: 'acct-OUTRA' }),
+    );
+    const res = await GET(new Request('https://x'), { params });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('POST /api/whatsapp/groups/[id]/participants', () => {
@@ -122,6 +150,17 @@ describe('POST /api/whatsapp/groups/[id]/participants', () => {
   it('devolve 404 quando o grupo ja foi deixado', async () => {
     mocks.createClient.mockResolvedValue(
       comSessao('admin', { ...grupoBase, left_at: '2026-09-05T00:00:00Z' }),
+    );
+    const res = await POST(request({ action: 'add', phone: '5511999999999' }), { params });
+    expect(res.status).toBe(404);
+  });
+
+  it('devolve 404 quando o grupo pertence a outra conta', async () => {
+    // Mesmo raciocinio do GET: o grupo existe, mas com account_id diferente
+    // do da sessao -- prova o filtro .eq('account_id', ...), nao so a 404
+    // generica de "nao existe".
+    mocks.createClient.mockResolvedValue(
+      comSessao('admin', { ...grupoBase, account_id: 'acct-OUTRA' }),
     );
     const res = await POST(request({ action: 'add', phone: '5511999999999' }), { params });
     expect(res.status).toBe(404);
