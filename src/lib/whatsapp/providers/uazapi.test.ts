@@ -266,4 +266,29 @@ describe("createUazapiProvider", () => {
       provider.getGroupParticipants("nao-existe@g.us"),
     ).rejects.toThrow();
   });
+
+  it("usa o JID @lid como identificador quando PhoneNumber vem vazio (participante recem-adicionado)", async () => {
+    // Achado real em homolog: um participante identificado só por JID
+    // opaco (@lid, modo de privacidade do WhatsApp) tem PhoneNumber
+    // vazio em /group/list logo após ser adicionado. Sem essa
+    // alternativa o participante fica sem identificador nenhum — não
+    // aparece na tela e não dá pra remover/promover (confirmado que
+    // updateParticipants aceita o JID @lid completo como identificador).
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { JID: "36460128415934@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "36460128415934@lid", isAdmin: false },
+    ]);
+  });
 });

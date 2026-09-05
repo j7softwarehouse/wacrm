@@ -54,7 +54,7 @@ function toSendResult(response: UazapiSendResponse): SendResult {
 interface UazapiGroup {
   JID: string;
   Name?: string;
-  Participants?: Array<{ PhoneNumber?: string; IsAdmin?: boolean }>;
+  Participants?: Array<{ JID?: string; PhoneNumber?: string; IsAdmin?: boolean }>;
 }
 
 interface UazapiGroupListResponse {
@@ -253,7 +253,16 @@ export function createUazapiProvider(
         throw new Error(`Grupo ${groupJid} não encontrado na lista da uazapi.`);
       }
       return (group.Participants ?? []).map((p) => ({
-        phoneNumber: (p.PhoneNumber ?? "").replace("@s.whatsapp.net", ""),
+        // Participante identificado só por JID opaco (@lid, modo de
+        // privacidade do WhatsApp) tem PhoneNumber vazio em
+        // /group/list logo após ser adicionado — confirmado em
+        // homolog. Sem o fallback pro JID, esse participante fica sem
+        // identificador nenhum: não aparece na tela e não dá pra
+        // remover/promover (updateParticipants aceita o JID @lid
+        // completo como identificador, confirmado empiricamente).
+        phoneNumber: p.PhoneNumber
+          ? p.PhoneNumber.replace("@s.whatsapp.net", "")
+          : (p.JID ?? ""),
         isAdmin: !!p.IsAdmin,
       }));
     },
