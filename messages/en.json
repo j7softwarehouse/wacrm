@@ -1674,6 +1674,7 @@
       "participantsTitle": "Participants",
       "participantsLoadError": "Could not load participants.",
       "adminBadge": "Admin",
+      "participantNoPhone": "Participant with no visible phone number",
       "addParticipant": "Add participant",
       "addParticipantPlaceholder": "Phone (with area and country code)",
       "addParticipantAction": "Add",

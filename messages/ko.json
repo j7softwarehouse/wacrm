@@ -1615,6 +1615,7 @@
       "participantsTitle": "참가자",
       "participantsLoadError": "참가자를 불러올 수 없습니다.",
       "adminBadge": "관리자",
+      "participantNoPhone": "전화번호가 표시되지 않는 참가자",
       "addParticipant": "참가자 추가",
       "addParticipantPlaceholder": "전화번호 (지역 및 국가 코드 포함)",
       "addParticipantAction": "추가",

@@ -258,7 +258,13 @@ function GroupManageDialog({
                 {participants.map((p) => (
                   <li key={p.phoneNumber} className="flex items-center justify-between gap-2 py-2 text-sm">
                     <span className="flex items-center gap-2">
-                      {p.phoneNumber}
+                      {p.phoneNumber.includes('@lid') ? (
+                        <span className="italic text-muted-foreground">
+                          {t('participantNoPhone')}
+                        </span>
+                      ) : (
+                        p.phoneNumber
+                      )}
                       {p.isAdmin && (
                         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
                           {t('adminBadge')}

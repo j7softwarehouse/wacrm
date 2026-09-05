@@ -1664,6 +1664,7 @@
       "participantsTitle": "Participantes",
       "participantsLoadError": "Não foi possível carregar os participantes.",
       "adminBadge": "Admin",
+      "participantNoPhone": "Participante sem telefone visível",
       "addParticipant": "Adicionar participante",
       "addParticipantPlaceholder": "Telefone (com DDD e código do país)",
       "addParticipantAction": "Adicionar",
