@@ -698,4 +698,71 @@ describe('sendMessageToConversation — conversa de grupo', () => {
     expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
     expect(capture.tables).not.toContain('contacts');
   });
+
+  it('quando o provedor recusa por o numero nao participar mais do grupo, marca left_at e devolve erro amigavel', async () => {
+    // Achado da retestagem manual da Fase 3: o numero pode perder a
+    // participacao no grupo por fora do app (removido por outro membro,
+    // ou saida direta pelo WhatsApp) — nesse caso `left_at` continua
+    // NULL no banco (ninguem usou o botao "Sair do grupo" daqui), e sem
+    // isto o usuario via o erro cru do provedor em vez do aviso amigavel
+    // ja usado para a saida feita pelo proprio app.
+    const sendText = vi.fn(async () => {
+      throw new Error(
+        'error sending message after 2 attempts: failed to get group members: you\'re not participating in that group',
+      );
+    });
+    mocks.getProviderForConversation.mockResolvedValue({ sendText });
+
+    const updateCalls: { table: string; patch: Record<string, unknown> }[] = [];
+    const db = {
+      from: (table: string) => {
+        if (table === 'whatsapp_groups') {
+          return {
+            update: (patch: Record<string, unknown>) => {
+              updateCalls.push({ table, patch });
+              return { eq: async () => ({ error: null }) };
+            },
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'cv-grupo',
+                    account_id: 'acct-1',
+                    contact_id: null,
+                    group_id: 'grp-1',
+                    contact: null,
+                    group: { id: 'grp-1', group_jid: '120363000000000000@g.us', left_at: null },
+                  },
+                  error: null,
+                }),
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        };
+      },
+    } as unknown as SupabaseClient;
+
+    const err = await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'text',
+      contentText: 'oi',
+      senderUserId: 'user-1',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SendMessageError);
+    expect((err as InstanceType<typeof SendMessageError>).code).toBe('bad_request');
+    expect((err as InstanceType<typeof SendMessageError>).status).toBe(400);
+    expect((err as InstanceType<typeof SendMessageError>).message).toMatch(
+      /left this group/i,
+    );
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].patch).toMatchObject({ enabled: false });
+    expect(typeof updateCalls[0].patch.left_at).toBe('string');
+  });
 });

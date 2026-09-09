@@ -42,6 +42,20 @@ import {
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 
+/**
+ * Detecta a saída de um grupo descoberta apenas AGORA, no envio — ex.:
+ * o número foi removido por outra pessoa, ou saiu direto pelo WhatsApp,
+ * sem passar pelo botão "Sair do grupo" do próprio app. Nesse caso
+ * `whatsapp_groups.left_at` continua NULL (nada aqui gravou a saída), e
+ * sem esta detecção o usuário via o erro cru do provedor em vez do
+ * mesmo aviso amigável já usado para a saída feita pelo app.
+ */
+function isNotParticipatingInGroupError(message: string): boolean {
+  return /not participating|não (é|está) mais participante|não participa mais/i.test(
+    message,
+  );
+}
+
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
   'text',
@@ -236,7 +250,7 @@ export async function sendMessageToConversation(
   // Conversa de grupo resolve o destino pelo JID; 1:1 pelo telefone do
   // contato. `conversations_contact_xor_group` garante que exatamente um
   // dos dois existe, então os dois ramos são mutuamente exclusivos.
-  const group = conversation.group as { group_jid?: string; left_at?: string | null } | null;
+  const group = conversation.group as { id?: string; group_jid?: string; left_at?: string | null } | null;
   const isGroupConversation = Boolean(conversation.group_id);
 
   let destination: string;
@@ -453,6 +467,28 @@ export async function sendMessageToConversation(
       const message =
         err instanceof Error ? err.message : 'Unknown provider error';
       console.error('[send-message] envio em grupo falhou:', message);
+
+      if (isNotParticipatingInGroupError(message) && group?.id) {
+        console.error(
+          `[send-message] saída de grupo detectada no envio (fora do app) — marcando left_at para o grupo ${group.id}`,
+        );
+        const { error: updateErr } = await db
+          .from('whatsapp_groups')
+          .update({ left_at: new Date().toISOString(), enabled: false })
+          .eq('id', group.id);
+        if (updateErr) {
+          console.error(
+            '[send-message] falha ao gravar left_at após detecção no envio:',
+            updateErr.message,
+          );
+        }
+        throw new SendMessageError(
+          'bad_request',
+          'You have left this group; sending is no longer possible',
+          400,
+        );
+      }
+
       throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
     }
   } else {
