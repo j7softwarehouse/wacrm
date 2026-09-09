@@ -140,6 +140,14 @@ interface MessageComposerProps {
    * tem semântica confusa (qualquer participante pode clicar).
    */
   isGroup?: boolean;
+  /**
+   * True quando o número conectado já saiu deste grupo (Fase 3,
+   * `whatsapp_groups.left_at` preenchido). O backend já recusa o envio
+   * nesse caso (`send-message.ts`), mas sem este aviso o usuário só
+   * descobria depois de tentar mandar e ver um erro genérico — ver
+   * relato de retestagem da Fase 3.
+   */
+  groupLeft?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -166,6 +174,7 @@ export function MessageComposer({
   channelUnavailable,
   channelWarning,
   isGroup = false,
+  groupLeft = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -221,7 +230,7 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
-  const sendBlocked = channelUnavailable;
+  const sendBlocked = channelUnavailable || groupLeft;
   // Media (like free-form text) is only allowed inside the 24h window.
   // `channelUnavailable` folds in the two channel-level reasons sending
   // can't happen — channel disconnected, or its channel_id was set to
@@ -594,6 +603,15 @@ export function MessageComposer({
           <p className="text-xs text-red-400">{channelWarning}</p>
         </div>
       )}
+      {/* Grupo abandonado — mesma severidade de channelWarning (envio
+          realmente bloqueado, nenhum modelo contorna isso), então usa o
+          mesmo estilo em vez do amber de sessionExpired. */}
+      {groupLeft && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          <p className="text-xs text-red-400">{t("groupLeftHint")}</p>
+        </div>
+      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -800,11 +818,13 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : channelUnavailable
-                  ? t("channelUnavailablePlaceholder")
-                  : sessionExpired
-                    ? t("sessionExpiredPlaceholder")
-                    : t("typeMessagePlaceholder")
+                : groupLeft
+                  ? t("groupLeftPlaceholder")
+                  : channelUnavailable
+                    ? t("channelUnavailablePlaceholder")
+                    : sessionExpired
+                      ? t("sessionExpiredPlaceholder")
+                      : t("typeMessagePlaceholder")
             }
             disabled={inputsDisabled}
             rows={1}

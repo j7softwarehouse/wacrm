@@ -193,6 +193,8 @@
       "typeMessagePlaceholder": "Type a message... (Shift+Enter for new line)",
       "readOnlyTitle": "Read-only — your role can't send messages",
       "channelUnavailablePlaceholder": "Sending disabled — channel unavailable",
+      "groupLeftHint": "You're no longer part of this group. New messages can't be sent.",
+      "groupLeftPlaceholder": "You left this group",
       "recording": "Recording… {current} / {max}",
       "cancel": "Cancel",
       "stopAndAttach": "Stop and attach",

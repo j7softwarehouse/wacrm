@@ -193,6 +193,8 @@
       "typeMessagePlaceholder": "Digite uma mensagem... (Shift+Enter para nova linha)",
       "readOnlyTitle": "Somente leitura — seu papel não pode enviar mensagens",
       "channelUnavailablePlaceholder": "Envio desabilitado — canal indisponível",
+      "groupLeftHint": "Você não faz mais parte deste grupo. Não é possível enviar novas mensagens.",
+      "groupLeftPlaceholder": "Você saiu deste grupo",
       "recording": "Gravando… {current} / {max}",
       "cancel": "Cancelar",
       "stopAndAttach": "Parar e anexar",

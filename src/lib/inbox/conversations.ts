@@ -15,7 +15,7 @@ import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
  * end-to-end verification against a real database.
  */
 export const CONVERSATION_SELECT =
-  "*, contact:contacts(*, contact_tags(tags(*))), group:whatsapp_groups(id, name, avatar_url)";
+  "*, contact:contacts(*, contact_tags(tags(*))), group:whatsapp_groups(id, name, avatar_url, left_at)";
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };

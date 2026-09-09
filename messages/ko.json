@@ -187,6 +187,8 @@
       "sessionExpiredPlaceholder": "세션 만료 - 템플릿을 사용하세요",
       "typeMessagePlaceholder": "메시지를 입력하세요... (줄바꿈은 Shift+Enter)",
       "readOnlyTitle": "읽기 전용 — 현재 역할로는 메시지를 보낼 수 없습니다",
+      "groupLeftHint": "더 이상 이 그룹의 멤버가 아닙니다. 새 메시지를 보낼 수 없습니다.",
+      "groupLeftPlaceholder": "이 그룹을 나갔습니다",
       "recording": "녹음 중… {current} / {max}",
       "cancel": "취소",
       "stopAndAttach": "중지하고 첨부",
