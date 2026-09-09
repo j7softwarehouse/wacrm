@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server';
+import { isUniqueViolation } from '@/lib/contacts/dedupe';
 
 type FindOrCreateSupabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -52,10 +53,28 @@ export async function findOrCreateConversationForGroup(
     .select('id')
     .single();
 
-  if (error || !created) {
-    console.error('Error creating conversation for group open:', error?.message);
+  if (error) {
+    // Perdeu uma corrida: o clique em "Conversar" e uma entrega de
+    // mensagem recebida via webhook (resolveGroupConversation) podem
+    // resolver "não existe ainda" ao mesmo tempo para o mesmo grupo —
+    // idx_conversations_account_group_channel rejeita o segundo insert.
+    // Re-resolve a linha vencedora em vez de devolver null (espelha o
+    // find-or-create de contato/1:1 em ingest.ts).
+    if (isUniqueViolation(error)) {
+      const { data: raced } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('group_id', groupId)
+        .eq('channel_id', channelId)
+        .maybeSingle();
+      if (raced) return raced.id;
+    }
+    console.error('Error creating conversation for group open:', error.message);
     return null;
   }
+
+  if (!created) return null;
 
   return created.id;
 }
