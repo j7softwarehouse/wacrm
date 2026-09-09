@@ -9,11 +9,25 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getProviderForConversation: vi.fn(),
+  supabaseAdmin: vi.fn(),
 }));
 
 vi.mock('@/lib/whatsapp/providers/resolve', () => ({
   getProviderForConversation: mocks.getProviderForConversation,
 }));
+
+// `supabaseAdmin()` já roda hoje pelo caminho de pausa de Flow (1:1, com
+// contato) sem ser mockado — a chamada real falha rápido (sem rede de
+// teste) e o erro é engolido pelo próprio try/catch daquele trecho. Para
+// não quebrar esse comportamento existente, o default aqui chama a
+// implementação real; só o novo teste de saída-detectada-no-envio
+// sobrescreve com `mockReturnValueOnce` para capturar o UPDATE.
+vi.mock('@/lib/flows/admin-client', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/flows/admin-client')>();
+  mocks.supabaseAdmin.mockImplementation(actual.supabaseAdmin);
+  return { supabaseAdmin: mocks.supabaseAdmin };
+});
 
 // A db that explodes if touched — these tests cover the param
 // validation that MUST short-circuit before any query runs.
@@ -713,39 +727,52 @@ describe('sendMessageToConversation — conversa de grupo', () => {
     });
     mocks.getProviderForConversation.mockResolvedValue({ sendText });
 
-    const updateCalls: { table: string; patch: Record<string, unknown> }[] = [];
+    // `whatsapp_groups` só aceita escrita de admin/owner via RLS
+    // ("admins write groups") — por isso o código grava a saída
+    // detectada no envio via supabaseAdmin(), não pelo `db` com escopo
+    // de RLS de quem enviou (pode ser um agent comum). Mockar aqui
+    // exatamente esse client, e não `db`, é o que prova que o código
+    // usa o caminho certo — se voltasse a usar `db`, este teste
+    // pegaria (updateCalls ficaria vazio).
+    const updateCalls: {
+      table: string;
+      patch: Record<string, unknown>;
+      eqCol: string;
+      eqVal: string;
+    }[] = [];
+    mocks.supabaseAdmin.mockReturnValueOnce({
+      from: (table: string) => ({
+        update: (patch: Record<string, unknown>) => ({
+          eq: async (eqCol: string, eqVal: string) => {
+            updateCalls.push({ table, patch, eqCol, eqVal });
+            return { error: null };
+          },
+        }),
+      }),
+    } as unknown as SupabaseClient);
+
     const db = {
-      from: (table: string) => {
-        if (table === 'whatsapp_groups') {
-          return {
-            update: (patch: Record<string, unknown>) => {
-              updateCalls.push({ table, patch });
-              return { eq: async () => ({ error: null }) };
-            },
-          };
-        }
-        return {
-          select: () => ({
+      from: () => ({
+        select: () => ({
+          eq: () => ({
             eq: () => ({
-              eq: () => ({
-                single: async () => ({
-                  data: {
-                    id: 'cv-grupo',
-                    account_id: 'acct-1',
-                    contact_id: null,
-                    group_id: 'grp-1',
-                    contact: null,
-                    group: { id: 'grp-1', group_jid: '120363000000000000@g.us', left_at: null },
-                  },
-                  error: null,
-                }),
-                maybeSingle: async () => ({ data: null, error: null }),
+              single: async () => ({
+                data: {
+                  id: 'cv-grupo',
+                  account_id: 'acct-1',
+                  contact_id: null,
+                  group_id: 'grp-1',
+                  contact: null,
+                  group: { id: 'grp-1', group_jid: '120363000000000000@g.us', left_at: null },
+                },
+                error: null,
               }),
               maybeSingle: async () => ({ data: null, error: null }),
             }),
+            maybeSingle: async () => ({ data: null, error: null }),
           }),
-        };
-      },
+        }),
+      }),
     } as unknown as SupabaseClient;
 
     const err = await sendMessageToConversation(db, 'acct-1', {
@@ -762,6 +789,9 @@ describe('sendMessageToConversation — conversa de grupo', () => {
       /left this group/i,
     );
     expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].table).toBe('whatsapp_groups');
+    expect(updateCalls[0].eqCol).toBe('id');
+    expect(updateCalls[0].eqVal).toBe('grp-1');
     expect(updateCalls[0].patch).toMatchObject({ enabled: false });
     expect(typeof updateCalls[0].patch.left_at).toBe('string');
   });

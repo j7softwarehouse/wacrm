@@ -56,6 +56,12 @@ function isNotParticipatingInGroupError(message: string): boolean {
   );
 }
 
+/** Usada tanto pelo guard de `left_at` já gravado quanto pela detecção
+ *  no envio (saída descoberta fora do app) — mesma condição, mesmo
+ *  aviso ao usuário nos dois casos. */
+const GROUP_LEFT_MESSAGE =
+  'You have left this group; sending is no longer possible';
+
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
   'text',
@@ -281,11 +287,7 @@ export async function sendMessageToConversation(
     // (Fase 3 / Tarefa 3) `left_at` preenchido significa que o número já
     // saiu de fato do grupo — não é mais possível enviar mensagem para lá.
     if (group?.left_at) {
-      throw new SendMessageError(
-        'bad_request',
-        'You have left this group; sending is no longer possible',
-        400
-      );
+      throw new SendMessageError('bad_request', GROUP_LEFT_MESSAGE, 400);
     }
     // O JID vai como está: a uazapi aceita com ou sem o sufixo `@g.us`
     // (verificado contra a instância real) e normaliza sozinha. Nada de
@@ -472,7 +474,15 @@ export async function sendMessageToConversation(
         console.error(
           `[send-message] saída de grupo detectada no envio (fora do app) — marcando left_at para o grupo ${group.id}`,
         );
-        const { error: updateErr } = await db
+        // `db` é o client com escopo de RLS de quem chamou (o operador que
+        // clicou "Enviar"), e `whatsapp_groups` só aceita escrita de
+        // admin/owner ("admins write groups") — um agent comum teria este
+        // UPDATE silenciosamente filtrado pela RLS (0 linhas, sem erro).
+        // Registrar que o provedor disse "você não está mais no grupo" é
+        // um fato do sistema, não uma ação que depende de permissão do
+        // usuário — mesma categoria da pausa de flow_runs logo abaixo,
+        // que também usa supabaseAdmin() por este motivo.
+        const { error: updateErr } = await supabaseAdmin()
           .from('whatsapp_groups')
           .update({ left_at: new Date().toISOString(), enabled: false })
           .eq('id', group.id);
@@ -482,11 +492,7 @@ export async function sendMessageToConversation(
             updateErr.message,
           );
         }
-        throw new SendMessageError(
-          'bad_request',
-          'You have left this group; sending is no longer possible',
-          400,
-        );
+        throw new SendMessageError('bad_request', GROUP_LEFT_MESSAGE, 400);
       }
 
       throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
