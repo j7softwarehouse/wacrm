@@ -45,19 +45,22 @@ equivalente de redirect (`if (section === 'deals' && !salesEnabled)
 section = 'overview'`) — é este padrão exato que a seção 5 abaixo
 generaliza para papel.
 
-No backend, um levantamento de todas as rotas em `src/app/api/whatsapp/`
-mostrou:
+No backend, a leitura de **cada arquivo de rota real** (não só um grep por
+`canEditSettings` — isso escondeu duas rotas que já usam um helper
+diferente, `requireRole`) mostrou:
 
 - Rotas de **escrita** (criar/remover canal, conectar, sair do grupo,
-  renomear, participantes) já são bloqueadas para não-admin pela RLS do
-  banco (`admins write channels`, `admins write groups`) — algumas com
-  checagem explícita em código para dar uma mensagem clara em vez de
-  deixar a RLS falhar silenciosamente (`PATCH /api/whatsapp/groups` é o
-  exemplo já existente), outras dependendo só da RLS.
-- Rotas de **leitura** usadas exclusivamente pelos painéis de
-  Configurações → WhatsApp/Grupos **não têm nenhuma checagem de papel** —
-  qualquer membro da conta autenticado (viewer incluso) pode chamá-las
-  direto e ver os dados.
+  renomear, participantes, sincronizar grupos) já são bloqueadas para
+  não-admin — pela RLS do banco (`admins write channels`, `admins write
+  groups`) e, em várias, também por checagem explícita em código
+  (`PATCH /api/whatsapp/groups`, `POST /api/whatsapp/groups/sync` já usam
+  `canEditSettings`; `GET /api/whatsapp/channels/[id]/webhook-url` já usa
+  `requireRole("admin")`). Nenhuma mudança necessária nessas.
+- Cinco rotas de **leitura**, usadas exclusivamente pelos painéis de
+  Configurações → WhatsApp/Grupos, **não têm nenhuma checagem de papel**
+  hoje — qualquer membro da conta autenticado (viewer incluso) pode
+  chamá-las direto e ver os dados. São exatamente estas cinco (lista
+  completa e final na seção 6).
 
 ## 4. Modelo de acesso por seção
 
@@ -110,18 +113,35 @@ como o menos privilegiado — falha fechado.
 
 ## 6. Aplicação no backend (defesa em profundidade)
 
-Adiciona a mesma checagem explícita `canEditSettings(role)` (admin+) que
-`PATCH /api/whatsapp/groups` já usa, com mensagem de erro clara (403), às
-rotas cujo único consumidor é o painel WhatsApp ou Grupos de
-Configurações:
+Cinco rotas de leitura, sem nenhuma checagem de papel hoje, ganham uma
+checagem admin+ explícita com 403 e mensagem clara:
 
-- `GET /api/whatsapp/config`
-- `GET /api/whatsapp/config/verify-registration`
-- `GET /api/whatsapp/channels/[id]/webhook-url`
-- `GET /api/whatsapp/channels/[id]/status`
-- `GET /api/whatsapp/groups`
-- `GET /api/whatsapp/groups/[id]/participants`
-- `POST /api/whatsapp/groups/sync`
+- `GET /api/whatsapp/config` — acrescenta checagem de papel ao helper
+  `resolveAccountId` já existente (`src/app/api/whatsapp/config/route.ts`),
+  sem alterar o comportamento "200 com `reason`" já documentado para os
+  outros casos (sem conta, sem config, token corrompido, etc.) — só a
+  checagem de papel vira 403.
+- `GET /api/whatsapp/config/verify-registration` — mesmo padrão do
+  arquivo acima.
+- `GET /api/whatsapp/channels/[id]/status` — troca `getCurrentAccount()`
+  por `requireRole("admin")` (`@/lib/auth/account`), o mesmo helper que
+  `GET /api/whatsapp/channels/[id]/webhook-url` já usa; troca direta, sem
+  mudança de comportamento pros casos que já funcionavam.
+- `GET /api/whatsapp/groups` — acrescenta a MESMA checagem que o `PATCH`
+  no mesmo arquivo já faz (`canEditSettings(profile.role)`), só que no
+  handler `GET`.
+- `GET /api/whatsapp/groups/[id]/participants` — acrescenta a MESMA
+  checagem que o `POST` no mesmo arquivo já faz, no handler `GET` (hoje
+  esse `GET` diz explicitamente em comentário "não exige admin para
+  ler" — essa frase deixa de ser verdade).
+
+**Já satisfazem a spec, nenhuma mudança necessária** (achado só ao ler
+cada arquivo de rota, não só grepar por `canEditSettings` — um usa um
+helper diferente):
+
+- `GET /api/whatsapp/channels/[id]/webhook-url` — já usa
+  `requireRole("admin")`.
+- `POST /api/whatsapp/groups/sync` — já usa `canEditSettings(profile.role)`.
 
 **Deliberadamente sem mudança** (compartilhadas com partes do app fora de
 Configurações, usadas por todo papel):
@@ -156,8 +176,8 @@ Configurações, usadas por todo papel):
 - `admin`/`owner` que entram direto em `/settings?tab=whatsapp` (via link
   do menu da conta) veem a aba normalmente, sem nenhum flash de redirect.
 - Uma chamada direta (`curl`/DevTools) de `agent` ou `viewer` para
-  qualquer uma das 7 rotas listadas na seção 6 devolve 403 com mensagem
-  clara, não os dados.
+  qualquer uma das 5 rotas novas listadas na seção 6, ou para as 2 que já
+  satisfaziam a spec, devolve 403 com mensagem clara, não os dados.
 - `GET /api/whatsapp/channels` e `POST /api/whatsapp/groups/[id]/open`
   continuam respondendo normalmente para `agent`/`viewer` — nenhuma
   regressão no Inbox nem no botão "Conversar".
