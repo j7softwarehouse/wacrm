@@ -210,6 +210,34 @@ describe("createUazapiProvider", () => {
     ).rejects.toThrow();
   });
 
+  it("mensagem clara quando adicionar gera convite pendente (Error 403 + AddRequest) em vez de erro generico", async () => {
+    // Achado real em homolog: para um numero desconhecido (configuracao
+    // de privacidade "quem pode me adicionar a grupos" do WhatsApp), a
+    // uazapi nao adiciona direto -- manda um CONVITE, e devolve
+    // Error: 403 com um objeto AddRequest (Code/Expiration). Isso nao e
+    // uma falha de verdade, e o erro generico "(Error: 403)" confundia
+    // o usuario achando que o app tinha quebrado.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        {
+          PhoneNumber: "553188887777@s.whatsapp.net",
+          Error: 403,
+          AddRequest: { Code: "tlqjKMxOoAt5q2mf", Expiration: "2026-09-12T14:44:23Z" },
+        },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "add",
+        phone: "5531988887777",
+      }),
+    ).rejects.toThrow(/convite/i);
+  });
+
   it("remove participante @lid mesmo quando a resposta devolve o telefone JA RESOLVIDO (nao bate com o JID enviado)", async () => {
     // Achado real, confirmado contra a instancia uazapi: ao remover um
     // participante que só existia como JID @lid, o campo PhoneNumber da

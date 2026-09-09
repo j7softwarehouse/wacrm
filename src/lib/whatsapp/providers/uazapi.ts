@@ -67,6 +67,13 @@ interface UazapiUpdateParticipantsResponse {
     IsAdmin?: boolean;
     /** 0 = sucesso; qualquer outro valor = falha (ex.: 409 = já é participante). */
     Error: number;
+    /**
+     * Presente quando `action: "add"` não adiciona direto — o WhatsApp
+     * manda um convite por causa da configuração de privacidade "quem
+     * pode me adicionar a grupos" da pessoa. Vem com `Error: 403`, mas
+     * não é uma falha de verdade: um convite foi enviado de fato.
+     */
+    AddRequest?: { Code?: string; Expiration?: string } | null;
   }>;
 }
 
@@ -220,6 +227,16 @@ export function createUazapiProvider(
       // enviado é o próprio "@lid" — confirmado empiricamente contra a
       // instância real ao remover um participante assim.
       const entry = result.groupUpdated?.[0];
+      if (entry?.AddRequest) {
+        // Não é uma falha de verdade: o WhatsApp mandou um convite em
+        // vez de adicionar direto (configuração de privacidade "quem
+        // pode me adicionar a grupos" da pessoa) — confirmado
+        // empiricamente contra a instância real. Mensagem clara em vez
+        // do "Error: 403" genérico, que confundia o usuário.
+        throw new Error(
+          `${args.phone} recebeu um convite para entrar no grupo (não foi adicionado direto porque a configuração de privacidade dele no WhatsApp exige aceitar o convite).`,
+        );
+      }
       if (!entry || entry.Error !== 0) {
         throw new Error(
           `uazapi recusou a ação "${args.action}" para ${args.phone} (Error: ${entry?.Error ?? "ausente"})`,
