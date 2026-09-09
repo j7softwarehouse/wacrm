@@ -7,12 +7,14 @@ import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
  * `contact_tags(tags(*))` returns the join rows; {@link normalizeConversation}
  * flattens them onto `contact.tags`.
  *
- * Also embeds the group (columns `id`, `name`, `avatar_url` from
- * `whatsapp_groups`, migration 20260829000001) for the group-conversation
- * path: `group_id` is set instead of `contact_id`, so without this join
- * every group conversation showed up in the Inbox list as "Desconhecido"
- * (no `contact` to read a name from). Found during the Task 12
- * end-to-end verification against a real database.
+ * Also embeds the group (columns `id`, `name`, `avatar_url`, `left_at`
+ * from `whatsapp_groups`, migration 20260829000001) for the
+ * group-conversation path: `group_id` is set instead of `contact_id`, so
+ * without this join every group conversation showed up in the Inbox list
+ * as "Desconhecido" (no `contact` to read a name from). Found during the
+ * Task 12 end-to-end verification against a real database. `left_at`
+ * (Fase 3) lets the composer lock sending once the connected number has
+ * left the group.
  */
 export const CONVERSATION_SELECT =
   "*, contact:contacts(*, contact_tags(tags(*))), group:whatsapp_groups(id, name, avatar_url, left_at)";

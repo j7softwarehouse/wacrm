@@ -453,6 +453,21 @@ function InboxPageInner() {
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {
       setConversations(loaded);
+      // Sair de um grupo (Fase 3) só atualiza `whatsapp_groups.left_at`,
+      // nunca a linha de `conversations` — então nenhum evento de
+      // realtime chega para atualizar `activeConversation` (só o UPDATE
+      // de `conversations` faz isso, no handler acima). Sem isto, uma
+      // conversa de grupo já aberta ficava com o composer destravado até
+      // o agente trocar de conversa e voltar, mesmo depois de um refresh
+      // de lista (reconexão, aba voltando ao foco, botão de atualizar).
+      if (activeConversation) {
+        const fresh = loaded.find((c) => c.id === activeConversation.id);
+        if (fresh && fresh.group?.left_at !== activeConversation.group?.left_at) {
+          setActiveConversation((prev) =>
+            prev ? { ...prev, group: fresh.group } : prev,
+          );
+        }
+      }
       // Resolve a pending deep-link here rather than in an effect — this
       // is an event handler, so the setState calls below are allowed by
       // react-hooks/set-state-in-effect. Runs once per ?c=<id> URL value
@@ -493,7 +508,7 @@ function InboxPageInner() {
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, activeConversation]
   );
 
   const handleSelectConversation = useCallback(
