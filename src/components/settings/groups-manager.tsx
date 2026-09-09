@@ -27,14 +27,18 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ImageOff, Loader2, RefreshCw, Settings, Users } from 'lucide-react';
+import { ImageOff, Loader2, MessageCircle, RefreshCw, Settings, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
+import { openConversationForGroup } from '@/lib/whatsapp/groups/open-conversation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { GatedButton } from '@/components/ui/gated-button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
@@ -370,15 +374,32 @@ function GroupManageDialog({
 export function GroupsManager() {
   const t = useTranslations('Settings.groups');
   const { canEditSettings } = useAuth();
+  const canChat = useCan('send-messages');
+  const router = useRouter();
 
   const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [manageGroup, setManageGroup] = useState<WhatsAppGroup | null>(null);
+  // Qual linha está no meio do find-or-create, para mostrar spinner só
+  // nela em vez de travar a lista inteira — mesmo padrão do "Conversar"
+  // de Contatos (openingConvContactId).
+  const [openingConvId, setOpeningConvId] = useState<string | null>(null);
 
   function openManage(group: WhatsAppGroup) {
     setManageGroup(group);
+  }
+
+  async function goToConversation(group: WhatsAppGroup) {
+    setOpeningConvId(group.id);
+    try {
+      const conversationId = await openConversationForGroup(group.id);
+      router.push(`/inbox?c=${conversationId}`);
+    } catch {
+      toast.error(t('chatError'));
+      setOpeningConvId(null);
+    }
   }
 
   const load = useCallback(async () => {
@@ -555,6 +576,23 @@ export function GroupsManager() {
                           aria-label={t('enabled')}
                         />
                       </>
+                    )}
+                    {group.enabled && !group.left_at && (
+                      <GatedButton
+                        canAct={canChat}
+                        gateReason="send messages"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => goToConversation(group)}
+                        disabled={openingConvId === group.id}
+                        aria-label={t('chat')}
+                      >
+                        {openingConvId === group.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <MessageCircle className="size-4" />
+                        )}
+                      </GatedButton>
                     )}
                     {!group.left_at && (
                       <Button
