@@ -254,7 +254,7 @@ export function createUazapiProvider(
       if (!group) {
         throw new Error(`Grupo ${groupJid} não encontrado na lista da uazapi.`);
       }
-      return (group.Participants ?? []).map((p) => ({
+      const mapped = (group.Participants ?? []).map((p) => ({
         // Participante identificado só por JID opaco (@lid, modo de
         // privacidade do WhatsApp) tem PhoneNumber vazio em
         // /group/list logo após ser adicionado — confirmado em
@@ -267,6 +267,19 @@ export function createUazapiProvider(
           : (p.JID ?? ""),
         isAdmin: !!p.IsAdmin,
       }));
+      // A uazapi às vezes devolve o MESMO participante duas vezes logo
+      // após um "add" (confirmado repetindo a consulta contra a
+      // instância real) — sem deduplicar, a tela mostra duas linhas
+      // para a mesma pessoa, e remover pela primeira faz a segunda
+      // falhar com "Error: 404" ao ser clicada (já não é mais
+      // participante), parecendo um bug de remoção. Mantém a primeira
+      // ocorrência de cada identificador.
+      const seen = new Set<string>();
+      return mapped.filter((p) => {
+        if (seen.has(p.phoneNumber)) return false;
+        seen.add(p.phoneNumber);
+        return true;
+      });
     },
   };
 }

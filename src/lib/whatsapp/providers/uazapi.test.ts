@@ -321,4 +321,34 @@ describe("createUazapiProvider", () => {
       { phoneNumber: "36460128415934@lid", isAdmin: false },
     ]);
   });
+
+  it("remove entradas duplicadas com o mesmo identificador (glitch da uazapi logo apos adicionar)", async () => {
+    // Achado real em homolog: logo depois de um "add" bem-sucedido, o
+    // MESMO participante aparece duas vezes em /group/list (mesmo JID,
+    // ambos com PhoneNumber vazio) -- confirmado repetindo a consulta
+    // contra a instancia real. Sem deduplicar, a tela mostra duas
+    // linhas para a mesma pessoa; removendo pela primeira linha, a
+    // segunda linha (agora referenciando alguem que ja saiu) falha com
+    // "Error: 404" ao ser clicada, parecendo um bug de remocao quando
+    // na verdade e so a duplicata visual que nunca devia ter aparecido.
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { JID: "81811157827760@lid", PhoneNumber: "553183886076@s.whatsapp.net", IsAdmin: true },
+            { JID: "192268724080890@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+            { JID: "192268724080890@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "553183886076", isAdmin: true },
+      { phoneNumber: "192268724080890@lid", isAdmin: false },
+    ]);
+  });
 });
