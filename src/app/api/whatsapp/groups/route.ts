@@ -74,6 +74,13 @@ export async function GET(_request: Request) {
       );
     }
 
+    if (!profile.role || !canEditSettings(profile.role)) {
+      return NextResponse.json(
+        { error: "Only account admins can view groups." },
+        { status: 403 },
+      );
+    }
+
     const { data, error } = await supabase
       .from("whatsapp_groups")
       .select("id, group_jid, name, avatar_url, enabled, left_at")
