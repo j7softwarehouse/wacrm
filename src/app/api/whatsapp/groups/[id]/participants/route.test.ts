@@ -71,8 +71,26 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
     expect(res.status).toBe(401);
   });
 
-  it('nao exige admin para ler', async () => {
+  it('recusa agent com 403, sem carregar o grupo', async () => {
+    mocks.createClient.mockResolvedValue(comSessao('agent', grupoBase));
+
+    const res = await GET(new Request('https://x'), { params });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toMatch(/admin/i);
+  });
+
+  it('recusa viewer com 403', async () => {
     mocks.createClient.mockResolvedValue(comSessao('viewer', grupoBase));
+
+    const res = await GET(new Request('https://x'), { params });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('admin nao e bloqueado pelo gate', async () => {
+    mocks.createClient.mockResolvedValue(comSessao('admin', grupoBase));
     mocks.getProviderForChannel.mockResolvedValue({
       getGroupParticipants: async () => [
         { phoneNumber: '553183886076', isAdmin: false },
@@ -82,15 +100,12 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
     });
 
     const res = await GET(new Request('https://x'), { params });
-    const body = await res.json();
 
-    expect(res.status).toBe(200);
-    expect(body.participants).toHaveLength(2);
-    expect(body.isConnectedNumberAdmin).toBe(false);
+    expect(res.status).not.toBe(403);
   });
 
   it('isConnectedNumberAdmin=true quando o numero conectado e admin', async () => {
-    mocks.createClient.mockResolvedValue(comSessao('viewer', grupoBase));
+    mocks.createClient.mockResolvedValue(comSessao('admin', grupoBase));
     mocks.getProviderForChannel.mockResolvedValue({
       getGroupParticipants: async () => [{ phoneNumber: '553183886076', isAdmin: true }],
       getConnectedNumber: async () => '553183886076',
@@ -104,7 +119,7 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
 
   it('devolve 404 quando o grupo ja foi deixado (left_at preenchido)', async () => {
     mocks.createClient.mockResolvedValue(
-      comSessao('viewer', { ...grupoBase, left_at: '2026-09-05T00:00:00Z' }),
+      comSessao('admin', { ...grupoBase, left_at: '2026-09-05T00:00:00Z' }),
     );
     const res = await GET(new Request('https://x'), { params });
     expect(res.status).toBe(404);
@@ -115,7 +130,7 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
     // A sessao e da 'acct-1' -- isso prova que o filtro .eq('account_id', ...)
     // da rota bloqueia o acesso, e nao so que "grupo inexistente da 404".
     mocks.createClient.mockResolvedValue(
-      comSessao('viewer', { ...grupoBase, account_id: 'acct-OUTRA' }),
+      comSessao('admin', { ...grupoBase, account_id: 'acct-OUTRA' }),
     );
     const res = await GET(new Request('https://x'), { params });
     expect(res.status).toBe(404);

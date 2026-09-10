@@ -8,7 +8,9 @@ import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 // GET/POST /api/whatsapp/groups/[id]/participants
 //
 // GET: lista ao vivo (nunca cache local) + se o número conectado é
-// admin. Não exige admin para ler.
+// admin. Exige admin da CONTA no CRM para ler (2026-09-09-settings-
+// role-gating) — antes desta mudança qualquer membro da conta podia
+// ver a lista de participantes de um grupo.
 //
 // POST: add/remove/promote/demote, um telefone por vez. Exige admin.
 // O provider já garante que Error != 0 (mesmo com HTTP 200 da uazapi)
@@ -75,6 +77,13 @@ export async function GET(
     if (!profile) {
       return NextResponse.json(
         { error: "Your profile is not linked to an account." },
+        { status: 403 },
+      );
+    }
+
+    if (!profile.role || !canEditSettings(profile.role)) {
+      return NextResponse.json(
+        { error: "Only account admins can view group participants." },
         { status: 403 },
       );
     }
