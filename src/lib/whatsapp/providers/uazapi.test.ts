@@ -379,4 +379,19 @@ describe("createUazapiProvider", () => {
       { phoneNumber: "192268724080890@lid", isAdmin: false },
     ]);
   });
+
+  it("edita mensagem via /message/edit com id e text", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.editMessage({ messageId: "MSG123", text: "texto novo" });
+    expect(post).toHaveBeenCalledWith("/message/edit", {
+      id: "MSG123",
+      text: "texto novo",
+    });
+  });
+
+  it("apaga mensagem via /message/delete com id", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.deleteMessage({ messageId: "MSG123" });
+    expect(post).toHaveBeenCalledWith("/message/delete", { id: "MSG123" });
+  });
 });

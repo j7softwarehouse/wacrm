@@ -83,5 +83,11 @@ export function createFakeProvider(
       calls.push({ method: "getGroupParticipants", args: groupJid });
       return [{ phoneNumber: "5511999999999", isAdmin: true }];
     },
+    async editMessage(args: { messageId: string; text: string }) {
+      calls.push({ method: "editMessage", args });
+    },
+    async deleteMessage(args: { messageId: string }) {
+      calls.push({ method: "deleteMessage", args });
+    },
   };
 }
