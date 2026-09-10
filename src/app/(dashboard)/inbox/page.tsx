@@ -8,6 +8,7 @@ import {
   CONVERSATION_SELECT,
   normalizeConversation,
 } from "@/lib/inbox/conversations";
+import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -470,43 +471,57 @@ function InboxPageInner() {
       }
       // Resolve a pending deep-link here rather than in an effect — this
       // is an event handler, so the setState calls below are allowed by
-      // react-hooks/set-state-in-effect. Runs once per ?c=<id> URL value
-      // via the ref, so realtime refreshes of the list can't snap the
-      // user back to the deep-linked thread after they've navigated.
-      if (
-        deepLinkConvId &&
-        autoSelectedForDeepLinkRef.current !== deepLinkConvId &&
-        loaded.length > 0
-      ) {
+      // react-hooks/set-state-in-effect. Runs once por ?c=<id> URL value
+      // via o ref, so realtime refreshes da lista não puxam o agente de
+      // volta pra thread depois que ele já navegou pra outro lugar.
+      //
+      // A decisão pura mora em resolveDeepLinkAction (testada em
+      // resolve-deep-link.test.ts) — o que fica aqui é só aplicar o
+      // efeito colateral certo pra cada caso. O caso `not-found-yet` é o
+      // que corrige um bug real: uma conversa recém criada pelo botão
+      // "Conversar" (grupo ou contato, find-or-create sem mensagem) pode
+      // perder a corrida contra este primeiro carregamento da lista — o
+      // fetch de `ConversationList` pode ter começado (ou até terminado)
+      // antes da linha nova existir pro fetch. Se marcássemos o ref como
+      // consumido mesmo sem achar a conversa, a próxima atualização da
+      // lista (que já teria a linha certa) nunca tentaria de novo, e o
+      // agente ficava preso na conversa que já estava ativa antes do
+      // clique.
+      const deepLinkAction = resolveDeepLinkAction({
+        deepLinkConvId,
+        alreadyConsumedId: autoSelectedForDeepLinkRef.current,
+        loaded,
+        activeConversationId: activeConversation?.id ?? null,
+      });
+
+      if (deepLinkAction.type === 'already-active') {
+        // Já é a ativa (ex.: o agente clicou na lista e o
+        // router.replace() fez o ConversationList refazer o fetch e cair
+        // aqui de novo). Não reaplicar: isso zeraria `messages` numa
+        // thread cujas mensagens o MessageThread já carregou, e como o
+        // conversationId não mudou, MessageThread não refetch — a thread
+        // ficaria em "Nenhuma mensagem ainda" até um reload completo.
         autoSelectedForDeepLinkRef.current = deepLinkConvId;
-        // If the deep-linked conversation is already the active one
-        // (e.g. because the user clicked it in the list and we
-        // router.replace()'d the URL, which made the ConversationList
-        // refetch and land us back here), do NOT re-apply it. Doing so
-        // would setMessages([]) on a thread whose messages have
-        // already been loaded by MessageThread — and because
-        // conversationId didn't change, MessageThread wouldn't
-        // refetch. The thread would read "No messages yet" until a
-        // full page reload rehydrated state from scratch.
-        if (activeConversation?.id === deepLinkConvId) return;
-        const match = loaded.find((c) => c.id === deepLinkConvId);
-        if (match) {
-          setActiveConversation(match);
-          setActiveContact(match.contact ?? null);
-          setMessages([]);
-          // Mirror the optimistic unread reset that handleSelectConversation
-          // does — the user just deep-linked into this conv, treat that the
-          // same as a click. Leaves activeConversation.unread_count alone so
-          // the MessageThread reset effect still fires the server UPDATE.
-          if (match.unread_count > 0) {
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === match.id ? { ...c, unread_count: 0 } : c,
-              ),
-            );
-          }
+      } else if (deepLinkAction.type === 'apply') {
+        const match = deepLinkAction.conversation;
+        autoSelectedForDeepLinkRef.current = deepLinkConvId;
+        setActiveConversation(match);
+        setActiveContact(match.contact ?? null);
+        setMessages([]);
+        // Mirror the optimistic unread reset that handleSelectConversation
+        // does — the user just deep-linked into this conv, treat that the
+        // same as a click. Leaves activeConversation.unread_count alone so
+        // the MessageThread reset effect still fires the server UPDATE.
+        if (match.unread_count > 0) {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === match.id ? { ...c, unread_count: 0 } : c,
+            ),
+          );
         }
       }
+      // 'skip' e 'not-found-yet' não tocam o ref — no segundo caso, de
+      // propósito, pra permitir nova tentativa.
     },
     [deepLinkConvId, activeConversation]
   );
