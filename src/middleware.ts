@@ -77,9 +77,16 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // API routes that need auth (not webhooks)
+  // API routes that need auth (not webhooks, not cron/pinger-secret routes).
+  // `/sync-cron` é autenticado por segredo compartilhado dentro da própria
+  // rota (isAuthorizedCronRequest), não por sessão — um pinger externo
+  // (cron-job.org, GitHub Actions) nunca tem cookie do Supabase, então sem
+  // esta isenção o middleware devolvia 401 antes da rota sequer checar o
+  // x-cron-secret, e a resposta idêntica ({"error":"Unauthorized"}) fazia
+  // parecer que o segredo estava errado quando o problema era outro.
   if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
-      !request.nextUrl.pathname.includes('/webhook')) {
+      !request.nextUrl.pathname.includes('/webhook') &&
+      !request.nextUrl.pathname.includes('/sync-cron')) {
     return withRefreshedCookies(
       NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     )
