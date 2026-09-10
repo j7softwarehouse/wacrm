@@ -496,10 +496,15 @@ export function MessageThread({
     };
   }, [conversationId]);
 
-  // Clear any in-progress reply draft when the active conversation changes —
-  // a quote pulled from conversation A shouldn't bleed into conversation B.
+  // Clear any in-progress reply draft or edit-in-progress state when the
+  // active conversation changes — MessageThread não é remontado ao trocar
+  // de conversa (sem `key` na página pai), então sem isso um "Editando
+  // mensagem" (ou uma citação) iniciado na conversa A continuaria visível
+  // e armado ao abrir a conversa B, enviando a edição para o `message_id`
+  // errado.
   useEffect(() => {
     setReplyTo(null);
+    setEditingMessage(null);
   }, [conversationId]);
 
   // Reset the server-side unread_count to 0 whenever an unread count
@@ -897,8 +902,14 @@ export function MessageThread({
   // Sem atualização otimista local — a Realtime UPDATE em `messages` já
   // propaga `content_text`/`edited_at` pra bolha, mesmo padrão de
   // `handleDeleteMessage` acima.
+  //
+  // Devolve um booleano de sucesso: o composer só limpa o texto digitado
+  // e sai do modo edição quando a edição realmente foi aceita. Uma falha
+  // (ex.: WhatsApp recusa por estar fora do prazo permitido — caminho
+  // esperado, não excepcional) deixa o texto no composer para o atendente
+  // tentar de novo em vez de perder o que digitou.
   const handleSubmitEdit = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string): Promise<boolean> => {
       try {
         const res = await fetch(`/api/whatsapp/messages/${messageId}/edit`, {
           method: "POST",
@@ -908,11 +919,13 @@ export function MessageThread({
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
           toast.error(payload?.error || tActions("editError"));
-          return;
+          return false;
         }
+        return true;
       } catch (err) {
         console.error("Failed to edit message:", err);
         toast.error(tActions("editError"));
+        return false;
       }
     },
     [tActions],
@@ -1359,9 +1372,15 @@ export function MessageThread({
                       const next = own?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
+                    // `!!msg.message_id` exclui mensagens otimistas/que
+                    // falharam no envio (id temporário "temp-...", sem
+                    // message_id real da uazapi) — o backend recusa editar
+                    // ou apagar algo que nunca chegou a sair pro WhatsApp,
+                    // então os botões nem devem aparecer nesse caso.
                     const isOwnAndNotDeleted =
                       (msg.sender_type === "agent" || msg.sender_type === "bot") &&
-                      !msg.deleted_at;
+                      !msg.deleted_at &&
+                      !!msg.message_id;
                     const canDeleteMsg =
                       isOwnAndNotDeleted &&
                       threadChannel?.provider === "uazapi" &&

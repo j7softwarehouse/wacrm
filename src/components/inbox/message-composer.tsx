@@ -157,7 +157,14 @@ interface MessageComposerProps {
   /** Presente → composer entra em modo edição: texto pré-preenchido,
    *  enviar chama `onSubmitEdit` em vez de `onSend`. */
   editingMessage?: { id: string; text: string } | null;
-  onSubmitEdit?: (id: string, text: string) => void;
+  /**
+   * Devolve `true` em caso de sucesso, `false` em caso de falha (ex.:
+   * WhatsApp recusa a edição por estar fora do prazo permitido — um
+   * caminho esperado, não excepcional). `handleSend` só limpa o texto e
+   * sai do modo edição quando o retorno não é `false`, para o atendente
+   * não perder o que digitou numa falha.
+   */
+  onSubmitEdit?: (id: string, text: string) => Promise<boolean> | void;
   onCancelEdit?: () => void;
 }
 
@@ -289,14 +296,23 @@ export function MessageComposer({
     setSending(true);
     try {
       if (editingMessage) {
-        onSubmitEdit?.(editingMessage.id, trimmed);
-        onCancelEdit?.();
+        // Só limpa o texto e sai do modo edição se a edição realmente
+        // teve sucesso — numa falha (ex.: fora do prazo permitido pelo
+        // WhatsApp) o atendente não pode perder o que digitou.
+        const ok = await onSubmitEdit?.(editingMessage.id, trimmed);
+        if (ok !== false) {
+          onCancelEdit?.();
+          setText("");
+          if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+          }
+        }
       } else {
         onSend(trimmed, replyTo?.id);
-      }
-      setText("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
+        setText("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
       }
     } finally {
       setSending(false);
