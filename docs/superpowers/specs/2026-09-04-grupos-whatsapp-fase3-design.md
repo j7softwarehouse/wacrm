@@ -282,6 +282,15 @@ conectado, e lendo seu `isAdmin`. Não exige admin para **ler** —
 qualquer membro da conta pode ver a lista; só as ações de escrita
 exigem admin.
 
+> **Superseded (2026-09-09):** a premissa acima — leitura sem exigir
+> admin — não vale mais. O spec de role-gating de Configurações
+> (`2026-09-09-settings-role-gating-design.md`) tornou TODA a seção
+> Groups admin-only, decisão deliberada e mais recente que esta, não
+> um defeito. Isso inclui `GET .../participants` (commit `5638594`):
+> hoje toda rota de grupos, leitura inclusa, exige admin da conta. O
+> código atual está correto pela decisão mais nova; não ajustar o
+> código para bater com este spec.
+
 **`POST`** — corpo `{ action: "add" | "remove" | "promote" | "demote", phone: string }`.
 
 1. `requireRole('admin')`.
@@ -301,10 +310,18 @@ exigem admin.
    claro da rota, nunca um sucesso silencioso. `provider.updateGroupParticipants`
    já resolve isso internamente e lança se `Error !== 0`, para a rota
    não precisar conhecer o formato bruto da uazapi.
-6. Chama `provider.getGroupParticipants(groupJid)` de novo, confirma
-   que a lista reflete a mudança esperada (telefone presente/ausente,
-   `isAdmin` mudou) antes de devolver sucesso — defesa em profundidade
-   adicional, mesmo já checando o `Error` aninhado no passo 5.
+6. Chama `provider.getGroupParticipants(groupJid)` de novo e devolve a
+   lista atualizada — **sem** comparar valor a valor contra a mudança
+   esperada antes de decidir sucesso. Esse post-check baseado em
+   valor foi deliberadamente descartado: quebraria justamente para
+   participantes identificados por `@lid`, o mesmo problema de
+   identidade de participante que o bug (b) da Tarefa 8 já achou e
+   corrigiu (trocando a detecção de sucesso do provider de
+   comparação por valor para comparação por índice). Reintroduzir uma
+   comparação por valor aqui reintroduziria essa mesma classe de bug.
+   O `Error === 0` do provider no passo 5 já é a guarda real e
+   suficiente; o re-fetch deste passo serve só para devolver a lista
+   fresca à UI, não para validar o resultado.
 7. Resposta `200 { participants: GroupParticipant[] }` — a lista
    atualizada (o mesmo resultado do passo 6), para a UI não precisar
    de uma segunda chamada.
@@ -433,3 +450,9 @@ específico de `left_at` (saiu de verdade) ganha o bloqueio de envio.
     ações de escrita (`leave`, `POST .../participants`, `POST
     .../name`) — 403. Ele **consegue** ver a lista de participantes
     (`GET .../participants`), que não exige admin.
+
+    > **Superseded (2026-09-09):** ver nota em 3.4 — o role-gating de
+    > Configurações tornou a seção Groups inteira admin-only,
+    > incluindo `GET .../participants`. Um operador não-admin hoje
+    > recebe 403 também na leitura, não só nas ações de escrita
+    > listadas acima.
