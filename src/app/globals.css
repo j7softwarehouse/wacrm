@@ -154,7 +154,12 @@ html[data-mode="light"] {
   --sidebar-accent: oklch(0.96 0.004 260);
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
-  --status-open: oklch(0.55 0.15 145);
+  /* Mais saturado e mais escuro que a primeira tentativa (0.55/0.15) —
+   * a bolinha de status é pequena, e área pequena de cor precisa de
+   * mais contraste/saturação pra se destacar contra fundo quase branco
+   * do que a mesma cor precisaria numa superfície grande. Ajustado após
+   * teste visual real no tema claro (2026-09-10). */
+  --status-open: oklch(0.48 0.17 145);
   --status-pending: oklch(0.65 0.16 70);
   --status-closed: oklch(0.4 0.01 260);
 }
