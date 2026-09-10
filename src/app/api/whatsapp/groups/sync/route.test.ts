@@ -28,26 +28,49 @@ import { POST } from './route';
  * para `{ data, error }` sem precisar chamar `.then()` explicitamente —
  * então `.select()` aqui devolve uma Promise diretamente.
  */
-function comSessao(role: string, upsertedRows: Array<Record<string, unknown>>[]) {
+function comSessao(
+  role: string,
+  upsertedRows: Array<Record<string, unknown>>[],
+  leftGroupJids: string[] = [],
+) {
   return {
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: { account_id: 'acct-1', account_role: role },
-            error: null,
+    from: (table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { account_id: 'acct-1', account_role: role },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      // whatsapp_groups
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              in: () => ({
+                not: async () => ({
+                  data: leftGroupJids.map((group_jid) => ({ group_jid })),
+                  error: null,
+                }),
+              }),
+            }),
           }),
         }),
-      }),
-      upsert: (rows: Array<Record<string, unknown>>) => {
-        upsertedRows.push(rows);
-        const result = { data: rows.map((_, i) => ({ id: `g-${i}` })), error: null };
-        return {
-          select: () => Promise.resolve(result),
-        };
-      },
-    }),
+        upsert: (rows: Array<Record<string, unknown>>) => {
+          upsertedRows.push(rows);
+          const result = { data: rows.map((_, i) => ({ id: `g-${i}` })), error: null };
+          return {
+            select: () => Promise.resolve(result),
+          };
+        },
+      };
+    },
   };
 }
 
@@ -123,5 +146,27 @@ describe('POST /api/whatsapp/groups/sync', () => {
     for (const row of rows[0]) {
       expect(row.left_at).toBeNull();
     }
+  });
+
+  it('religa `enabled: true` so para o grupo que estava marcado como saido', async () => {
+    // '1@g.us' estava com left_at preenchido (o fake devolve ele na
+    // checagem de "grupos saidos"); '2@g.us' nunca saiu. So o primeiro
+    // pode receber enabled:true de volta -- o segundo precisa continuar
+    // sem a coluna `enabled` no upsert dele, senao o teste anterior
+    // ("preserva o valor ja ligado pelo usuario") deixaria de valer.
+    const rows: Array<Record<string, unknown>>[] = [];
+    mocks.createClient.mockResolvedValue(comSessao('admin', rows, ['1@g.us']));
+
+    await POST(request());
+
+    // Duas chamadas de upsert (uma por lote), nao uma so com colunas
+    // diferentes por linha -- ver comentario no route.ts sobre o risco
+    // do merge do PostgREST com colunas heterogeneas no mesmo lote.
+    expect(rows).toHaveLength(2);
+    const rejoined = rows.flat().find((r) => r.group_jid === '1@g.us');
+    const untouched = rows.flat().find((r) => r.group_jid === '2@g.us');
+    expect(rejoined).toMatchObject({ enabled: true, left_at: null });
+    expect(untouched).not.toHaveProperty('enabled');
+    expect(untouched?.left_at).toBeNull();
   });
 });

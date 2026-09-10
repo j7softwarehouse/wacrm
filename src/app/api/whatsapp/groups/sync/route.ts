@@ -132,7 +132,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ synced: 0 });
     }
 
-    const rows = groups.map((group) => ({
+    // Descobre quais desses grupos estão marcados como "saiu" agora —
+    // são os únicos que também ganham `enabled: true` de volta. `left_at`
+    // só é gravado JUNTO com `enabled: false` pelas rotas de saída
+    // (leave/route.ts e a detecção no envio), nunca separado — então
+    // `left_at != null` é o sinal seguro de que o `enabled: false` atual
+    // foi causado pela saída, não uma escolha independente do admin
+    // (que desligaria um grupo do qual continua membro sem nunca gravar
+    // `left_at`). Sem isso, um grupo readicionado voltava com `left_at`
+    // limpo mas `enabled` ainda falso — sem "continuidade automática" de
+    // verdade, precisava de um clique manual no Switch.
+    const groupJids = groups.map((g) => g.groupJid);
+    const { data: leftRows } = await supabase
+      .from("whatsapp_groups")
+      .select("group_jid")
+      .eq("account_id", profile.accountId)
+      .eq("channel_id", channelId)
+      .in("group_jid", groupJids)
+      .not("left_at", "is", null);
+    const rejoinedJids = new Set(
+      (leftRows ?? []).map((r) => r.group_jid as string),
+    );
+
+    const baseRow = (group: { groupJid: string; name?: string; avatarUrl?: string }) => ({
       account_id: profile.accountId,
       channel_id: channelId,
       group_jid: group.groupJid,
@@ -146,25 +168,45 @@ export async function POST(request: Request) {
       // `left_at` recém-gravado apagado por este sync; janela de
       // segundos, sync roda a cada 10-15min, não justifica lock/ordering.
       left_at: null,
-    }));
+    });
 
-    const { data, error } = await supabase
-      .from("whatsapp_groups")
-      .upsert(rows, { onConflict: "account_id,channel_id,group_jid" })
-      .select("id");
+    // Duas chamadas de upsert separadas em vez de uma só com colunas
+    // diferentes por linha: o merge do PostgREST (`resolution=merge-
+    // duplicates`) monta a lista de colunas do lote a partir da primeira
+    // linha — misturar uma linha com `enabled` e outra sem no MESMO
+    // upsert arriscaria zerar `enabled` de grupos que não deveriam ser
+    // tocados (é exatamente o bug que o comentário do topo do arquivo já
+    // avisa para nunca reintroduzir).
+    const rejoinedRows = groups
+      .filter((g) => rejoinedJids.has(g.groupJid))
+      .map((g) => ({ ...baseRow(g), enabled: true }));
+    const otherRows = groups
+      .filter((g) => !rejoinedJids.has(g.groupJid))
+      .map((g) => baseRow(g));
 
-    if (error) {
-      console.error(
-        "[POST /api/whatsapp/groups/sync] upsert error:",
-        error.message,
-      );
-      return NextResponse.json(
-        { error: "Failed to sync groups" },
-        { status: 500 },
-      );
+    let synced = 0;
+    for (const batch of [rejoinedRows, otherRows]) {
+      if (batch.length === 0) continue;
+      const { data, error } = await supabase
+        .from("whatsapp_groups")
+        .upsert(batch, { onConflict: "account_id,channel_id,group_jid" })
+        .select("id");
+
+      if (error) {
+        console.error(
+          "[POST /api/whatsapp/groups/sync] upsert error:",
+          error.message,
+        );
+        return NextResponse.json(
+          { error: "Failed to sync groups" },
+          { status: 500 },
+        );
+      }
+
+      synced += data?.length ?? batch.length;
     }
 
-    return NextResponse.json({ synced: data?.length ?? rows.length });
+    return NextResponse.json({ synced });
   } catch (err) {
     console.error("Error in POST /api/whatsapp/groups/sync:", err);
     return NextResponse.json(

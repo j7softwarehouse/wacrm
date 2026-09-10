@@ -20,9 +20,13 @@ import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 // (cron-job.org, GitHub Actions, etc.) a cada poucos minutos, sem
 // precisar da Vercel Cron para isso.
 //
-// Preserva `enabled`: mesmo motivo da rota manual — o upsert nunca
-// inclui essa coluna, para não desligar um grupo que o usuário já
-// tinha configurado.
+// Preserva `enabled` na maioria dos casos: mesmo motivo da rota manual
+// — o upsert de um grupo comum nunca inclui essa coluna, para não
+// desligar um grupo que o usuário já tinha configurado. Exceção
+// deliberada: um grupo que voltou a aparecer em `listGroups()` DEPOIS
+// de ter `left_at` gravado (o número saiu e foi readicionado) também
+// ganha `enabled: true` de volta — sem isso, `left_at` seria limpo mas
+// o grupo continuaria fora da inbox até alguém religar manualmente.
 // ============================================================
 
 interface ChannelRow {
@@ -66,7 +70,25 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const rows = groups.map((group) => ({
+      // Descobre quais desses grupos estão marcados como "saiu" agora —
+      // são os únicos que também ganham `enabled: true` de volta. Mesma
+      // lógica e mesmo motivo da rota manual (`../sync/route.ts`):
+      // `left_at` só é gravado JUNTO com `enabled: false` pelas rotas de
+      // saída, nunca separado, então `left_at != null` é o sinal seguro
+      // de que o `enabled: false` atual foi causado pela saída.
+      const groupJids = groups.map((g) => g.groupJid);
+      const { data: leftRows } = await admin
+        .from("whatsapp_groups")
+        .select("group_jid")
+        .eq("account_id", channel.account_id)
+        .eq("channel_id", channel.id)
+        .in("group_jid", groupJids)
+        .not("left_at", "is", null);
+      const rejoinedJids = new Set(
+        (leftRows ?? []).map((r) => r.group_jid as string),
+      );
+
+      const baseRow = (group: { groupJid: string; name?: string; avatarUrl?: string }) => ({
         account_id: channel.account_id,
         channel_id: channel.id,
         group_jid: group.groupJid,
@@ -80,20 +102,40 @@ export async function GET(request: Request) {
         // `left_at` recém-gravado apagado por este sync; janela de
         // segundos, sync roda a cada 10-15min, não justifica lock/ordering.
         left_at: null,
-      }));
+      });
 
-      const { error: upsertError } = await admin
-        .from("whatsapp_groups")
-        .upsert(rows, { onConflict: "account_id,channel_id,group_jid" })
-        .select("id");
+      // Duas chamadas de upsert separadas em vez de uma só com colunas
+      // diferentes por linha — ver comentário equivalente em
+      // `../sync/route.ts` sobre o risco do merge do PostgREST com
+      // colunas heterogêneas no mesmo lote.
+      const rejoinedRows = groups
+        .filter((g) => rejoinedJids.has(g.groupJid))
+        .map((g) => ({ ...baseRow(g), enabled: true }));
+      const otherRows = groups
+        .filter((g) => !rejoinedJids.has(g.groupJid))
+        .map((g) => baseRow(g));
 
-      if (upsertError) {
-        errors.push(`${channel.id}: ${upsertError.message}`);
-        continue;
+      let channelFailed = false;
+      let channelSyncedGroups = 0;
+      for (const batch of [rejoinedRows, otherRows]) {
+        if (batch.length === 0) continue;
+        const { error: upsertError } = await admin
+          .from("whatsapp_groups")
+          .upsert(batch, { onConflict: "account_id,channel_id,group_jid" })
+          .select("id");
+
+        if (upsertError) {
+          errors.push(`${channel.id}: ${upsertError.message}`);
+          channelFailed = true;
+          break;
+        }
+        channelSyncedGroups += batch.length;
       }
 
+      if (channelFailed) continue;
+
       syncedChannels++;
-      syncedGroups += rows.length;
+      syncedGroups += channelSyncedGroups;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(

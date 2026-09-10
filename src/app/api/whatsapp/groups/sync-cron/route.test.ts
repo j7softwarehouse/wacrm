@@ -30,6 +30,7 @@ function request(headers: Record<string, string> = {}) {
 function fakeAdmin(
   channels: Array<{ id: string; account_id: string }>,
   upserted: Array<Record<string, unknown>>[],
+  leftGroupJids: string[] = [],
 ) {
   return {
     from: (table: string) => {
@@ -44,6 +45,18 @@ function fakeAdmin(
       }
       // whatsapp_groups
       return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              in: () => ({
+                not: async () => ({
+                  data: leftGroupJids.map((group_jid) => ({ group_jid })),
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }),
         upsert: (rows: Array<Record<string, unknown>>) => {
           upserted.push(rows);
           return { select: () => Promise.resolve({ data: [], error: null }) };
@@ -161,6 +174,32 @@ describe('GET /api/whatsapp/groups/sync-cron', () => {
     for (const row of upserted[0]) {
       expect(row.left_at).toBeNull();
     }
+  });
+
+  it('religa `enabled: true` so para o grupo que estava marcado como saido', async () => {
+    // '1@g.us' estava com left_at preenchido; '2@g.us' nunca saiu. So o
+    // primeiro pode receber enabled:true de volta -- misturar os dois
+    // no MESMO upsert arriscaria zerar o enabled do segundo (ver
+    // comentario no route.ts sobre colunas heterogeneas no PostgREST).
+    const upserted: Array<Record<string, unknown>>[] = [];
+    mocks.supabaseAdmin.mockReturnValue(
+      fakeAdmin([{ id: 'chan-1', account_id: 'acct-1' }], upserted, ['1@g.us']),
+    );
+    mocks.getProviderForChannel.mockResolvedValue({
+      listGroups: async () => [
+        { groupJid: '1@g.us', name: 'Turma A' },
+        { groupJid: '2@g.us', name: 'Turma B' },
+      ],
+    });
+
+    await GET(request({ 'x-cron-secret': 'segredo-de-teste' }));
+
+    expect(upserted).toHaveLength(2);
+    const rejoined = upserted.flat().find((r) => r.group_jid === '1@g.us');
+    const untouched = upserted.flat().find((r) => r.group_jid === '2@g.us');
+    expect(rejoined).toMatchObject({ enabled: true, left_at: null });
+    expect(untouched).not.toHaveProperty('enabled');
+    expect(untouched?.left_at).toBeNull();
   });
 
   it('erro em um canal nao impede a sincronizacao dos demais', async () => {
