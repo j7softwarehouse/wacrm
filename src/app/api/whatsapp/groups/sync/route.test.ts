@@ -112,4 +112,16 @@ describe('POST /api/whatsapp/groups/sync', () => {
       expect(row.channel_id).toBe('chan-1');
     }
   });
+
+  it('inclui `left_at: null` no upsert — reabre um grupo re-adicionado pelo WhatsApp', async () => {
+    const rows: Array<Record<string, unknown>>[] = [];
+    mocks.createClient.mockResolvedValue(comSessao('admin', rows));
+
+    await POST(request());
+
+    expect(rows).toHaveLength(1);
+    for (const row of rows[0]) {
+      expect(row.left_at).toBeNull();
+    }
+  });
 });

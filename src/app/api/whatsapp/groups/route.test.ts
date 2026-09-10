@@ -207,6 +207,71 @@ describe('PATCH /api/whatsapp/groups', () => {
     expect(res.status).toBe(403);
   });
 
+  it('ao habilitar, limpa `left_at` no payload do update — evita o estado contraditorio enabled:true + left_at preenchido', async () => {
+    const updateSpy = vi.fn();
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      order: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({
+        data: { account_id: 'acct-1', account_role: 'admin' },
+        error: null,
+      }),
+    };
+    // `update` precisa devolver a própria chain (para permitir
+    // `.eq().eq().select().maybeSingle()` encadeado), mas o spy grava
+    // o payload recebido para a asserção central deste teste.
+    chain.update = (payload: Record<string, unknown>) => {
+      updateSpy(payload);
+      return chain;
+    };
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => chain,
+    });
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith({ enabled: true, left_at: null });
+  });
+
+  it('ao desabilitar, mantem o comportamento antigo — nao inclui `left_at` no payload do update', async () => {
+    const updateSpy = vi.fn();
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      order: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({
+        data: { account_id: 'acct-1', account_role: 'admin' },
+        error: null,
+      }),
+    };
+    chain.update = (payload: Record<string, unknown>) => {
+      updateSpy(payload);
+      return chain;
+    };
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => chain,
+    });
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: false }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith({ enabled: false });
+  });
+
   it('devolve 404 para um grupo que nao pertence a conta do chamador', async () => {
     mocks.createClient.mockResolvedValue(
       comSessaoQueue([

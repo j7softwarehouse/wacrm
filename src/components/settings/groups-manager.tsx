@@ -11,19 +11,22 @@
 // primary action, a loading spinner, an empty state, and a card
 // holding a divided list of rows.
 //
-// Read-only note: there is no group composer yet — the `enabled`
-// toggle only controls whether a group's inbound messages surface
-// in the inbox. Sending into a group arrives in a later phase, so
-// a banner says so up front instead of leaving users to wonder why
-// there's no "send" affordance on a group thread.
+// Group messaging is fully live (send + receive, shipped in Fase
+// 2) — the `enabled` toggle controls whether a group's messages
+// surface in the inbox at all. The `readOnly` banner is not about
+// sending being unavailable; it explains the cold-start case: a
+// group with no inbound message yet has no thread to show until
+// one arrives, so the banner points at "Conversar" as the way to
+// start a thread before that first message lands.
 //
-// Role gating: GET only requires account membership (any role can
-// see which groups are synced), but the PATCH route enforces
-// `canEditSettings` (admin+) server-side — a non-admin's toggle
-// would otherwise round-trip to a 403. Rather than let that click
-// fail silently, every actionable control (Sync button, each
-// Switch) is disabled up front for non-admins, with a hint
-// explaining why.
+// Role gating: this whole panel is gated to `minRole: 'admin'` in
+// Settings' own role-gating system (see
+// `settings-sections.ts`), and the backend matches — both GET and
+// PATCH on `/api/whatsapp/groups` require `canEditSettings` (admin+)
+// server-side. A non-admin's toggle would otherwise round-trip to a
+// 403; rather than let that click fail silently, every actionable
+// control (Sync button, each Switch) is disabled up front for
+// non-admins, with a hint explaining why.
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';

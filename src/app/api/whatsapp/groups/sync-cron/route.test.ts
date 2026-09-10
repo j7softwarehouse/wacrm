@@ -146,6 +146,23 @@ describe('GET /api/whatsapp/groups/sync-cron', () => {
     }
   });
 
+  it('inclui `left_at: null` no upsert — reabre um grupo re-adicionado pelo WhatsApp', async () => {
+    const upserted: Array<Record<string, unknown>>[] = [];
+    mocks.supabaseAdmin.mockReturnValue(
+      fakeAdmin([{ id: 'chan-1', account_id: 'acct-1' }], upserted),
+    );
+    mocks.getProviderForChannel.mockResolvedValue({
+      listGroups: async () => [{ groupJid: '1@g.us', name: 'Turma A' }],
+    });
+
+    await GET(request({ 'x-cron-secret': 'segredo-de-teste' }));
+
+    expect(upserted).toHaveLength(1);
+    for (const row of upserted[0]) {
+      expect(row.left_at).toBeNull();
+    }
+  });
+
   it('erro em um canal nao impede a sincronizacao dos demais', async () => {
     const upserted: Array<Record<string, unknown>>[] = [];
     mocks.supabaseAdmin.mockReturnValue(

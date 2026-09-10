@@ -139,6 +139,13 @@ export async function POST(request: Request) {
       name: group.name ?? null,
       avatar_url: group.avatarUrl ?? null,
       synced_at: new Date().toISOString(),
+      // Limpa `left_at`: se o grupo aparece em `listGroups()`, o número
+      // conectado está nele agora — reabre um grupo re-adicionado após
+      // ter saído. Corrida estreita e aceita: um "Sair do grupo" clicado
+      // entre o snapshot do listGroups() e este upsert teria seu
+      // `left_at` recém-gravado apagado por este sync; janela de
+      // segundos, sync roda a cada 10-15min, não justifica lock/ordering.
+      left_at: null,
     }));
 
     const { data, error } = await supabase
