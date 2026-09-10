@@ -1,4 +1,4 @@
-name: Sync WhatsApp groups (homolog)
+name: Sync WhatsApp groups (homolog e produção)
 
 # Vercel's Hobby plan only allows native Cron Jobs to run once a day —
 # too slow for "a rejoined/new group should reappear within minutes".
@@ -7,17 +7,26 @@ name: Sync WhatsApp groups (homolog)
 # the same shared-secret mechanism the app's own daily crons already use
 # (src/lib/cron/auth.ts accepts this custom x-cron-secret header
 # specifically so an external pinger like this one can call it without
-# needing Vercel's own Cron Jobs feature).
+# needing Vercel's own Cron Jobs feature). Um job por ambiente, cada um
+# com seu próprio secret, para que uma falha em um não afete o outro.
 on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
 jobs:
-  sync:
+  sync-homolog:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger group sync
+      - name: Trigger group sync (homolog)
         run: |
           curl -sf -X GET "https://wacrm-git-staging-ramonppaula-5619s-projects.vercel.app/api/whatsapp/groups/sync-cron" \
             -H "x-cron-secret: ${{ secrets.WACRM_CRON_SECRET }}"
+
+  sync-production:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger group sync (produção)
+        run: |
+          curl -sf -X GET "https://wacrm-sable-psi.vercel.app/api/whatsapp/groups/sync-cron" \
+            -H "x-cron-secret: ${{ secrets.WACRM_CRON_SECRET_PRODUCTION }}"
