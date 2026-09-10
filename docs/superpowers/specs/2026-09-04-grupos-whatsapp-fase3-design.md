@@ -287,9 +287,13 @@ exigem admin.
 > (`2026-09-09-settings-role-gating-design.md`) tornou TODA a seção
 > Groups admin-only, decisão deliberada e mais recente que esta, não
 > um defeito. Isso inclui `GET .../participants` (commit `5638594`):
-> hoje toda rota de grupos, leitura inclusa, exige admin da conta. O
-> código atual está correto pela decisão mais nova; não ajustar o
-> código para bater com este spec.
+> hoje as rotas de gestão do grupo (`leave`, `name`, `participants`,
+> leitura inclusa) exigem admin da conta. Exceção deliberada, não
+> tocada pela role-gating: `POST .../groups/[id]/open` (o botão
+> "Conversar") continua aberto a qualquer membro da conta — é uma
+> ação de mandar mensagem, não de administrar o grupo. O código atual
+> está correto pela decisão mais nova; não ajustar o código para bater
+> com este spec.
 
 **`POST`** — corpo `{ action: "add" | "remove" | "promote" | "demote", phone: string }`.
 
