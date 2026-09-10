@@ -295,6 +295,18 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /** Preenchido quando o próprio atendente apaga a mensagem (Fase de
+   *  editar/apagar, 2026-09-10). `content_text` NUNCA é limpo — a UI é
+   *  que troca a exibição por um placeholder. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  /** Preenchido na primeira edição. `content_text` passa a ser sempre
+   *  o texto atual. */
+  edited_at?: string | null;
+  /** Texto de antes da PRIMEIRA edição — nunca sobrescrito depois,
+   *  mesmo com edições seguintes. Uso interno/auditoria, nunca
+   *  exibido na thread normal. */
+  original_content_text?: string | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';
