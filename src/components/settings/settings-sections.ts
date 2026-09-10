@@ -44,11 +44,11 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 export const DEFAULT_SECTION: SettingsSection = 'overview';
 
 /**
- * Rail grouping + controle de acesso por papel.
+ * Rail grouping + role-based access control.
  *
- * `minRole` decides if the section appears in the rail (`SettingsRail`) and if the
- * URL `?tab=` corresponding is accepted (`SettingsPageInner`) — see
- * `canAccessSection` below and
+ * `minRole` decides whether the section appears in the rail
+ * (`SettingsRail`) and whether its corresponding `?tab=` URL is
+ * accepted (`SettingsPageInner`) — see `canAccessSection` below and
  * docs/superpowers/specs/2026-09-09-settings-role-gating-design.md.
  */
 export interface SectionMeta {

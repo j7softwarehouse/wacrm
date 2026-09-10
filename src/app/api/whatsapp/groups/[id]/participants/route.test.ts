@@ -100,8 +100,11 @@ describe('GET /api/whatsapp/groups/[id]/participants', () => {
     });
 
     const res = await GET(new Request('https://x'), { params });
+    const body = await res.json();
 
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(body.participants).toHaveLength(2);
+    expect(body.isConnectedNumberAdmin).toBe(false);
   });
 
   it('isConnectedNumberAdmin=true quando o numero conectado e admin', async () => {

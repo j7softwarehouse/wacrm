@@ -192,7 +192,7 @@ let fake: any;
 
 function seed() {
   tables = {
-    profiles: [{ user_id: "user-1", account_id: ACCOUNT_ID, account_role: 'admin' }],
+    profiles: [{ user_id: "user-1", account_id: ACCOUNT_ID, account_role: "admin" }],
     whatsapp_channels: [
       {
         id: "chan-meta",
