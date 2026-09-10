@@ -147,4 +147,236 @@ describe("createUazapiProvider", () => {
     const provider = createUazapiProvider(config);
     await expect(provider.listGroups()).resolves.toEqual([]);
   });
+
+  it("sai do grupo via POST /group/leave", async () => {
+    post.mockResolvedValueOnce({ response: "Group leave successful" } as any);
+    const provider = createUazapiProvider(config);
+    await provider.leaveGroup("120363429748080632@g.us");
+    expect(post).toHaveBeenCalledWith("/group/leave", {
+      groupjid: "120363429748080632@g.us",
+    });
+  });
+
+  it("atualiza participante via POST /group/updateParticipants quando Error=0", async () => {
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        { PhoneNumber: "5511999999999@s.whatsapp.net", IsAdmin: false, Error: 0 },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await provider.updateGroupParticipants({
+      groupJid: "120363429748080632@g.us",
+      action: "add",
+      phone: "5511999999999",
+    });
+    expect(post).toHaveBeenCalledWith("/group/updateParticipants", {
+      groupjid: "120363429748080632@g.us",
+      action: "add",
+      participants: ["5511999999999"],
+    });
+  });
+
+  it("lança quando updateParticipants devolve Error != 0 mesmo com HTTP 200", async () => {
+    // Achado empírico (spec §1): a uazapi responde 200 mesmo quando a
+    // ação falhou -- o resultado real vem aninhado por telefone.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        { PhoneNumber: "553183839660@s.whatsapp.net", IsAdmin: true, Error: 409 },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "add",
+        phone: "553183839660",
+      }),
+    ).rejects.toThrow(/409/);
+  });
+
+  it("lança quando updateParticipants nao devolve entrada para o telefone enviado", async () => {
+    post.mockResolvedValueOnce({ group: {}, groupUpdated: [], needs_refresh: false } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "remove",
+        phone: "5511999999999",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("mensagem clara quando adicionar gera convite pendente (Error 403 + AddRequest) em vez de erro generico", async () => {
+    // Achado real em homolog: para um numero desconhecido (configuracao
+    // de privacidade "quem pode me adicionar a grupos" do WhatsApp), a
+    // uazapi nao adiciona direto -- manda um CONVITE, e devolve
+    // Error: 403 com um objeto AddRequest (Code/Expiration). Isso nao e
+    // uma falha de verdade, e o erro generico "(Error: 403)" confundia
+    // o usuario achando que o app tinha quebrado.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        {
+          PhoneNumber: "553188887777@s.whatsapp.net",
+          Error: 403,
+          AddRequest: { Code: "tlqjKMxOoAt5q2mf", Expiration: "2026-09-12T14:44:23Z" },
+        },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "add",
+        phone: "5531988887777",
+      }),
+    ).rejects.toThrow(/convite/i);
+  });
+
+  it("remove participante @lid mesmo quando a resposta devolve o telefone JA RESOLVIDO (nao bate com o JID enviado)", async () => {
+    // Achado real, confirmado contra a instancia uazapi: ao remover um
+    // participante que só existia como JID @lid, o campo PhoneNumber da
+    // resposta vem com o telefone real JA RESOLVIDO pela uazapi
+    // (ex.: "553175011847@s.whatsapp.net"), que nunca vai bater com
+    // ".startsWith(jidEnviado)" quando jidEnviado é o próprio "@lid".
+    // Casar por índice (um telefone enviado -> uma entrada devolvida)
+    // em vez de por valor evita esse descasamento.
+    post.mockResolvedValueOnce({
+      group: {},
+      groupUpdated: [
+        {
+          JID: "36460128415934@lid",
+          PhoneNumber: "553175011847@s.whatsapp.net",
+          IsAdmin: false,
+          Error: 0,
+        },
+      ],
+      needs_refresh: false,
+    } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.updateGroupParticipants({
+        groupJid: "120363429748080632@g.us",
+        action: "remove",
+        phone: "36460128415934@lid",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("renomeia grupo via POST /group/updateName", async () => {
+    post.mockResolvedValueOnce({} as any);
+    const provider = createUazapiProvider(config);
+    await provider.updateGroupName("120363429748080632@g.us", "Novo Nome");
+    expect(post).toHaveBeenCalledWith("/group/updateName", {
+      groupjid: "120363429748080632@g.us",
+      name: "Novo Nome",
+    });
+  });
+
+  it("lê o número conectado via GET /instance/status", async () => {
+    get.mockResolvedValueOnce({ instance: { owner: "553183886076" } } as any);
+    const provider = createUazapiProvider(config);
+    await expect(provider.getConnectedNumber()).resolves.toBe("553183886076");
+    expect(get).toHaveBeenCalledWith("/instance/status");
+  });
+
+  it("lança quando /instance/status nao devolve owner", async () => {
+    get.mockResolvedValueOnce({ instance: {} } as any);
+    const provider = createUazapiProvider(config);
+    await expect(provider.getConnectedNumber()).rejects.toThrow();
+  });
+
+  it("lê participantes de um grupo via GET /group/list, filtrando pelo JID", async () => {
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "outro@g.us",
+          Name: "Outro",
+          Participants: [{ PhoneNumber: "5500000000000@s.whatsapp.net", IsAdmin: true }],
+        },
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { PhoneNumber: "553183886076@s.whatsapp.net", IsAdmin: false },
+            { PhoneNumber: "553183839660@s.whatsapp.net", IsAdmin: true },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "553183886076", isAdmin: false },
+      { phoneNumber: "553183839660", isAdmin: true },
+    ]);
+  });
+
+  it("lança quando getGroupParticipants nao acha o grupo na lista", async () => {
+    get.mockResolvedValueOnce({ groups: [] } as any);
+    const provider = createUazapiProvider(config);
+    await expect(
+      provider.getGroupParticipants("nao-existe@g.us"),
+    ).rejects.toThrow();
+  });
+
+  it("usa o JID @lid como identificador quando PhoneNumber vem vazio (participante recem-adicionado)", async () => {
+    // Achado real em homolog: um participante identificado só por JID
+    // opaco (@lid, modo de privacidade do WhatsApp) tem PhoneNumber
+    // vazio em /group/list logo após ser adicionado. Sem essa
+    // alternativa o participante fica sem identificador nenhum — não
+    // aparece na tela e não dá pra remover/promover (confirmado que
+    // updateParticipants aceita o JID @lid completo como identificador).
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { JID: "36460128415934@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "36460128415934@lid", isAdmin: false },
+    ]);
+  });
+
+  it("remove entradas duplicadas com o mesmo identificador (glitch da uazapi logo apos adicionar)", async () => {
+    // Achado real em homolog: logo depois de um "add" bem-sucedido, o
+    // MESMO participante aparece duas vezes em /group/list (mesmo JID,
+    // ambos com PhoneNumber vazio) -- confirmado repetindo a consulta
+    // contra a instancia real. Sem deduplicar, a tela mostra duas
+    // linhas para a mesma pessoa; removendo pela primeira linha, a
+    // segunda linha (agora referenciando alguem que ja saiu) falha com
+    // "Error: 404" ao ser clicada, parecendo um bug de remocao quando
+    // na verdade e so a duplicata visual que nunca devia ter aparecido.
+    get.mockResolvedValueOnce({
+      groups: [
+        {
+          JID: "120363429748080632@g.us",
+          Name: "Teste",
+          Participants: [
+            { JID: "81811157827760@lid", PhoneNumber: "553183886076@s.whatsapp.net", IsAdmin: true },
+            { JID: "192268724080890@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+            { JID: "192268724080890@lid", PhoneNumber: "", LID: "", IsAdmin: false },
+          ],
+        },
+      ],
+    } as any);
+    const provider = createUazapiProvider(config);
+    const result = await provider.getGroupParticipants("120363429748080632@g.us");
+    expect(result).toEqual([
+      { phoneNumber: "553183886076", isAdmin: true },
+      { phoneNumber: "192268724080890@lid", isAdmin: false },
+    ]);
+  });
 });

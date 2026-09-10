@@ -74,9 +74,16 @@ export async function GET(_request: Request) {
       );
     }
 
+    if (!profile.role || !canEditSettings(profile.role)) {
+      return NextResponse.json(
+        { error: "Only account admins can view groups." },
+        { status: 403 },
+      );
+    }
+
     const { data, error } = await supabase
       .from("whatsapp_groups")
-      .select("id, group_jid, name, avatar_url, enabled")
+      .select("id, group_jid, name, avatar_url, enabled, left_at")
       .eq("account_id", profile.accountId)
       .order("name", { ascending: true });
 
@@ -143,9 +150,17 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // Ao habilitar, limpa `left_at` também: os dois escritores existentes
+    // (leave manual e detecção automática de envio rejeitado) sempre
+    // gravam `enabled: false` junto com `left_at`, nunca `enabled: true`
+    // com `left_at` ainda preenchido — esse estado contraditório só
+    // seria possível chamando esta rota diretamente. Defesa em
+    // profundidade: a Switch já fica escondida quando `left_at` está
+    // preenchido (ver groups-manager.tsx), então isto fecha a lacuna a
+    // nível de API sem corrigir nenhum bug de UI alcançável.
     const { data, error } = await supabase
       .from("whatsapp_groups")
-      .update({ enabled })
+      .update(enabled ? { enabled, left_at: null } : { enabled })
       .eq("id", id)
       .eq("account_id", profile.accountId)
       .select("id, group_jid, name, avatar_url, enabled")

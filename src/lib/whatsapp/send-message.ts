@@ -42,6 +42,26 @@ import {
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 
+/**
+ * Detecta a saída de um grupo descoberta apenas AGORA, no envio — ex.:
+ * o número foi removido por outra pessoa, ou saiu direto pelo WhatsApp,
+ * sem passar pelo botão "Sair do grupo" do próprio app. Nesse caso
+ * `whatsapp_groups.left_at` continua NULL (nada aqui gravou a saída), e
+ * sem esta detecção o usuário via o erro cru do provedor em vez do
+ * mesmo aviso amigável já usado para a saída feita pelo app.
+ */
+function isNotParticipatingInGroupError(message: string): boolean {
+  return /not participating|não (é|está) mais participante|não participa mais/i.test(
+    message,
+  );
+}
+
+/** Usada tanto pelo guard de `left_at` já gravado quanto pela detecção
+ *  no envio (saída descoberta fora do app) — mesma condição, mesmo
+ *  aviso ao usuário nos dois casos. */
+const GROUP_LEFT_MESSAGE =
+  'You have left this group; sending is no longer possible';
+
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
   'text',
@@ -224,7 +244,7 @@ export async function sendMessageToConversation(
   // Conversation + contact + (Fase 2) group, account-scoped.
   const { data: conversation, error: convError } = await db
     .from('conversations')
-    .select('*, contact:contacts(*), group:whatsapp_groups(id, group_jid)')
+    .select('*, contact:contacts(*), group:whatsapp_groups(id, group_jid, left_at)')
     .eq('id', conversationId)
     .eq('account_id', accountId)
     .single();
@@ -236,7 +256,7 @@ export async function sendMessageToConversation(
   // Conversa de grupo resolve o destino pelo JID; 1:1 pelo telefone do
   // contato. `conversations_contact_xor_group` garante que exatamente um
   // dos dois existe, então os dois ramos são mutuamente exclusivos.
-  const group = conversation.group as { group_jid?: string } | null;
+  const group = conversation.group as { id?: string; group_jid?: string; left_at?: string | null } | null;
   const isGroupConversation = Boolean(conversation.group_id);
 
   let destination: string;
@@ -263,6 +283,11 @@ export async function sendMessageToConversation(
         `${messageType} messages are not supported in group conversations`,
         400
       );
+    }
+    // (Fase 3 / Tarefa 3) `left_at` preenchido significa que o número já
+    // saiu de fato do grupo — não é mais possível enviar mensagem para lá.
+    if (group?.left_at) {
+      throw new SendMessageError('bad_request', GROUP_LEFT_MESSAGE, 400);
     }
     // O JID vai como está: a uazapi aceita com ou sem o sufixo `@g.us`
     // (verificado contra a instância real) e normaliza sozinha. Nada de
@@ -444,6 +469,32 @@ export async function sendMessageToConversation(
       const message =
         err instanceof Error ? err.message : 'Unknown provider error';
       console.error('[send-message] envio em grupo falhou:', message);
+
+      if (isNotParticipatingInGroupError(message) && group?.id) {
+        console.error(
+          `[send-message] saída de grupo detectada no envio (fora do app) — marcando left_at para o grupo ${group.id}`,
+        );
+        // `db` é o client com escopo de RLS de quem chamou (o operador que
+        // clicou "Enviar"), e `whatsapp_groups` só aceita escrita de
+        // admin/owner ("admins write groups") — um agent comum teria este
+        // UPDATE silenciosamente filtrado pela RLS (0 linhas, sem erro).
+        // Registrar que o provedor disse "você não está mais no grupo" é
+        // um fato do sistema, não uma ação que depende de permissão do
+        // usuário — mesma categoria da pausa de flow_runs logo abaixo,
+        // que também usa supabaseAdmin() por este motivo.
+        const { error: updateErr } = await supabaseAdmin()
+          .from('whatsapp_groups')
+          .update({ left_at: new Date().toISOString(), enabled: false })
+          .eq('id', group.id);
+        if (updateErr) {
+          console.error(
+            '[send-message] falha ao gravar left_at após detecção no envio:',
+            updateErr.message,
+          );
+        }
+        throw new SendMessageError('bad_request', GROUP_LEFT_MESSAGE, 400);
+      }
+
       throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
     }
   } else {

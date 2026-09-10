@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { getBaseUrl } from "@/lib/http/base-url";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { createUazapiClient } from "@/lib/whatsapp/uazapi/client";
@@ -27,7 +27,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { supabase, accountId } = await getCurrentAccount();
+    const { supabase, accountId } = await requireRole("admin");
     const { id } = await params;
 
     const { data: channel, error } = await supabase

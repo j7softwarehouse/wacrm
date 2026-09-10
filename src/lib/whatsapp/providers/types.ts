@@ -140,6 +140,18 @@ export interface SendTemplateArgs {
   contextMessageId?: string;
 }
 
+export interface UpdateGroupParticipantsArgs {
+  groupJid: string;
+  action: "add" | "remove" | "promote" | "demote";
+  phone: string;
+}
+
+export interface GroupParticipant {
+  /** Sem `+`, sem sufixo — mesmo formato aceito por `participants` em `updateGroupParticipants`. */
+  phoneNumber: string;
+  isAdmin: boolean;
+}
+
 export interface WhatsAppProvider {
   readonly kind: WhatsAppProviderKind;
   sendText(args: SendTextArgs): Promise<SendResult>;
@@ -155,4 +167,17 @@ export interface WhatsAppProvider {
   resolveInboundMediaUrl(ref: string): Promise<string | null>;
   /** Grupos de que o número conectado participa. */
   listGroups(): Promise<Array<{ groupJid: string; name?: string; avatarUrl?: string }>>;
+  /** Remove o número conectado do grupo. A UAZAPI não confirma efeito
+   *  real (ver `leaveGroup` do provider uazapi) — o chamador reconfirma. */
+  leaveGroup(groupJid: string): Promise<void>;
+  /** Adiciona/remove/promove/rebaixa um participante. Lança se a ação
+   *  falhar, mesmo que o provider upstream responda HTTP 200. */
+  updateGroupParticipants(args: UpdateGroupParticipantsArgs): Promise<void>;
+  /** Renomeia o grupo no WhatsApp real. */
+  updateGroupName(groupJid: string, name: string): Promise<void>;
+  /** Número do WhatsApp conectado (ex.: "553183886076"), para comparar
+   *  contra `phoneNumber` de cada participante e saber se é admin. */
+  getConnectedNumber(): Promise<string>;
+  /** Participantes de UM grupo, com status de admin. */
+  getGroupParticipants(groupJid: string): Promise<GroupParticipant[]>;
 }

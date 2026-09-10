@@ -9,6 +9,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { isUniqueViolation } from '@/lib/contacts/dedupe';
+
 export interface ResolvedGroupConversation {
   conversationId: string;
   groupId: string;
@@ -111,7 +113,30 @@ export async function resolveGroupConversation(
       })
       .select('id')
       .single();
-    if (error || !created) return null;
+    if (error) {
+      // Perdeu uma corrida: o clique em "Conversar"
+      // (findOrCreateConversationForGroup) pode resolver "não existe
+      // ainda" ao mesmo tempo que uma mensagem recebida chega por aqui —
+      // idx_conversations_account_group_channel rejeita o segundo insert.
+      // Sem reaproveitar a linha vencedora, a mensagem seria descartada
+      // (chamador trata `null` como "nada a fazer") — pior que o erro
+      // genérico do lado do botão.
+      if (isUniqueViolation(error)) {
+        const { data: raced } = await db
+          .from('conversations')
+          .select('id')
+          .eq('account_id', accountId)
+          .eq('group_id', groupId)
+          .eq('channel_id', channelId)
+          .maybeSingle();
+        if (raced) {
+          conversationId = raced.id;
+          return { conversationId, groupId, participantId: participant.id };
+        }
+      }
+      return null;
+    }
+    if (!created) return null;
     conversationId = created.id;
   }
 

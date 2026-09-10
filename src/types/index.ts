@@ -198,7 +198,14 @@ export interface Conversation {
    * Presente só numa conversa de grupo (`group_id` não nulo). Mesmo
    * padrão de `contact` para o caminho 1:1.
    */
-  group?: { id: string; name: string | null; avatar_url: string | null } | null;
+  group?: {
+    id: string;
+    name: string | null;
+    avatar_url: string | null;
+    /** Preenchido quando o número conectado saiu de verdade (Fase 3) — a
+     *  conversa vira somente-leitura; ver `left_at` em `whatsapp_groups`. */
+    left_at: string | null;
+  } | null;
   /**
    * AI auto-reply state for this thread (migration 029 + 033):
    *  - `ai_autoreply_disabled` — the bot is paused here (a human took

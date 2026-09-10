@@ -111,3 +111,36 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 });
+
+describe("middleware — rotas /api/whatsapp/ autenticadas por segredo de cron, não por sessão", () => {
+  it("bloqueia normalmente uma rota comum de /api/whatsapp/ sem sessão", async () => {
+    // Confirma que o comportamento padrão (linha 81-86 do middleware)
+    // continua valendo — só as rotas explicitamente isentas escapam disso.
+    mockUser = null;
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/groups"),
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it("nao bloqueia /api/whatsapp/groups/sync-cron sem sessão — autentica por segredo, não cookie", async () => {
+    // Bug real encontrado testando em homolog: um pinger externo (cron-job.org,
+    // GitHub Actions) nunca tem cookie de sessão do Supabase. Antes desta
+    // isenção, o middleware devolvia 401 ANTES da rota sequer checar o
+    // x-cron-secret — a mesma resposta {"error":"Unauthorized"} da checagem
+    // de sessão, então parecia (erradamente) que o segredo estava errado.
+    mockUser = null;
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/groups/sync-cron"),
+    );
+
+    // NextResponse.next() (o passthrough real) reporta 200 — uma asserção
+    // "not.toBe(401)" passaria também se o middleware começasse a devolver
+    // qualquer outro erro (500, 403) por um motivo não relacionado, sem
+    // provar de verdade que a rota chegou ao handler.
+    expect(res.status).toBe(200);
+  });
+});

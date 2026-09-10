@@ -1346,6 +1346,7 @@ export function MessageThread({
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
         isGroup={!!conversation.group_id}
+        groupLeft={!!conversation.group?.left_at}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

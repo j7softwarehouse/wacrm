@@ -13,7 +13,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
-import { SECTION_META, type SettingsSection } from './settings-sections';
+import {
+  SECTION_META,
+  canAccessSection,
+  type SettingsSection,
+} from './settings-sections';
 import { SettingsChip, StatusDot } from './settings-chip';
 import { ROLE_META } from './role-meta';
 
@@ -123,8 +127,17 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
+    // WhatsApp connection status — slower, independent. Skipped entirely
+    // for roles that can't reach the WhatsApp section: that tile is
+    // filtered out below via canAccessSection, and /api/whatsapp/config
+    // is admin-only, so firing it for anyone else would just draw a
+    // spurious 403 for a value nothing renders.
     (async () => {
+      if (!canAccessSection('whatsapp', accountRole)) {
+        setWhatsapp(null);
+        setWhatsappLoading(false);
+        return;
+      }
       setWhatsappLoading(true);
       const [channelsRes, health] = await Promise.allSettled([
         fetch('/api/whatsapp/channels', { cache: 'no-store' }).then((r) => r.json()),
@@ -143,7 +156,7 @@ export function SettingsOverview({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, accountId, canManageMembers]);
+  }, [user?.id, accountId, canManageMembers, accountRole]);
 
   const displayName = profile?.full_name || profile?.email || t('yourAccount');
   const initial = (profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();
@@ -267,40 +280,42 @@ export function SettingsOverview({
 
       {/* Status tiles */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {tiles.map(({ section, loading, subtitle }) => {
-          const meta = SECTION_META[section];
-          const Icon = meta.icon;
-          return (
-            <button
-              key={section}
-              type="button"
-              onClick={() => onSelect(section)}
-              className={cn(
-                'group flex items-start gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors',
-                'hover:border-primary-soft-2 hover:bg-card-2',
-              )}
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-                <Icon className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-foreground">
-                  {tSections(section)}
+        {tiles
+          .filter(({ section }) => canAccessSection(section, accountRole))
+          .map(({ section, loading, subtitle }) => {
+            const meta = SECTION_META[section];
+            const Icon = meta.icon;
+            return (
+              <button
+                key={section}
+                type="button"
+                onClick={() => onSelect(section)}
+                className={cn(
+                  'group flex items-start gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors',
+                  'hover:border-primary-soft-2 hover:bg-card-2',
+                )}
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                  <Icon className="size-4" />
                 </span>
-                <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {loading ? (
-                    <>
-                      <Loader2 className="size-3 animate-spin" /> {t('loading')}
-                    </>
-                  ) : (
-                    subtitle
-                  )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-foreground">
+                    {tSections(section)}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {loading ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" /> {t('loading')}
+                      </>
+                    ) : (
+                      subtitle
+                    )}
+                  </span>
                 </span>
-              </span>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </button>
-          );
-        })}
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            );
+          })}
       </div>
     </section>
   );

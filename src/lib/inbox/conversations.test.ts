@@ -152,7 +152,7 @@ describe("conversationDisplayName", () => {
   // null) sempre caía no fallback "Desconhecido" na lista da Inbox.
   it("usa o nome do grupo quando não há contato", () => {
     const conv = {
-      group: { id: "g1", name: "Teste", avatar_url: null },
+      group: { id: "g1", name: "Teste", avatar_url: null, left_at: null },
       contact: null,
     };
     expect(conversationDisplayName(conv)).toBe("Teste");

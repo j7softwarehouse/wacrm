@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }));
@@ -91,6 +91,76 @@ describe('GET /api/whatsapp/groups', () => {
 
     expect(res.status).toBe(403);
   });
+
+  it('inclui left_at na resposta', async () => {
+    const selectSpy = vi.fn();
+
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => ({
+        select: (cols: string) => {
+          selectSpy(cols);
+          return {
+            eq: () => ({
+              order: async () => ({
+                data: [{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false, left_at: '2026-09-05T00:00:00Z' }],
+                error: null,
+              }),
+              maybeSingle: async () => ({
+                data: { account_id: 'acct-1', account_role: 'admin' },
+                error: null,
+              }),
+            }),
+            maybeSingle: async () => ({
+              data: { account_id: 'acct-1', account_role: 'admin' },
+              error: null,
+            }),
+          };
+        },
+      }),
+    });
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const body = await res.json();
+
+    expect(body.groups[0].left_at).toBe('2026-09-05T00:00:00Z');
+    // Prova que a query REAL pede left_at, não só que o JSON de saída não filtra campos.
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('left_at'));
+  });
+
+  it('recusa agent com 403 (role check)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'agent'),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json.error).toMatch(/admin/i);
+  });
+
+  it('recusa viewer com 403 (role check)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'viewer'),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('deixa admin passar e devolver a lista (role check)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'admin'),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.groups).toEqual([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }]);
+  });
 });
 
 describe('PATCH /api/whatsapp/groups', () => {
@@ -135,6 +205,71 @@ describe('PATCH /api/whatsapp/groups', () => {
     );
 
     expect(res.status).toBe(403);
+  });
+
+  it('ao habilitar, limpa `left_at` no payload do update — evita o estado contraditorio enabled:true + left_at preenchido', async () => {
+    const updateSpy = vi.fn();
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      order: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({
+        data: { account_id: 'acct-1', account_role: 'admin' },
+        error: null,
+      }),
+    };
+    // `update` precisa devolver a própria chain (para permitir
+    // `.eq().eq().select().maybeSingle()` encadeado), mas o spy grava
+    // o payload recebido para a asserção central deste teste.
+    chain.update = (payload: Record<string, unknown>) => {
+      updateSpy(payload);
+      return chain;
+    };
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => chain,
+    });
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith({ enabled: true, left_at: null });
+  });
+
+  it('ao desabilitar, mantem o comportamento antigo — nao inclui `left_at` no payload do update', async () => {
+    const updateSpy = vi.fn();
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      order: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({
+        data: { account_id: 'acct-1', account_role: 'admin' },
+        error: null,
+      }),
+    };
+    chain.update = (payload: Record<string, unknown>) => {
+      updateSpy(payload);
+      return chain;
+    };
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => chain,
+    });
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: false }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('devolve 404 para um grupo que nao pertence a conta do chamador', async () => {

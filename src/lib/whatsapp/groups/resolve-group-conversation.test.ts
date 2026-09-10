@@ -101,6 +101,60 @@ describe('resolveGroupConversation', () => {
     });
   });
 
+  it('perde uma corrida contra outro criador (ex.: botao Conversar) e reaproveita a conversa vencedora', async () => {
+    // Mesma corrida de find-or-create-conversation.test.ts, do outro
+    // lado: uma mensagem recebida via webhook e um clique em "Conversar"
+    // (findOrCreateConversationForGroup) podem resolver "não existe
+    // ainda" ao mesmo tempo para o mesmo grupo. Sem tratar o 23505 aqui,
+    // a mensagem recebida seria DESCARTADA (ingest.ts trata
+    // resolveGroupConversation === null como "nada a fazer") — pior que
+    // o 500 genérico do lado do botão.
+    let conversationSelectCalls = 0;
+    const db = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => {
+                  if (table === 'whatsapp_groups') {
+                    return { data: { id: 'grp-1', enabled: true }, error: null };
+                  }
+                  conversationSelectCalls += 1;
+                  return conversationSelectCalls === 1
+                    ? { data: null, error: null }
+                    : { data: { id: 'conv-winner' }, error: null };
+                },
+              }),
+            }),
+          }),
+        }),
+        insert: () => ({
+          select: () => ({
+            single: async () => ({
+              data: null,
+              error: {
+                code: '23505',
+                message:
+                  'duplicate key value violates unique constraint "idx_conversations_account_group_channel"',
+              },
+            }),
+          }),
+        }),
+        upsert: () => ({
+          select: () => ({
+            single: async () => ({ data: { id: 'participant-1' }, error: null }),
+          }),
+        }),
+      }),
+    } as unknown as SupabaseClient;
+
+    const r = await resolveGroupConversation(db, 'acct-1', 'ch-1', 'user-1', GROUP);
+
+    expect(r).not.toBeNull();
+    expect(r!.conversationId).toBe('conv-winner');
+  });
+
   it('grava phone nulo quando o participante e @lid', async () => {
     // O WhatsApp entrega participantes como @lid (identificador opaco,
     // sem telefone) cada vez mais. Gravar o LID como telefone criaria
