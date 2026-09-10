@@ -86,7 +86,7 @@ export async function middleware(request: NextRequest) {
   // parecer que o segredo estava errado quando o problema era outro.
   if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
       !request.nextUrl.pathname.includes('/webhook') &&
-      !request.nextUrl.pathname.includes('/sync-cron')) {
+      !request.nextUrl.pathname.endsWith('/groups/sync-cron')) {
     return withRefreshedCookies(
       NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     )

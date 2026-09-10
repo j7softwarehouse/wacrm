@@ -137,6 +137,10 @@ describe("middleware — rotas /api/whatsapp/ autenticadas por segredo de cron, 
       new NextRequest("https://app.test/api/whatsapp/groups/sync-cron"),
     );
 
-    expect(res.status).not.toBe(401);
+    // NextResponse.next() (o passthrough real) reporta 200 — uma asserção
+    // "not.toBe(401)" passaria também se o middleware começasse a devolver
+    // qualquer outro erro (500, 403) por um motivo não relacionado, sem
+    // provar de verdade que a rota chegou ao handler.
+    expect(res.status).toBe(200);
   });
 });
