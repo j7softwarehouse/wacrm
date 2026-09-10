@@ -5,6 +5,7 @@ import {
   getSubscribedApps,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { canEditSettings, isAccountRole } from '@/lib/auth/roles'
 
 /**
  * GET /api/whatsapp/config/verify-registration
@@ -43,7 +44,7 @@ export async function GET() {
   // sees the same registration state as the admin who set it up.
   const { data: profile } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', user.id)
     .maybeSingle()
   const accountId = profile?.account_id as string | undefined
@@ -53,6 +54,14 @@ export async function GET() {
       checks: { config_exists: false },
       message: 'Your profile is not linked to an account.',
     })
+  }
+
+  const role = isAccountRole(profile?.account_role) ? profile.account_role : null
+  if (!role || !canEditSettings(role)) {
+    return NextResponse.json(
+      { error: 'Only account admins can view WhatsApp registration diagnostics.' },
+      { status: 403 },
+    )
   }
 
   // Meta-only diagnostic (it checks /register + subscribed_apps), so it
