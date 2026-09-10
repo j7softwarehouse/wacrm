@@ -399,6 +399,16 @@ export function MessageBubble({
               {t("aiBadge")}
             </span>
           )}
+          {message.edited_at && !message.deleted_at && (
+            <span
+              className={cn(
+                "text-[10px] italic",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {t("editedTag")}
+            </span>
+          )}
           <span
             className={cn(
               "text-[10px]",

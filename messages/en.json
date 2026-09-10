@@ -215,7 +215,9 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "editingMessage": "Editing message",
+      "cancelEdit": "Cancel edit"
     },
     "bubble": {
       "photo": "Photo",
@@ -241,6 +243,7 @@
       "reply": "Reply",
       "copyText": "Copy text",
       "delete": "Delete",
+      "edit": "Edit",
       "react": "React",
       "reactWith": "React with {emoji}",
       "nothingToCopy": "Nothing to copy",
@@ -248,7 +251,8 @@
       "copyFailed": "Copy failed",
       "deleteConfirmBody": "Delete this message for everyone on WhatsApp? This action cannot be undone.",
       "deleteSuccess": "Message deleted",
-      "deleteError": "Could not delete the message"
+      "deleteError": "Could not delete the message",
+      "editError": "Could not edit the message"
     },
     "replyQuote": {
       "photo": "[Photo]",

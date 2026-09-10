@@ -209,7 +209,9 @@
       "send": "보내기",
       "quickReplyNamePrompt": "이 빠른 답장의 이름을 지정하세요:",
       "quickReplySaved": "빠른 답장으로 저장되었습니다.",
-      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다."
+      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다.",
+      "editingMessage": "메시지 수정 중",
+      "cancelEdit": "수정 취소"
     },
     "bubble": {
       "photo": "사진",
@@ -235,6 +237,7 @@
       "reply": "답장",
       "copyText": "텍스트 복사",
       "delete": "삭제",
+      "edit": "수정",
       "react": "반응 남기기",
       "reactWith": "{emoji}(으)로 반응하기",
       "nothingToCopy": "복사할 내용이 없습니다",
@@ -242,7 +245,8 @@
       "copyFailed": "복사 실패",
       "deleteConfirmBody": "이 메시지를 WhatsApp의 모든 사람에게서 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
       "deleteSuccess": "메시지가 삭제되었습니다",
-      "deleteError": "메시지를 삭제할 수 없습니다"
+      "deleteError": "메시지를 삭제할 수 없습니다",
+      "editError": "메시지를 수정할 수 없습니다"
     },
     "replyQuote": {
       "photo": "[사진]",

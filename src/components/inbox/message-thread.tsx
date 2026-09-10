@@ -224,6 +224,7 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -880,6 +881,34 @@ export function MessageThread({
     [authorLabelFor],
   );
 
+  const handleStartEdit = useCallback((msg: Message) => {
+    setEditingMessage({ id: msg.id, text: msg.content_text ?? "" });
+  }, []);
+
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga `content_text`/`edited_at` pra bolha, mesmo padrão de
+  // `handleDeleteMessage` acima.
+  const handleSubmitEdit = useCallback(
+    async (messageId: string, text: string) => {
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("editError"));
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to edit message:", err);
+        toast.error(tActions("editError"));
+      }
+    },
+    [tActions],
+  );
+
   // Sem atualização otimista local — a Realtime UPDATE em `messages` já
   // propaga o `deleted_at` pra bolha (ver page.tsx, listener de UPDATE).
   const handleDeleteMessage = useCallback(
@@ -1328,6 +1357,11 @@ export function MessageThread({
                       isOwnAndNotDeleted &&
                       threadChannel?.provider === "uazapi" &&
                       (msg.sender_id === user?.id || canEditSettings);
+                    const canEditMsg =
+                      isOwnAndNotDeleted &&
+                      msg.content_type === "text" &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1337,6 +1371,7 @@ export function MessageThread({
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
                         onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
+                        onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
                       >
                         <MessageBubble
                           message={msg}
@@ -1389,6 +1424,9 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        editingMessage={editingMessage}
+        onSubmitEdit={handleSubmitEdit}
+        onCancelEdit={() => setEditingMessage(null)}
       />
 
       <TemplatePicker

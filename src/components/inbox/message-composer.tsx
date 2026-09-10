@@ -154,6 +154,11 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Presente → composer entra em modo edição: texto pré-preenchido,
+   *  enviar chama `onSubmitEdit` em vez de `onSend`. */
+  editingMessage?: { id: string; text: string } | null;
+  onSubmitEdit?: (id: string, text: string) => void;
+  onCancelEdit?: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -181,6 +186,9 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  editingMessage,
+  onSubmitEdit,
+  onCancelEdit,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
@@ -188,6 +196,14 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pré-preenche o texto quando o chamador entra em modo edição.
+  useEffect(() => {
+    if (editingMessage) {
+      setText(editingMessage.text);
+      textareaRef.current?.focus();
+    }
+  }, [editingMessage]);
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);
@@ -272,7 +288,12 @@ export function MessageComposer({
 
     setSending(true);
     try {
-      onSend(trimmed, replyTo?.id);
+      if (editingMessage) {
+        onSubmitEdit?.(editingMessage.id, trimmed);
+        onCancelEdit?.();
+      } else {
+        onSend(trimmed, replyTo?.id);
+      }
       setText("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -280,7 +301,17 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, sendBlocked, onSend, replyTo?.id]);
+  }, [
+    text,
+    sending,
+    sessionExpired,
+    sendBlocked,
+    onSend,
+    replyTo?.id,
+    editingMessage,
+    onSubmitEdit,
+    onCancelEdit,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -583,14 +614,33 @@ export function MessageComposer({
 
   return (
     <div className="border-t border-border bg-card p-3">
-      {replyTo && (
-        <div className="mb-2">
-          <ReplyQuote
-            authorLabel={replyTo.authorLabel}
-            preview={replyTo.preview}
-            onDismiss={onClearReply}
-          />
+      {/* Só um dos dois aparece por vez — editar e responder ao mesmo
+          tempo não faz sentido. */}
+      {editingMessage ? (
+        <div className="mb-2 flex items-center justify-between rounded-md bg-muted px-2 py-1.5 text-xs">
+          <span className="text-muted-foreground">{t("editingMessage")}</span>
+          <button
+            type="button"
+            onClick={() => {
+              onCancelEdit?.();
+              setText("");
+            }}
+            aria-label={t("cancelEdit")}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+      ) : (
+        replyTo && (
+          <div className="mb-2">
+            <ReplyQuote
+              authorLabel={replyTo.authorLabel}
+              preview={replyTo.preview}
+              onDismiss={onClearReply}
+            />
+          </div>
+        )
       )}
       {/* Channel warning — disconnected vs. removed get different copy
           (see MessageThread) so the agent knows whether to go reconnect

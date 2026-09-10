@@ -215,7 +215,9 @@
       "send": "Enviar",
       "quickReplyNamePrompt": "Nomeie esta resposta rápida:",
       "quickReplySaved": "Salvo como resposta rápida.",
-      "quickReplySaveError": "Não foi possível salvar a resposta rápida."
+      "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
+      "editingMessage": "Editando mensagem",
+      "cancelEdit": "Cancelar edição"
     },
     "bubble": {
       "photo": "Foto",
@@ -241,6 +243,7 @@
       "reply": "Responder",
       "copyText": "Copiar texto",
       "delete": "Deletar",
+      "edit": "Editar",
       "react": "Reagir",
       "reactWith": "Reagir com {emoji}",
       "nothingToCopy": "Nada para copiar",
@@ -248,7 +251,8 @@
       "copyFailed": "Falha ao copiar",
       "deleteConfirmBody": "Apagar esta mensagem para todos no WhatsApp? Esta ação não pode ser desfeita.",
       "deleteSuccess": "Mensagem apagada",
-      "deleteError": "Não foi possível apagar a mensagem"
+      "deleteError": "Não foi possível apagar a mensagem",
+      "editError": "Não foi possível editar a mensagem"
     },
     "replyQuote": {
       "photo": "[Foto]",
