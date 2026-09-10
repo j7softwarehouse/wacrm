@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, SmilePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -20,6 +20,9 @@ interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  /** Ausente = botão de apagar não aparece (mensagem do cliente,
+   *  canal não-uazapi, ou sem permissão — decidido pelo chamador). */
+  onDelete?: () => void;
   children: ReactNode;
 }
 
@@ -32,6 +35,7 @@ export function MessageActions({
   message,
   onReply,
   onReact,
+  onDelete,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -73,6 +77,11 @@ export function MessageActions({
 
   const handleReply = () => {
     onReply();
+    setTouchOpen(false);
+  };
+
+  const handleDelete = () => {
+    onDelete?.();
     setTouchOpen(false);
   };
 
@@ -144,6 +153,16 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-destructive"
+            aria-label={t("delete")}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       </div>
     </div>

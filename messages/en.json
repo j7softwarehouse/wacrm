@@ -228,6 +228,8 @@
       "buttonReply": "Button reply",
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
+      "deletedMessage": "Message deleted",
+      "editedTag": "(edited)",
       "aiBadge": "AI",
       "aiBadgeTitle": "Sent automatically by the AI assistant",
       "openMedia": "Open full size",
@@ -243,7 +245,10 @@
       "reactWith": "React with {emoji}",
       "nothingToCopy": "Nothing to copy",
       "copied": "Copied",
-      "copyFailed": "Copy failed"
+      "copyFailed": "Copy failed",
+      "deleteConfirmBody": "Delete this message for everyone on WhatsApp? This action cannot be undone.",
+      "deleteSuccess": "Message deleted",
+      "deleteError": "Could not delete the message"
     },
     "replyQuote": {
       "photo": "[Photo]",
@@ -254,6 +259,7 @@
       "location": "[Location]",
       "template": "[Template]",
       "message": "[Message]",
+      "deletedMessage": "[Message deleted]",
       "cancelReply": "Cancel reply"
     },
     "templatePicker": {

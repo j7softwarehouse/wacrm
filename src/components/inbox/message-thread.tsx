@@ -192,8 +192,9 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
   const tBubble = useTranslations("Inbox.bubble");
+  const tActions = useTranslations("Inbox.actions");
 
-  const { user } = useAuth();
+  const { user, canEditSettings } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -879,6 +880,30 @@ export function MessageThread({
     [authorLabelFor],
   );
 
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga o `deleted_at` pra bolha (ver page.tsx, listener de UPDATE).
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!window.confirm(tActions("deleteConfirmBody"))) return;
+
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/delete`, {
+          method: "POST",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("deleteError"));
+          return;
+        }
+        toast.success(tActions("deleteSuccess"));
+      } catch (err) {
+        console.error("Failed to delete message:", err);
+        toast.error(tActions("deleteError"));
+      }
+    },
+    [tActions],
+  );
+
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
   // The "toggle" semantic (pill click) is computed at the call site where the
   // current reactions for the bubble are already in scope — keeps this
@@ -1296,6 +1321,13 @@ export function MessageThread({
                       const next = own?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
+                    const isOwnAndNotDeleted =
+                      (msg.sender_type === "agent" || msg.sender_type === "bot") &&
+                      !msg.deleted_at;
+                    const canDeleteMsg =
+                      isOwnAndNotDeleted &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1304,6 +1336,7 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
                       >
                         <MessageBubble
                           message={msg}

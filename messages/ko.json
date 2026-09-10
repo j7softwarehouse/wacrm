@@ -222,6 +222,8 @@
       "buttonReply": "버튼 응답",
       "interactiveReply": "[인터랙티브 응답]",
       "unsupported": "[지원되지 않는 메시지 형식]",
+      "deletedMessage": "삭제된 메시지입니다",
+      "editedTag": "(수정됨)",
       "aiBadge": "AI",
       "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
       "openMedia": "원본 크기로 보기",
@@ -237,7 +239,10 @@
       "reactWith": "{emoji}(으)로 반응하기",
       "nothingToCopy": "복사할 내용이 없습니다",
       "copied": "복사됨",
-      "copyFailed": "복사 실패"
+      "copyFailed": "복사 실패",
+      "deleteConfirmBody": "이 메시지를 WhatsApp의 모든 사람에게서 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+      "deleteSuccess": "메시지가 삭제되었습니다",
+      "deleteError": "메시지를 삭제할 수 없습니다"
     },
     "replyQuote": {
       "photo": "[사진]",
@@ -248,6 +253,7 @@
       "location": "[위치]",
       "template": "[템플릿]",
       "message": "[메시지]",
+      "deletedMessage": "[삭제된 메시지]",
       "cancelReply": "답장 취소"
     },
     "templatePicker": {

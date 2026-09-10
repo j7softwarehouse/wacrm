@@ -171,6 +171,14 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
 }
 
 function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+  if (message.deleted_at) {
+    return (
+      <p className="text-sm italic text-muted-foreground">
+        {t("deletedMessage")}
+      </p>
+    );
+  }
+
   switch (message.content_type) {
     case "text":
       return (
