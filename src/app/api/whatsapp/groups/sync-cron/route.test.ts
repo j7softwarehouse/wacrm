@@ -112,6 +112,19 @@ describe('GET /api/whatsapp/groups/sync-cron', () => {
     expect(body.syncedChannels).toBe(2);
     expect(body.syncedGroups).toBe(3);
     expect(upserted).toHaveLength(2);
+
+    // Prova o risco real desta rota (que a manual não tinha): cada
+    // canal precisa gravar SEU PRÓPRIO account_id, não um account_id
+    // fixo/do primeiro canal. Acha o lote pelo group_jid em vez de
+    // supor a ordem, então um bug que trocasse os dois lotes de lugar
+    // também seria pego.
+    const flat = upserted.flat();
+    const turmaA = flat.find((r) => r.group_jid === '1@g.us');
+    const turmaB = flat.find((r) => r.group_jid === '2@g.us');
+    const turmaC = flat.find((r) => r.group_jid === '3@g.us');
+    expect(turmaA).toMatchObject({ account_id: 'acct-1', channel_id: 'chan-1' });
+    expect(turmaB).toMatchObject({ account_id: 'acct-2', channel_id: 'chan-2' });
+    expect(turmaC).toMatchObject({ account_id: 'acct-2', channel_id: 'chan-2' });
   });
 
   it('nao inclui `enabled` no upsert — preserva o valor ja ligado pelo usuario', async () => {
