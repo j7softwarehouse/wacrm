@@ -28,11 +28,32 @@ import { POST } from './route';
  * para `{ data, error }` sem precisar chamar `.then()` explicitamente —
  * então `.select()` aqui devolve uma Promise diretamente.
  */
+interface LeftQueryCall {
+  accountId: string;
+  channelId: string;
+  groupJids: string[];
+}
+
+/**
+ * `leftQueryArgs`, quando passado, captura os argumentos REAIS de
+ * `.eq(account_id).eq(channel_id).in(group_jids)` — sem isso, um bug
+ * que trocasse o escopo (ex.: esquecer o filtro por `channel_id`)
+ * passaria despercebido, já que o retorno fixo (`leftGroupJids`) não
+ * depende de nada que a rota realmente mandou.
+ *
+ * `failUpsertFor`, quando passado, faz o upsert de um lote específico
+ * falhar (para provar que o OUTRO lote, independente, ainda roda).
+ */
 function comSessao(
   role: string,
   upsertedRows: Array<Record<string, unknown>>[],
-  leftGroupJids: string[] = [],
+  options: {
+    leftGroupJids?: string[];
+    leftQueryArgs?: LeftQueryCall[];
+    failUpsertFor?: (rows: Array<Record<string, unknown>>) => boolean;
+  } = {},
 ) {
+  const { leftGroupJids = [], leftQueryArgs, failUpsertFor } = options;
   return {
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
     from: (table: string) => {
@@ -51,19 +72,28 @@ function comSessao(
       // whatsapp_groups
       return {
         select: () => ({
-          eq: () => ({
-            eq: () => ({
-              in: () => ({
-                not: async () => ({
-                  data: leftGroupJids.map((group_jid) => ({ group_jid })),
-                  error: null,
-                }),
+          eq: (_col1: string, accountId: string) => ({
+            eq: (_col2: string, channelId: string) => ({
+              in: (_col3: string, groupJids: string[]) => ({
+                not: async () => {
+                  leftQueryArgs?.push({ accountId, channelId, groupJids });
+                  return {
+                    data: leftGroupJids.map((group_jid) => ({ group_jid })),
+                    error: null,
+                  };
+                },
               }),
             }),
           }),
         }),
         upsert: (rows: Array<Record<string, unknown>>) => {
           upsertedRows.push(rows);
+          if (failUpsertFor?.(rows)) {
+            return {
+              select: () =>
+                Promise.resolve({ data: null, error: { message: 'upsert falhou' } }),
+            };
+          }
           const result = { data: rows.map((_, i) => ({ id: `g-${i}` })), error: null };
           return {
             select: () => Promise.resolve(result),
@@ -148,14 +178,17 @@ describe('POST /api/whatsapp/groups/sync', () => {
     }
   });
 
-  it('religa `enabled: true` so para o grupo que estava marcado como saido', async () => {
+  it('religa `enabled: true` so para o grupo que estava marcado como saido, checando o escopo da consulta', async () => {
     // '1@g.us' estava com left_at preenchido (o fake devolve ele na
     // checagem de "grupos saidos"); '2@g.us' nunca saiu. So o primeiro
     // pode receber enabled:true de volta -- o segundo precisa continuar
     // sem a coluna `enabled` no upsert dele, senao o teste anterior
     // ("preserva o valor ja ligado pelo usuario") deixaria de valer.
     const rows: Array<Record<string, unknown>>[] = [];
-    mocks.createClient.mockResolvedValue(comSessao('admin', rows, ['1@g.us']));
+    const leftQueryArgs: LeftQueryCall[] = [];
+    mocks.createClient.mockResolvedValue(
+      comSessao('admin', rows, { leftGroupJids: ['1@g.us'], leftQueryArgs }),
+    );
 
     await POST(request());
 
@@ -168,5 +201,38 @@ describe('POST /api/whatsapp/groups/sync', () => {
     expect(rejoined).toMatchObject({ enabled: true, left_at: null });
     expect(untouched).not.toHaveProperty('enabled');
     expect(untouched?.left_at).toBeNull();
+
+    // Prova o escopo de verdade da consulta "quem esta marcado como
+    // saido" -- sem isto, remover o filtro por conta/canal (vazando a
+    // checagem entre contas ou canais) passaria despercebido, ja que o
+    // fake devolveria leftGroupJids de qualquer jeito.
+    expect(leftQueryArgs).toHaveLength(1);
+    expect(leftQueryArgs[0]).toEqual({
+      accountId: 'acct-1',
+      channelId: 'chan-1',
+      groupJids: ['1@g.us', '2@g.us'],
+    });
+  });
+
+  it('lote de grupos readicionados falhando nao impede o lote normal', async () => {
+    // '1@g.us' e o rejoin (ganha enabled:true, upsert desse lote falha
+    // de proposito); '2@g.us' e normal e precisa continuar indo pro
+    // banco mesmo assim -- os dois lotes sao independentes.
+    const rows: Array<Record<string, unknown>>[] = [];
+    mocks.createClient.mockResolvedValue(
+      comSessao('admin', rows, {
+        leftGroupJids: ['1@g.us'],
+        failUpsertFor: (batch) => batch.some((r) => r.enabled === true),
+      }),
+    );
+
+    const res = await POST(request());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    // Os dois lotes foram tentados, mesmo o primeiro tendo falhado.
+    expect(rows).toHaveLength(2);
+    // So o lote normal (1 grupo) contou.
+    expect(body.synced).toBe(1);
   });
 });

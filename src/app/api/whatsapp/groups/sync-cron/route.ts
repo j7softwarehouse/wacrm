@@ -115,7 +115,10 @@ export async function GET(request: Request) {
         .filter((g) => !rejoinedJids.has(g.groupJid))
         .map((g) => baseRow(g));
 
-      let channelFailed = false;
+      // Os dois lotes são independentes (linhas disjuntas) — a falha de
+      // um não pode impedir o outro de rodar nem derrubar o canal
+      // inteiro. Conta o canal como sincronizado se pelo menos um lote
+      // deu certo; o erro do outro já fica registrado em `errors`.
       let channelSyncedGroups = 0;
       for (const batch of [rejoinedRows, otherRows]) {
         if (batch.length === 0) continue;
@@ -126,15 +129,14 @@ export async function GET(request: Request) {
 
         if (upsertError) {
           errors.push(`${channel.id}: ${upsertError.message}`);
-          channelFailed = true;
-          break;
+          continue;
         }
         channelSyncedGroups += batch.length;
       }
 
-      if (channelFailed) continue;
-
-      syncedChannels++;
+      if (channelSyncedGroups > 0) {
+        syncedChannels++;
+      }
       syncedGroups += channelSyncedGroups;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

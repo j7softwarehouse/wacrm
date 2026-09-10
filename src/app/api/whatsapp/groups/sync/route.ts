@@ -184,7 +184,13 @@ export async function POST(request: Request) {
       .filter((g) => !rejoinedJids.has(g.groupJid))
       .map((g) => baseRow(g));
 
+    // Os dois lotes são independentes (linhas disjuntas) — a falha de um
+    // não pode impedir o outro de rodar. Antes desta correção, um erro
+    // no lote (tipicamente minúsculo) de grupos readicionados abortava
+    // a sincronização inteira, inclusive o lote normal com dezenas de
+    // grupos sem nenhum problema.
     let synced = 0;
+    let hadError = false;
     for (const batch of [rejoinedRows, otherRows]) {
       if (batch.length === 0) continue;
       const { data, error } = await supabase
@@ -197,13 +203,18 @@ export async function POST(request: Request) {
           "[POST /api/whatsapp/groups/sync] upsert error:",
           error.message,
         );
-        return NextResponse.json(
-          { error: "Failed to sync groups" },
-          { status: 500 },
-        );
+        hadError = true;
+        continue;
       }
 
       synced += data?.length ?? batch.length;
+    }
+
+    if (hadError && synced === 0) {
+      return NextResponse.json(
+        { error: "Failed to sync groups" },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ synced });
