@@ -48,6 +48,14 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-2: var(--primary-soft-2);
+  /* Status de conversa (Aberto/Pendente/Fechado) — cores fixas, fora do
+   * sistema de accent (--primary*). "Aberto" usar --primary confundia
+   * com "Pendente" nos temas laranja/vermelho, e "Fechado" com
+   * --muted-foreground ficava quase invisível no dark (muito perto de
+   * --card). Ver conversation-status.ts, única fonte destas cores. */
+  --color-status-open: var(--status-open);
+  --color-status-pending: var(--status-pending);
+  --color-status-closed: var(--status-closed);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -114,6 +122,9 @@ html[data-mode="dark"] {
   --sidebar-accent: oklch(0.22 0.01 260);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.28 0.01 260);
+  --status-open: oklch(0.72 0.17 145);
+  --status-pending: oklch(0.8 0.15 75);
+  --status-closed: oklch(0.75 0.01 260);
 }
 
 html[data-mode="light"] {
@@ -143,6 +154,9 @@ html[data-mode="light"] {
   --sidebar-accent: oklch(0.96 0.004 260);
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
+  --status-open: oklch(0.55 0.15 145);
+  --status-pending: oklch(0.65 0.16 70);
+  --status-closed: oklch(0.4 0.01 260);
 }
 
 /* ---- ACCENT: primary color ---- */

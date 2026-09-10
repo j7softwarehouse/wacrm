@@ -8,6 +8,7 @@ import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
+import { CONVERSATION_STATUS_TEXT_CLASS } from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
   Message,
@@ -152,10 +153,10 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: { label: string; value: ConversationStatus }[] = [
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Closed", value: "closed" },
 ];
 
 /**
@@ -1149,7 +1150,9 @@ export function MessageThread({
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
                   "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
+                  currentStatus
+                    ? CONVERSATION_STATUS_TEXT_CLASS[currentStatus.value]
+                    : "text-muted-foreground"
                 )}>
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
                 <ChevronDown className="h-3 w-3" />
@@ -1162,7 +1165,7 @@ export function MessageThread({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
+                  className={cn("text-sm", CONVERSATION_STATUS_TEXT_CLASS[opt.value])}
                 >
                   {t(`status${opt.label}`)}
                 </DropdownMenuItem>
