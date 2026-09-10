@@ -1,76 +1,227 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createClient: vi.fn() }))
+const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }));
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: mocks.createClient,
-}))
+import { GET, PATCH } from './route';
 
-import { GET } from './route'
-
-function makeSupabase(profile: { account_id: string; account_role: string } | null) {
+/**
+ * Cliente com sessão e perfil ligado a `acct-1`, papel `admin` por
+ * padrão. Escrita em `whatsapp_groups` exige admin na RLS (Tarefa 1,
+ * policy "admins write groups") — a rota replica essa checagem do
+ * lado da aplicação para devolver 403 com mensagem clara em vez de
+ * deixar o RLS negar silenciosamente (update afeta 0 linhas).
+ */
+function comSessao(
+  grupos: Array<Record<string, unknown>>,
+  role: string = 'admin',
+) {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    order: async () => ({ data: grupos, error: null }),
+    maybeSingle: async () => ({
+      data: { account_id: 'acct-1', account_role: role },
+      error: null,
+    }),
+    single: async () => ({ data: grupos[0] ?? null, error: null }),
+  };
   return {
-    auth: {
-      getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
-    },
-    from: (table: string) => {
-      if (table === 'profiles') {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: profile, error: null }),
-            }),
-          }),
-        }
-      }
-      // whatsapp_groups — so alcancado se a checagem de papel deixar passar.
-      return {
-        select: () => ({
-          eq: () => ({
-            order: async () => ({ data: [], error: null }),
-          }),
-        }),
-      }
-    },
-  }
+    auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+    from: () => ({ ...chain, update: () => chain }),
+  };
+}
+
+/**
+ * Variante com uma fila de respostas para `.maybeSingle()` — permite
+ * diferenciar a primeira chamada (perfil) da segunda (resultado do
+ * update), já que o fake genérico acima não distingue por tabela.
+ */
+function comSessaoQueue(maybeSingleQueue: Array<{ data: unknown; error: unknown }>) {
+  let call = 0;
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    order: async () => ({ data: [], error: null }),
+    maybeSingle: async () =>
+      maybeSingleQueue[Math.min(call++, maybeSingleQueue.length - 1)],
+    single: async () => ({ data: null, error: null }),
+  };
+  return {
+    auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+    from: () => ({ ...chain, update: () => chain }),
+  };
 }
 
 describe('GET /api/whatsapp/groups', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  beforeEach(() => vi.clearAllMocks());
 
-  it('recusa agent com 403', async () => {
+  it('devolve 401 sem sessao', async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: null }, error: null }) },
+    });
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('lista os grupos da conta do chamador', async () => {
     mocks.createClient.mockResolvedValue(
-      makeSupabase({ account_id: 'acct-1', account_role: 'agent' }),
-    )
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }]),
+    );
 
-    const res = await GET(new Request('http://localhost/api/whatsapp/groups'))
-    const json = await res.json()
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const body = await res.json();
 
-    expect(res.status).toBe(403)
-    expect(json.error).toMatch(/admin/i)
-  })
+    expect(res.status).toBe(200);
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0].id).toBe('g-1');
+  });
 
-  it('recusa viewer com 403', async () => {
+  it('devolve 403 quando o perfil nao esta ligado a uma conta', async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      }),
+    });
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('inclui left_at na resposta', async () => {
+    const selectSpy = vi.fn();
+
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: () => ({
+        select: (cols: string) => {
+          selectSpy(cols);
+          return {
+            eq: () => ({
+              order: async () => ({
+                data: [{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false, left_at: '2026-09-05T00:00:00Z' }],
+                error: null,
+              }),
+              maybeSingle: async () => ({
+                data: { account_id: 'acct-1', account_role: 'admin' },
+                error: null,
+              }),
+            }),
+            maybeSingle: async () => ({
+              data: { account_id: 'acct-1', account_role: 'admin' },
+              error: null,
+            }),
+          };
+        },
+      }),
+    });
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const body = await res.json();
+
+    expect(body.groups[0].left_at).toBe('2026-09-05T00:00:00Z');
+    // Prova que a query REAL pede left_at, não só que o JSON de saída não filtra campos.
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('left_at'));
+  });
+
+  it('recusa agent com 403 (role check)', async () => {
     mocks.createClient.mockResolvedValue(
-      makeSupabase({ account_id: 'acct-1', account_role: 'viewer' }),
-    )
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'agent'),
+    );
 
-    const res = await GET(new Request('http://localhost/api/whatsapp/groups'))
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
 
-    expect(res.status).toBe(403)
-  })
+    expect(res.status).toBe(403);
+    expect(json.error).toMatch(/admin/i);
+  });
 
-  it('deixa admin passar e devolver a lista', async () => {
+  it('recusa viewer com 403 (role check)', async () => {
     mocks.createClient.mockResolvedValue(
-      makeSupabase({ account_id: 'acct-1', account_role: 'admin' }),
-    )
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'viewer'),
+    );
 
-    const res = await GET(new Request('http://localhost/api/whatsapp/groups'))
-    const json = await res.json()
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
 
-    expect(res.status).toBe(200)
-    expect(json.groups).toEqual([])
-  })
-})
+    expect(res.status).toBe(403);
+  });
+
+  it('deixa admin passar e devolver a lista (role check)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'admin'),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.groups).toEqual([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }]);
+  });
+});
+
+describe('PATCH /api/whatsapp/groups', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('alterna o enabled do grupo quando o chamador e admin', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao([{ id: 'g-1', enabled: true }]),
+    );
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it('devolve 400 sem id', async () => {
+    mocks.createClient.mockResolvedValue(comSessao([]));
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 403 quando o chamador nao e admin — RLS nega silenciosamente, a rota nao pode deixar passar', async () => {
+    mocks.createClient.mockResolvedValue(comSessao([{ id: 'g-1', enabled: true }], 'agent'));
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-1', enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it('devolve 404 para um grupo que nao pertence a conta do chamador', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessaoQueue([
+        { data: { account_id: 'acct-1', account_role: 'admin' }, error: null },
+        { data: null, error: null },
+      ]),
+    );
+
+    const res = await PATCH(
+      new Request('https://x/api/whatsapp/groups', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: 'g-de-outra-conta', enabled: true }),
+      }),
+    );
+
+    expect(res.status).toBe(404);
+  });
+});
