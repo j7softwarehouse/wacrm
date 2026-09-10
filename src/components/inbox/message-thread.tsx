@@ -872,6 +872,13 @@ export function MessageThread({
 
   const handleStartReply = useCallback(
     (msg: Message) => {
+      // Responder e editar são mutuamente exclusivos não só na renderização
+      // (o if/else do composer), mas também no estado armado — sem isso,
+      // um clique em Responder enquanto uma edição está em andamento fica
+      // sem efeito visível (o composer continua mostrando "Editando
+      // mensagem"), mas `replyTo` fica setado silenciosamente e é
+      // descartado sem aviso quando o envio cai no branch de edição.
+      setEditingMessage(null);
       setReplyTo({
         id: msg.id,
         authorLabel: authorLabelFor(msg),
@@ -882,6 +889,8 @@ export function MessageThread({
   );
 
   const handleStartEdit = useCallback((msg: Message) => {
+    // Mesmo motivo do comentário em `handleStartReply`, na direção oposta.
+    setReplyTo(null);
     setEditingMessage({ id: msg.id, text: msg.content_text ?? "" });
   }, []);
 
