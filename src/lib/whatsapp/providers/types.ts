@@ -180,4 +180,12 @@ export interface WhatsAppProvider {
   getConnectedNumber(): Promise<string>;
   /** Participantes de UM grupo, com status de admin. */
   getGroupParticipants(groupJid: string): Promise<GroupParticipant[]>;
+  /** Edita o texto de uma mensagem de texto já enviada por ESTA
+   *  instância. Lança se o provedor não suportar (Meta) ou se o
+   *  WhatsApp recusar (fora do prazo, mensagem não encontrada, etc). */
+  editMessage(args: { messageId: string; text: string }): Promise<void>;
+  /** Apaga uma mensagem enviada por ESTA instância, para todos os
+   *  participantes. Lança se o provedor não suportar (Meta) ou se o
+   *  WhatsApp recusar. */
+  deleteMessage(args: { messageId: string }): Promise<void>;
 }

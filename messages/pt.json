@@ -215,7 +215,9 @@
       "send": "Enviar",
       "quickReplyNamePrompt": "Nomeie esta resposta rápida:",
       "quickReplySaved": "Salvo como resposta rápida.",
-      "quickReplySaveError": "Não foi possível salvar a resposta rápida."
+      "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
+      "editingMessage": "Editando mensagem",
+      "cancelEdit": "Cancelar edição"
     },
     "bubble": {
       "photo": "Foto",
@@ -228,6 +230,8 @@
       "buttonReply": "Resposta de botão",
       "interactiveReply": "[Resposta interativa]",
       "unsupported": "[Tipo de mensagem não suportado]",
+      "deletedMessage": "Mensagem apagada",
+      "editedTag": "(editado)",
       "aiBadge": "IA",
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
       "openMedia": "Abrir em tamanho real",
@@ -239,11 +243,16 @@
       "reply": "Responder",
       "copyText": "Copiar texto",
       "delete": "Deletar",
+      "edit": "Editar",
       "react": "Reagir",
       "reactWith": "Reagir com {emoji}",
       "nothingToCopy": "Nada para copiar",
       "copied": "Copiado",
-      "copyFailed": "Falha ao copiar"
+      "copyFailed": "Falha ao copiar",
+      "deleteConfirmBody": "Apagar esta mensagem para todos no WhatsApp? Esta ação não pode ser desfeita.",
+      "deleteSuccess": "Mensagem apagada",
+      "deleteError": "Não foi possível apagar a mensagem",
+      "editError": "Não foi possível editar a mensagem"
     },
     "replyQuote": {
       "photo": "[Foto]",
@@ -254,6 +263,7 @@
       "location": "[Localização]",
       "template": "[Modelo]",
       "message": "[Mensagem]",
+      "deletedMessage": "[Mensagem apagada]",
       "cancelReply": "Cancelar resposta"
     },
     "templatePicker": {

@@ -100,4 +100,14 @@ describe("ProviderUnsupportedError na Meta", () => {
       provider.getGroupParticipants("x@g.us"),
     ).rejects.toBeInstanceOf(ProviderUnsupportedError);
   });
+
+  it("recusa editMessage e deleteMessage — Meta Cloud API não suporta", async () => {
+    const provider = createMetaProvider(config);
+    await expect(
+      provider.editMessage({ messageId: "wamid.X", text: "novo" }),
+    ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+    await expect(
+      provider.deleteMessage({ messageId: "wamid.X" }),
+    ).rejects.toBeInstanceOf(ProviderUnsupportedError);
+  });
 });

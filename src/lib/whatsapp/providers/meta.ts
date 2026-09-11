@@ -142,5 +142,13 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
     async getGroupParticipants(): Promise<GroupParticipant[]> {
       throw new ProviderUnsupportedError("meta", "getGroupParticipants");
     },
+
+    async editMessage(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "editMessage");
+    },
+
+    async deleteMessage(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "deleteMessage");
+    },
   };
 }

@@ -150,6 +150,14 @@ export function createUazapiProvider(
       );
     },
 
+    async editMessage(args: { messageId: string; text: string }): Promise<void> {
+      await client.post("/message/edit", { id: args.messageId, text: args.text });
+    },
+
+    async deleteMessage(args: { messageId: string }): Promise<void> {
+      await client.post("/message/delete", { id: args.messageId });
+    },
+
     async sendTemplate(): Promise<SendResult> {
       // Templates aprovados são um conceito exclusivo da Meta. A UI
       // esconde a funcionalidade em canais UAZAPI; isto é a rede de

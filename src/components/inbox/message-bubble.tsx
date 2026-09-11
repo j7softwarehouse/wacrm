@@ -171,6 +171,14 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
 }
 
 function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+  if (message.deleted_at) {
+    return (
+      <p className="text-sm italic text-muted-foreground">
+        {t("deletedMessage")}
+      </p>
+    );
+  }
+
   switch (message.content_type) {
     case "text":
       return (
@@ -389,6 +397,16 @@ export function MessageBubble({
             >
               <Sparkles className="h-2.5 w-2.5" />
               {t("aiBadge")}
+            </span>
+          )}
+          {message.edited_at && !message.deleted_at && (
+            <span
+              className={cn(
+                "text-[10px] italic",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {t("editedTag")}
             </span>
           )}
           <span

@@ -9,6 +9,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { CONVERSATION_STATUS_DOT_CLASS } from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
@@ -44,14 +45,6 @@ interface ConversationListProps {
    */
   channelsById?: Map<string, PublicChannel>;
 }
-
-const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-primary",
-  pending: "bg-amber-500",
-  closed: "bg-muted-foreground",
-};
-
-
 
 type InboxFilter = ConversationStatus | "all" | "unread";
 
@@ -523,7 +516,7 @@ function ConversationItem({
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
+                CONVERSATION_STATUS_DOT_CLASS[conversation.status]
               )}
               title={conversation.status}
             />

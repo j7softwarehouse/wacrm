@@ -8,6 +8,7 @@ import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
+import { CONVERSATION_STATUS_TEXT_CLASS } from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
   Message,
@@ -152,10 +153,10 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: { label: string; value: ConversationStatus }[] = [
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Closed", value: "closed" },
 ];
 
 /**
@@ -191,8 +192,9 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
   const tBubble = useTranslations("Inbox.bubble");
+  const tActions = useTranslations("Inbox.actions");
 
-  const { user } = useAuth();
+  const { user, canEditSettings } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -222,6 +224,7 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -493,10 +496,15 @@ export function MessageThread({
     };
   }, [conversationId]);
 
-  // Clear any in-progress reply draft when the active conversation changes —
-  // a quote pulled from conversation A shouldn't bleed into conversation B.
+  // Clear any in-progress reply draft or edit-in-progress state when the
+  // active conversation changes — MessageThread não é remontado ao trocar
+  // de conversa (sem `key` na página pai), então sem isso um "Editando
+  // mensagem" (ou uma citação) iniciado na conversa A continuaria visível
+  // e armado ao abrir a conversa B, enviando a edição para o `message_id`
+  // errado.
   useEffect(() => {
     setReplyTo(null);
+    setEditingMessage(null);
   }, [conversationId]);
 
   // Reset the server-side unread_count to 0 whenever an unread count
@@ -869,6 +877,13 @@ export function MessageThread({
 
   const handleStartReply = useCallback(
     (msg: Message) => {
+      // Responder e editar são mutuamente exclusivos não só na renderização
+      // (o if/else do composer), mas também no estado armado — sem isso,
+      // um clique em Responder enquanto uma edição está em andamento fica
+      // sem efeito visível (o composer continua mostrando "Editando
+      // mensagem"), mas `replyTo` fica setado silenciosamente e é
+      // descartado sem aviso quando o envio cai no branch de edição.
+      setEditingMessage(null);
       setReplyTo({
         id: msg.id,
         authorLabel: authorLabelFor(msg),
@@ -876,6 +891,68 @@ export function MessageThread({
       });
     },
     [authorLabelFor],
+  );
+
+  const handleStartEdit = useCallback((msg: Message) => {
+    // Mesmo motivo do comentário em `handleStartReply`, na direção oposta.
+    setReplyTo(null);
+    setEditingMessage({ id: msg.id, text: msg.content_text ?? "" });
+  }, []);
+
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga `content_text`/`edited_at` pra bolha, mesmo padrão de
+  // `handleDeleteMessage` acima.
+  //
+  // Devolve um booleano de sucesso: o composer só limpa o texto digitado
+  // e sai do modo edição quando a edição realmente foi aceita. Uma falha
+  // (ex.: WhatsApp recusa por estar fora do prazo permitido — caminho
+  // esperado, não excepcional) deixa o texto no composer para o atendente
+  // tentar de novo em vez de perder o que digitou.
+  const handleSubmitEdit = useCallback(
+    async (messageId: string, text: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("editError"));
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error("Failed to edit message:", err);
+        toast.error(tActions("editError"));
+        return false;
+      }
+    },
+    [tActions],
+  );
+
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga o `deleted_at` pra bolha (ver page.tsx, listener de UPDATE).
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!window.confirm(tActions("deleteConfirmBody"))) return;
+
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/delete`, {
+          method: "POST",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("deleteError"));
+          return;
+        }
+        toast.success(tActions("deleteSuccess"));
+      } catch (err) {
+        console.error("Failed to delete message:", err);
+        toast.error(tActions("deleteError"));
+      }
+    },
+    [tActions],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -1149,7 +1226,9 @@ export function MessageThread({
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
                   "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
+                  currentStatus
+                    ? CONVERSATION_STATUS_TEXT_CLASS[currentStatus.value]
+                    : "text-muted-foreground"
                 )}>
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
                 <ChevronDown className="h-3 w-3" />
@@ -1162,7 +1241,7 @@ export function MessageThread({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
+                  className={cn("text-sm", CONVERSATION_STATUS_TEXT_CLASS[opt.value])}
                 >
                   {t(`status${opt.label}`)}
                 </DropdownMenuItem>
@@ -1293,6 +1372,24 @@ export function MessageThread({
                       const next = own?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
+                    // `!!msg.message_id` exclui mensagens otimistas/que
+                    // falharam no envio (id temporário "temp-...", sem
+                    // message_id real da uazapi) — o backend recusa editar
+                    // ou apagar algo que nunca chegou a sair pro WhatsApp,
+                    // então os botões nem devem aparecer nesse caso.
+                    const isOwnAndNotDeleted =
+                      (msg.sender_type === "agent" || msg.sender_type === "bot") &&
+                      !msg.deleted_at &&
+                      !!msg.message_id;
+                    const canDeleteMsg =
+                      isOwnAndNotDeleted &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
+                    const canEditMsg =
+                      isOwnAndNotDeleted &&
+                      msg.content_type === "text" &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1301,6 +1398,8 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
+                        onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
                       >
                         <MessageBubble
                           message={msg}
@@ -1353,6 +1452,9 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        editingMessage={editingMessage}
+        onSubmitEdit={handleSubmitEdit}
+        onCancelEdit={() => setEditingMessage(null)}
       />
 
       <TemplatePicker
