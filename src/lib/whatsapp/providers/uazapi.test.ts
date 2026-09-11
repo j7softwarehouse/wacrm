@@ -269,12 +269,18 @@ describe("createUazapiProvider", () => {
   });
 
   it("cria grupo via POST /group/create mapeando JID/Name da resposta", async () => {
+    // Resposta real (confirmada contra a instância j7softwarehouse.uazapi.com
+    // em 11/09) vem ANINHADA sob `group` — a doc OpenAPI descreve o Group
+    // solto na raiz, o que nunca foi verdade em produção.
     post.mockResolvedValueOnce({
-      JID: "120363429748080632@g.us",
-      Name: "Turma 2026",
-      Participants: [
-        { JID: "5511999999999@s.whatsapp.net", PhoneNumber: "5511999999999", Error: 0 },
-      ],
+      failed: [],
+      group: {
+        JID: "120363429748080632@g.us",
+        Name: "Turma 2026",
+        Participants: [
+          { JID: "5511999999999@s.whatsapp.net", PhoneNumber: "5511999999999", Error: 0 },
+        ],
+      },
     } as any);
     const provider = createUazapiProvider(config);
     const result = await provider.createGroup({
@@ -297,16 +303,19 @@ describe("createUazapiProvider", () => {
     // Mesmo caso de privacidade já tratado em updateGroupParticipants:
     // a resposta traz AddRequest em vez de adicionar direto.
     post.mockResolvedValueOnce({
-      JID: "120363429748080632@g.us",
-      Name: "Turma 2026",
-      Participants: [
-        { JID: "5511999999999@s.whatsapp.net", PhoneNumber: "5511999999999", Error: 0 },
-        {
-          JID: "5521888888888@s.whatsapp.net",
-          PhoneNumber: "5521888888888",
-          AddRequest: { Code: "abc", Expiration: "2026-09-20T00:00:00Z" },
-        },
-      ],
+      failed: [],
+      group: {
+        JID: "120363429748080632@g.us",
+        Name: "Turma 2026",
+        Participants: [
+          { JID: "5511999999999@s.whatsapp.net", PhoneNumber: "5511999999999", Error: 0 },
+          {
+            JID: "5521888888888@s.whatsapp.net",
+            PhoneNumber: "5521888888888",
+            AddRequest: { Code: "abc", Expiration: "2026-09-20T00:00:00Z" },
+          },
+        ],
+      },
     } as any);
     const provider = createUazapiProvider(config);
     const result = await provider.createGroup({

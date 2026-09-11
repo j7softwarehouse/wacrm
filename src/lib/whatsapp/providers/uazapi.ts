@@ -80,17 +80,22 @@ interface UazapiUpdateParticipantsResponse {
 }
 
 /**
- * Schema real de `POST /group/create` (mesmo formato de `Group` devolvido
- * por `/group/list`, com `Participants` incluindo `Error`/`AddRequest`
- * por pessoa — igual à resposta de `/group/updateParticipants`).
+ * Schema real de `POST /group/create` (confirmado contra a instância
+ * j7softwarehouse.uazapi.com em 11/09) — ANINHADO sob `group`, diferente
+ * do que a doc OpenAPI descreve (`Group` solto na raiz da resposta).
+ * `Participants` traz `Error`/`AddRequest` por pessoa, igual à resposta
+ * de `/group/updateParticipants`.
  */
 interface UazapiCreateGroupResponse {
-  JID: string;
-  Name?: string;
-  Participants?: Array<{
-    PhoneNumber?: string;
-    AddRequest?: { Code?: string; Expiration?: string } | null;
-  }>;
+  failed?: unknown[];
+  group: {
+    JID: string;
+    Name?: string;
+    Participants?: Array<{
+      PhoneNumber?: string;
+      AddRequest?: { Code?: string; Expiration?: string } | null;
+    }>;
+  };
 }
 
 export function createUazapiProvider(
@@ -227,18 +232,16 @@ export function createUazapiProvider(
         name: args.name,
         participants: args.participantPhones,
       });
-      // SPIKE TEMPORÁRIO — remover assim que capturarmos o payload real.
-      console.error("[SPIKE group/create] resposta crua:", JSON.stringify(response));
       // PhoneNumber do participante recebido vs. AddRequest presente —
       // mesma leitura de "convite em vez de adição direta" já usada em
       // updateGroupParticipants.
-      const invitedPhones = (response.Participants ?? [])
+      const invitedPhones = (response.group.Participants ?? [])
         .filter((p) => p.AddRequest)
         .map((p) => p.PhoneNumber)
         .filter((phone): phone is string => !!phone);
       return {
-        groupJid: response.JID,
-        name: response.Name,
+        groupJid: response.group.JID,
+        name: response.group.Name,
         invitedPhones,
       };
     },
