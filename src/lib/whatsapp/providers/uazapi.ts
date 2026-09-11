@@ -17,6 +17,8 @@ import {
 
 import {
   ProviderUnsupportedError,
+  type CreateGroupArgs,
+  type CreateGroupResult,
   type GroupParticipant,
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
@@ -73,6 +75,20 @@ interface UazapiUpdateParticipantsResponse {
      * pode me adicionar a grupos" da pessoa. Vem com `Error: 403`, mas
      * não é uma falha de verdade: um convite foi enviado de fato.
      */
+    AddRequest?: { Code?: string; Expiration?: string } | null;
+  }>;
+}
+
+/**
+ * Schema real de `POST /group/create` (mesmo formato de `Group` devolvido
+ * por `/group/list`, com `Participants` incluindo `Error`/`AddRequest`
+ * por pessoa — igual à resposta de `/group/updateParticipants`).
+ */
+interface UazapiCreateGroupResponse {
+  JID: string;
+  Name?: string;
+  Participants?: Array<{
+    PhoneNumber?: string;
     AddRequest?: { Code?: string; Expiration?: string } | null;
   }>;
 }
@@ -204,6 +220,25 @@ export function createUazapiProvider(
         // mapeamento, é a API real.
         avatarUrl: undefined,
       }));
+    },
+
+    async createGroup(args: CreateGroupArgs): Promise<CreateGroupResult> {
+      const response = await client.post<UazapiCreateGroupResponse>("/group/create", {
+        name: args.name,
+        participants: args.participantPhones,
+      });
+      // PhoneNumber do participante recebido vs. AddRequest presente —
+      // mesma leitura de "convite em vez de adição direta" já usada em
+      // updateGroupParticipants.
+      const invitedPhones = (response.Participants ?? [])
+        .filter((p) => p.AddRequest)
+        .map((p) => p.PhoneNumber)
+        .filter((phone): phone is string => !!phone);
+      return {
+        groupJid: response.JID,
+        name: response.Name,
+        invitedPhones,
+      };
     },
 
     async leaveGroup(groupJid: string): Promise<void> {

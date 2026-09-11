@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ImageOff, Loader2, MessageCircle, RefreshCw, Settings, Users } from 'lucide-react';
+import { ImageOff, Loader2, MessageCircle, Plus, RefreshCw, Settings, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { CreateGroupDialog } from './create-group-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 
 interface WhatsAppGroup {
@@ -389,15 +390,16 @@ export function GroupsManager() {
   // nela em vez de travar a lista inteira — mesmo padrão do "Conversar"
   // de Contatos (openingConvContactId).
   const [openingConvId, setOpeningConvId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   function openManage(group: WhatsAppGroup) {
     setManageGroup(group);
   }
 
-  async function goToConversation(group: WhatsAppGroup) {
-    setOpeningConvId(group.id);
+  async function goToConversation(groupId: string) {
+    setOpeningConvId(groupId);
     try {
-      const conversationId = await openConversationForGroup(group.id);
+      const conversationId = await openConversationForGroup(groupId);
       router.push(`/inbox?c=${conversationId}`);
     } catch {
       toast.error(t('chatError'));
@@ -425,6 +427,14 @@ export function GroupsManager() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Decisão de produto: depois de criar, vai direto para a conversa do
+  // grupo (em vez de só listá-lo) — a mesma expectativa de quem cria um
+  // grupo no WhatsApp e já quer escrever nele.
+  async function handleCreated(group: { id: string }) {
+    await load();
+    await goToConversation(group.id);
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -495,14 +505,24 @@ export function GroupsManager() {
         title={t('title')}
         description={t('description')}
         action={
-          <Button onClick={handleSync} disabled={syncing || !canEditSettings}>
-            {syncing ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-            {t('sync')}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCreateOpen(true)}
+              disabled={!canEditSettings}
+            >
+              <Plus className="size-4" />
+              {t('createGroup')}
+            </Button>
+            <Button onClick={handleSync} disabled={syncing || !canEditSettings}>
+              {syncing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              {t('sync')}
+            </Button>
+          </div>
         }
       />
 
@@ -586,7 +606,7 @@ export function GroupsManager() {
                         gateReason="send messages"
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => goToConversation(group)}
+                        onClick={() => goToConversation(group.id)}
                         disabled={openingConvId === group.id}
                         aria-label={t('chat')}
                       >
@@ -633,6 +653,12 @@ export function GroupsManager() {
           }}
         />
       )}
+
+      <CreateGroupDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
     </section>
   );
 }

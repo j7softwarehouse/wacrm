@@ -6,6 +6,8 @@
 // ============================================================
 
 import type {
+  CreateGroupArgs,
+  CreateGroupResult,
   GroupParticipant,
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
@@ -65,6 +67,10 @@ export function createFakeProvider(
     async listGroups() {
       calls.push({ method: "listGroups", args: undefined });
       return [{ groupJid: "1111@g.us", name: "Grupo Fake" }];
+    },
+    async createGroup(args: CreateGroupArgs): Promise<CreateGroupResult> {
+      calls.push({ method: "createGroup", args });
+      return { groupJid: "fake-group@g.us", name: args.name, invitedPhones: [] };
     },
     async leaveGroup(groupJid: string) {
       calls.push({ method: "leaveGroup", args: groupJid });
