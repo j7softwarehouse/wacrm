@@ -1,9 +1,22 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  getProviderForChannel: vi.fn(),
+  resolveDefaultChannelId: vi.fn(),
+}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }));
+vi.mock('@/lib/whatsapp/providers/resolve', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/whatsapp/providers/resolve')>();
+  return {
+    ...actual,
+    getProviderForChannel: mocks.getProviderForChannel,
+    resolveDefaultChannelId: mocks.resolveDefaultChannelId,
+  };
+});
 
-import { GET, PATCH } from './route';
+import { GET, PATCH, POST } from './route';
 
 /**
  * Cliente com sessão e perfil ligado a `acct-1`, papel `admin` por
@@ -288,5 +301,240 @@ describe('PATCH /api/whatsapp/groups', () => {
     );
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/whatsapp/groups', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveDefaultChannelId.mockResolvedValue('chan-1');
+    mocks.getProviderForChannel.mockResolvedValue({
+      createGroup: async () => ({
+        groupJid: 'novo@g.us',
+        name: 'Turma 2026',
+        invitedPhones: [],
+      }),
+    });
+  });
+
+  /**
+   * `contacts` é resolvido por `.select().in().eq()` — a última chamada
+   * do encadeamento já devolve a Promise (o builder real do
+   * supabase-js é "thenable"). `insertSpy`, quando passado, captura o
+   * payload REAL enviado a `.insert()` em `whatsapp_groups`.
+   */
+  function comSessaoCreate(options: {
+    role?: string;
+    contacts?: Array<{ id: string; phone: string | null }>;
+    insertResult?: { data: unknown; error: unknown };
+    insertSpy?: (payload: Record<string, unknown>) => void;
+  } = {}) {
+    const {
+      role = 'admin',
+      contacts = [{ id: 'c-1', phone: '5511999999999' }],
+      insertResult = {
+        data: {
+          id: 'g-new',
+          group_jid: 'novo@g.us',
+          name: 'Turma 2026',
+          avatar_url: null,
+          enabled: true,
+        },
+        error: null,
+      },
+      insertSpy,
+    } = options;
+
+    return {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { account_id: 'acct-1', account_role: role },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'contacts') {
+          return {
+            select: () => ({
+              in: () => ({
+                eq: async () => ({ data: contacts, error: null }),
+              }),
+            }),
+          };
+        }
+        // whatsapp_groups
+        return {
+          insert: (payload: Record<string, unknown>) => {
+            insertSpy?.(payload);
+            return {
+              select: () => ({
+                single: async () => insertResult,
+              }),
+            };
+          },
+        };
+      },
+    };
+  }
+
+  function request(body: Record<string, unknown>) {
+    return new Request('https://x/api/whatsapp/groups', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('devolve 401 sem sessao', async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: null }, error: null }) },
+    });
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('devolve 403 quando o chamador nao e admin', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate({ role: 'agent' }));
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('devolve 400 sem nome', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+
+    const res = await POST(request({ contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 com nome maior que 100 caracteres', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+
+    const res = await POST(request({ name: 'x'.repeat(101), contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 sem nenhum contato', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+
+    const res = await POST(request({ name: 'Turma', contactIds: [] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 acima do limite de 50 contatos', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+
+    const res = await POST(
+      request({
+        name: 'Turma',
+        contactIds: Array.from({ length: 51 }, (_, i) => `c-${i}`),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 quando um contato nao pertence a conta do chamador', async () => {
+    // A rota pediu 2 ids; o `.eq("account_id", ...)` devolveu só 1 —
+    // o outro id não existe ou é de outra conta.
+    mocks.createClient.mockResolvedValue(
+      comSessaoCreate({ contacts: [{ id: 'c-1', phone: '5511999999999' }] }),
+    );
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1', 'c-de-outra-conta'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 quando um contato selecionado nao tem telefone', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessaoCreate({ contacts: [{ id: 'c-1', phone: null }] }),
+    );
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 quando a conta nao tem canal de WhatsApp configurado', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+    mocks.resolveDefaultChannelId.mockResolvedValue(null);
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 400 quando o canal padrao nao suporta criar grupo (Meta)', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+    const { ProviderUnsupportedError } = await import('@/lib/whatsapp/providers/types');
+    mocks.getProviderForChannel.mockResolvedValue({
+      createGroup: async () => {
+        throw new ProviderUnsupportedError('meta', 'createGroup');
+      },
+    });
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('devolve 502 quando a UAZAPI recusa a criacao', async () => {
+    mocks.createClient.mockResolvedValue(comSessaoCreate());
+    const { ProviderError } = await import('@/lib/whatsapp/providers/types');
+    mocks.getProviderForChannel.mockResolvedValue({
+      createGroup: async () => {
+        throw new ProviderError('uazapi', 'Could not parse phone');
+      },
+    });
+
+    const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+    expect(res.status).toBe(502);
+  });
+
+  it('cria o grupo, grava enabled:true e devolve o grupo com invitedPhones', async () => {
+    const insertSpy = vi.fn();
+    mocks.createClient.mockResolvedValue(comSessaoCreate({ insertSpy }));
+    mocks.getProviderForChannel.mockResolvedValue({
+      createGroup: async (args: { name: string; participantPhones: string[] }) => {
+        expect(args).toEqual({ name: 'Turma 2026', participantPhones: ['5511999999999'] });
+        return { groupJid: 'novo@g.us', name: 'Turma 2026', invitedPhones: ['5521888888888'] };
+      },
+    });
+
+    const res = await POST(request({ name: 'Turma 2026', contactIds: ['c-1'] }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.group).toEqual({
+      id: 'g-new',
+      group_jid: 'novo@g.us',
+      name: 'Turma 2026',
+      avatar_url: null,
+      enabled: true,
+    });
+    expect(body.invitedPhones).toEqual(['5521888888888']);
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account_id: 'acct-1',
+        channel_id: 'chan-1',
+        group_jid: 'novo@g.us',
+        name: 'Turma 2026',
+        enabled: true,
+      }),
+    );
   });
 });

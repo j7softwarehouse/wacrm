@@ -19,6 +19,7 @@ import type { SendTimeParams } from "@/lib/whatsapp/template-send-builder";
 
 import {
   ProviderUnsupportedError,
+  type CreateGroupResult,
   type GroupParticipant,
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
@@ -127,6 +128,11 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       throw new ProviderUnsupportedError("meta", "listGroups");
     },
 
+    async createGroup(): Promise<CreateGroupResult> {
+      // A Cloud API da Meta não expõe criação de grupo. A UI só oferece
+      // este botão em Configurações → Grupos, gated por canal uazapi.
+      throw new ProviderUnsupportedError("meta", "createGroup");
+    },
     async leaveGroup(): Promise<void> {
       throw new ProviderUnsupportedError("meta", "leaveGroup");
     },

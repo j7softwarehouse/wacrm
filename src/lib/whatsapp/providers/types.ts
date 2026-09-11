@@ -152,6 +152,22 @@ export interface GroupParticipant {
   isAdmin: boolean;
 }
 
+export interface CreateGroupArgs {
+  name: string;
+  /** Só dígitos, sem `+`. Mínimo 1, máximo 50 — limite da própria API do WhatsApp. */
+  participantPhones: string[];
+}
+
+export interface CreateGroupResult {
+  groupJid: string;
+  name?: string;
+  /** Números que receberam um CONVITE em vez de entrar direto — a
+   *  configuração de privacidade da pessoa exige aceitar (mesmo caso
+   *  já tratado em `updateGroupParticipants`). O grupo existe e os
+   *  demais participantes entraram normalmente; isto é aviso, não erro. */
+  invitedPhones: string[];
+}
+
 export interface WhatsAppProvider {
   readonly kind: WhatsAppProviderKind;
   sendText(args: SendTextArgs): Promise<SendResult>;
@@ -167,6 +183,10 @@ export interface WhatsAppProvider {
   resolveInboundMediaUrl(ref: string): Promise<string | null>;
   /** Grupos de que o número conectado participa. */
   listGroups(): Promise<Array<{ groupJid: string; name?: string; avatarUrl?: string }>>;
+  /** Cria um grupo novo com o número conectado como dono. Requer pelo
+   *  menos 1 participante além do dono — a API do WhatsApp não permite
+   *  grupo vazio. Lança se o provedor não suportar (Meta). */
+  createGroup(args: CreateGroupArgs): Promise<CreateGroupResult>;
   /** Remove o número conectado do grupo. A UAZAPI não confirma efeito
    *  real (ver `leaveGroup` do provider uazapi) — o chamador reconfirma. */
   leaveGroup(groupJid: string): Promise<void>;

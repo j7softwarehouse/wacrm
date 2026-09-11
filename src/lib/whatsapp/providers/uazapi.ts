@@ -17,6 +17,8 @@ import {
 
 import {
   ProviderUnsupportedError,
+  type CreateGroupArgs,
+  type CreateGroupResult,
   type GroupParticipant,
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
@@ -75,6 +77,25 @@ interface UazapiUpdateParticipantsResponse {
      */
     AddRequest?: { Code?: string; Expiration?: string } | null;
   }>;
+}
+
+/**
+ * Schema real de `POST /group/create` (confirmado contra a instância
+ * j7softwarehouse.uazapi.com em 11/09) — ANINHADO sob `group`, diferente
+ * do que a doc OpenAPI descreve (`Group` solto na raiz da resposta).
+ * `Participants` traz `Error`/`AddRequest` por pessoa, igual à resposta
+ * de `/group/updateParticipants`.
+ */
+interface UazapiCreateGroupResponse {
+  failed?: unknown[];
+  group: {
+    JID: string;
+    Name?: string;
+    Participants?: Array<{
+      PhoneNumber?: string;
+      AddRequest?: { Code?: string; Expiration?: string } | null;
+    }>;
+  };
 }
 
 export function createUazapiProvider(
@@ -204,6 +225,25 @@ export function createUazapiProvider(
         // mapeamento, é a API real.
         avatarUrl: undefined,
       }));
+    },
+
+    async createGroup(args: CreateGroupArgs): Promise<CreateGroupResult> {
+      const response = await client.post<UazapiCreateGroupResponse>("/group/create", {
+        name: args.name,
+        participants: args.participantPhones,
+      });
+      // PhoneNumber do participante recebido vs. AddRequest presente —
+      // mesma leitura de "convite em vez de adição direta" já usada em
+      // updateGroupParticipants.
+      const invitedPhones = (response.group.Participants ?? [])
+        .filter((p) => p.AddRequest)
+        .map((p) => p.PhoneNumber)
+        .filter((phone): phone is string => !!phone);
+      return {
+        groupJid: response.group.JID,
+        name: response.group.Name,
+        invitedPhones,
+      };
     },
 
     async leaveGroup(groupJid: string): Promise<void> {
