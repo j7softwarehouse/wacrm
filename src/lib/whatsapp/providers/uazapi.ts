@@ -227,6 +227,8 @@ export function createUazapiProvider(
         name: args.name,
         participants: args.participantPhones,
       });
+      // SPIKE TEMPORÁRIO — remover assim que capturarmos o payload real.
+      console.error("[SPIKE group/create] resposta crua:", JSON.stringify(response));
       // PhoneNumber do participante recebido vs. AddRequest presente —
       // mesma leitura de "convite em vez de adição direta" já usada em
       // updateGroupParticipants.
