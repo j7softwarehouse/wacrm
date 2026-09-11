@@ -6,6 +6,12 @@ import { BookOpen, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CapituloPrimeirosPassos } from "@/components/manual/cap-01-primeiros-passos";
 import { CapituloCaixaDeEntrada } from "@/components/manual/cap-02-caixa-de-entrada";
+import { CapituloContatos } from "@/components/manual/cap-03-contatos";
+import { CapituloNotificacoesDashboard } from "@/components/manual/cap-04-notificacoes-dashboard";
+import { CapituloRespostasAutomaticas } from "@/components/manual/cap-05-respostas-automaticas";
+import { CapituloConfiguracoes } from "@/components/manual/cap-06-configuracoes";
+import { CapituloCanalOficial } from "@/components/manual/cap-07-canal-oficial";
+import { CapituloPerguntasFrequentes } from "@/components/manual/cap-08-perguntas-frequentes";
 
 // ============================================================
 // Manual do sistema.
@@ -25,9 +31,22 @@ import { CapituloCaixaDeEntrada } from "@/components/manual/cap-02-caixa-de-entr
 // ============================================================
 
 const SUMARIO = [
+  { parte: "Parte 1 — O dia a dia do atendimento" },
   { id: "primeiros-passos", titulo: "1. Primeiros passos" },
   { id: "caixa-de-entrada", titulo: "2. Caixa de entrada" },
-];
+  { id: "contatos", titulo: "3. Contatos" },
+  { id: "notificacoes-dashboard", titulo: "4. Notificações e Dashboard" },
+  { id: "respostas-automaticas", titulo: "5. Quando o sistema responde sozinho" },
+  { parte: "Parte 2 — Administração" },
+  { id: "configuracoes", titulo: "6. Configurações (administração)" },
+  {
+    id: "canal-oficial",
+    titulo: "7. Recursos que dependem do canal oficial da Meta",
+  },
+  { id: "perguntas-frequentes", titulo: "8. Perguntas frequentes" },
+] satisfies ReadonlyArray<
+  { parte: string } | { id: string; titulo: string }
+>;
 
 export default function ManualPage() {
   // A classe no <body> escopa as regras de impressão a esta página —
@@ -67,23 +86,38 @@ export default function ManualPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Sumário
         </h2>
-        <ol className="space-y-1.5 text-sm">
-          {SUMARIO.map((item) => (
-            <li key={item.id}>
-              <a
-                href={`#${item.id}`}
-                className="text-foreground hover:text-primary hover:underline"
+        <ul className="space-y-1.5 text-sm">
+          {SUMARIO.map((item) =>
+            "parte" in item ? (
+              <li
+                key={item.parte}
+                className="pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pt-0"
               >
-                {item.titulo}
-              </a>
-            </li>
-          ))}
-        </ol>
+                {item.parte}
+              </li>
+            ) : (
+              <li key={item.id}>
+                <a
+                  href={`#${item.id}`}
+                  className="text-foreground hover:text-primary hover:underline"
+                >
+                  {item.titulo}
+                </a>
+              </li>
+            ),
+          )}
+        </ul>
       </nav>
 
       <div className="space-y-14">
         <CapituloPrimeirosPassos />
         <CapituloCaixaDeEntrada />
+        <CapituloContatos />
+        <CapituloNotificacoesDashboard />
+        <CapituloRespostasAutomaticas />
+        <CapituloConfiguracoes />
+        <CapituloCanalOficial />
+        <CapituloPerguntasFrequentes />
       </div>
 
       <footer className="mt-16 border-t border-border pt-6 text-xs text-muted-foreground print:mt-8">
