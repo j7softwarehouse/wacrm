@@ -21,6 +21,8 @@ import {
   type AccountRole,
 } from "@/lib/auth/roles";
 import { isModuleEnabled, MODULES } from "@/lib/accounts/modules";
+import { defaultChannelSupportsTemplates as computeDefaultChannelSupportsTemplates } from "@/lib/accounts/default-channel";
+import type { WhatsAppProviderKind } from "@/types";
 
 interface Profile {
   id: string;
@@ -118,6 +120,17 @@ interface AuthContextValue {
    * "no existing account changes behaviour".
    */
   salesEnabled: boolean;
+  /**
+   * True quando Broadcasts e Configurações → Modelos fazem sentido pra
+   * esta conta — ou seja, quando o canal mais antigo da conta (o único
+   * que `resolveDefaultChannelId` usa para os dois) não é uazapi.
+   * `uazapi.ts` recusa `sendTemplate` com `ProviderUnsupportedError`;
+   * sem essa checagem, as duas telas ficam visíveis prometendo um envio
+   * que falharia na hora de disparar. Fail-open (`true`) enquanto o
+   * canal ainda não foi resolvido — ver `defaultChannelSupportsTemplates`
+   * em `@/lib/accounts/default-channel`.
+   */
+  defaultChannelSupportsTemplates: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -131,6 +144,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  // `null` = ainda não resolvido (carregando, ou a conta não tem canal
+  // nenhum) — ver defaultChannelSupportsTemplates() sobre o fail-open.
+  const [defaultChannelProvider, setDefaultChannelProvider] =
+    useState<WhatsAppProviderKind | null>(null);
   const [loading, setLoading] = useState(true);
   // Tracked separately from `loading`. The session settles fast (one
   // local cookie read); the profile fetch crosses the network and
@@ -205,6 +222,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
               disabled_modules: account.disabled_modules ?? null,
             };
+          }
+
+          // Mesmo canal, mesma ordenação que resolveDefaultChannelId()
+          // usa pra decidir por onde Broadcasts dispara (o mais antigo
+          // da conta) — é esse provider que decide se a tela faz
+          // sentido, não "a conta tem algum canal Meta em algum lugar".
+          const { data: oldestChannel, error: channelErr } = await supabase
+            .from("whatsapp_channels")
+            .select("provider")
+            .eq("account_id", data.account_id)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (channelErr) {
+            console.error("[AuthProvider] fetchDefaultChannel error:", {
+              message: channelErr.message,
+              details: channelErr.details,
+              hint: channelErr.hint,
+              code: channelErr.code,
+            });
+          } else {
+            setDefaultChannelProvider(
+              (oldestChannel?.provider as WhatsAppProviderKind | undefined) ?? null,
+            );
           }
         }
 
@@ -305,6 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastFetchedUserIdRef.current = null;
         setProfile(null);
         setAccount(null);
+        setDefaultChannelProvider(null);
         setProfileLoading(false);
       }
 
@@ -324,6 +366,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
+    setDefaultChannelProvider(null);
     window.location.href = "/login";
   }, []);
 
@@ -359,6 +402,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [account?.disabled_modules],
   );
 
+  const defaultChannelSupportsTemplates = useMemo(
+    () => computeDefaultChannelSupportsTemplates(defaultChannelProvider),
+    [defaultChannelProvider],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -372,6 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         ...derived,
         salesEnabled,
+        defaultChannelSupportsTemplates,
       }}
     >
       {children}
@@ -413,6 +462,7 @@ export function useAuth(): AuthContextValue {
       // Opt-out: fail OPEN like every other account with no
       // configuration, not closed like the role gates above.
       salesEnabled: true,
+      defaultChannelSupportsTemplates: true,
     };
   }
   return ctx;

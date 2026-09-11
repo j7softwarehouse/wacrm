@@ -129,14 +129,28 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut, salesEnabled } =
-    useAuth();
+  const {
+    profile,
+    profileLoading,
+    account,
+    accountRole,
+    signOut,
+    salesEnabled,
+    defaultChannelSupportsTemplates,
+  } = useAuth();
   // Filter first so `.map` below never sees an item whose module the
   // account turned off. Hiding the entry is cosmetic — the route guard
-  // in `/pipelines` is what actually blocks access.
-  const visibleNavItems = navItems.filter(
-    (item) => !item.module || salesEnabled,
-  );
+  // in `/pipelines` is what actually blocks access. Broadcasts gets the
+  // same treatment: dispara sempre pelo canal mais antigo da conta
+  // (resolveDefaultChannelId), e um canal uazapi recusa envio de
+  // modelo — a tela ficaria prometendo um disparo que falha na hora.
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.module && !salesEnabled) return false;
+    if (item.href === "/broadcasts" && !defaultChannelSupportsTemplates) {
+      return false;
+    }
+    return true;
+  });
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries

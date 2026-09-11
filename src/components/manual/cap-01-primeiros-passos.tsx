@@ -3,7 +3,6 @@ import {
   Bot,
   LayoutDashboard,
   MessageSquare,
-  Radio,
   Settings,
   Users,
   Workflow,
@@ -85,10 +84,6 @@ export function CapituloPrimeirosPassos() {
             telefone, e-mail, tags e anotações.
           </li>
           <li>
-            <Botao icone={Radio}>Broadcasts</Botao> — envio da mesma mensagem
-            para muita gente de uma vez.
-          </li>
-          <li>
             <Botao icone={Zap}>Automações</Botao>,{" "}
             <Botao icone={Workflow}>Fluxos</Botao> e{" "}
             <Botao icone={Bot}>Agentes IA</Botao> — as três formas de o sistema
@@ -103,7 +98,10 @@ export function CapituloPrimeirosPassos() {
           No canto inferior do menu aparece o seu nome e o seu papel
           (Proprietário, Administrador, Agente ou Visualizador). O papel decide
           o que você consegue ver e fazer — por isso alguns colegas enxergam
-          opções que você não vê, e vice-versa.
+          opções que você não vê, e vice-versa. Além do papel, a lista também
+          pode variar conforme a forma como o WhatsApp da instituição está
+          conectado — é o caso de <Termo>Broadcasts</Termo>, que o capítulo 7
+          explica.
         </p>
         <Aviso tipo="dica">
           Em celular ou tablet o menu lateral fica escondido. Toque no ícone de

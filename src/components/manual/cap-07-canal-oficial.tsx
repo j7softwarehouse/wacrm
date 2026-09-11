@@ -8,7 +8,7 @@ export function CapituloCanalOficial() {
       id="canal-oficial"
       numero={7}
       titulo="Recursos que dependem do canal oficial da Meta"
-      resumo="Duas telas existem no menu mas não funcionam com a forma de conexão usada hoje. Este capítulo explica por quê, para ninguém perder tempo tentando."
+      resumo="Broadcasts e Modelos não aparecem no menu da instituição hoje. Este capítulo explica por quê — útil se algum colega perguntar, ou se um dia isso mudar."
     >
       <Secao id="dois-caminhos" titulo="Dois jeitos de conectar um WhatsApp">
         <p>
@@ -31,21 +31,20 @@ export function CapituloCanalOficial() {
         </Lista>
       </Secao>
 
-      <Secao id="broadcasts" titulo="Broadcasts">
+      <Secao id="broadcasts" titulo="Por que não existe Broadcasts no menu">
         <p>
           <Botao icone={Radio}>Broadcasts</Botao> é a tela de envio em massa —
           mandar a mesma mensagem para muitos contatos de uma vez, como um
-          comunicado para todos os responsáveis.
+          comunicado para todos os responsáveis. Ela existe no sistema, mas o
+          próprio sistema a esconde do menu quando percebe que não vai
+          funcionar.
         </p>
         <Aviso tipo="atencao">
-          <strong>
-            Não funciona com a conexão usada hoje pela instituição.
-          </strong>{" "}
           O envio em massa exige modelos aprovados da Meta, que só existem na
-          API oficial. Uma tentativa de disparo falharia no momento do envio. Se
-          o envio em massa passar a ser necessário, o caminho é migrar para a
-          API oficial da Meta — uma decisão de projeto, não um ajuste de
-          configuração.
+          API oficial — e é por isso que a tela não aparece com a conexão por
+          QR Code usada hoje. Se o envio em massa passar a ser necessário, o
+          caminho é migrar para a API oficial da Meta — uma decisão de
+          projeto, não um ajuste de configuração.
         </Aviso>
         <p>
           Enquanto isso, o caminho possível para avisar muita gente é usar
@@ -53,12 +52,12 @@ export function CapituloCanalOficial() {
         </p>
       </Secao>
 
-      <Secao id="modelos" titulo="Modelos">
+      <Secao id="modelos" titulo="Por que não existe Modelos em Configurações">
         <p>
-          <Botao icone={FileText}>Configurações → Modelos</Botao> guarda os
-          modelos aprovados pela Meta. Pelo mesmo motivo acima, a seção não tem
-          uso hoje: sem a API oficial, não há modelos para sincronizar nem para
-          enviar.
+          <Botao icone={FileText}>Modelos</Botao> guardaria os modelos
+          aprovados pela Meta, mas some da lista de Configurações pelo mesmo
+          motivo do Broadcasts: sem a API oficial, não há modelo nenhum para
+          sincronizar ou enviar.
         </p>
       </Secao>
 
@@ -67,10 +66,11 @@ export function CapituloCanalOficial() {
           O outro lado da moeda é uma vantagem real do formato atual:{" "}
           <Termo>não existe janela de 24 horas</Termo> para vocês. É possível
           escrever para qualquer contato a qualquer momento, sem depender de ele
-          ter falado antes e sem precisar de modelo aprovado. Se algum texto do
-          sistema mencionar &ldquo;sessão expirada&rdquo; ou &ldquo;use um
-          modelo&rdquo;, é uma mensagem pensada para a API oficial e não se
-          aplica ao caso de vocês.
+          ter falado antes e sem precisar de modelo aprovado. Textos como
+          &ldquo;sessão expirada&rdquo; ou &ldquo;use um modelo&rdquo; existem no
+          sistema só porque ele também atende quem usa a API oficial — o próprio
+          sistema já sabe que não valem para o canal de vocês, e por isso nunca
+          aparecem nas suas conversas.
         </p>
       </Secao>
     </Capitulo>
