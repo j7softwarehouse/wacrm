@@ -164,6 +164,19 @@ async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   const envelope = body as Record<string, unknown>;
   const eventName = extractEventType(envelope);
 
+  // ============================================================
+  // INSTRUMENTAÇÃO TEMPORÁRIA — REMOVER APÓS A CAPTURA.
+  //
+  // Existe só para descobrir o formato real dos eventos de edição e
+  // exclusão de mensagem feitas pelo próprio participante no WhatsApp
+  // dele — nunca observados ao vivo, e não documentados no schema
+  // `WebhookEvent` da spec da uazapi (`data` é additionalProperties).
+  // Sem isso, tratar esses eventos seria chute. Só homolog, por poucos
+  // minutos, com mensagens de teste. `console.error` porque é o nível
+  // que a Vercel expõe de forma confiável nos logs de runtime.
+  // ============================================================
+  console.error("[SPIKE webhook] evento cru:", JSON.stringify(body));
+
   // Nem "connection" nem "messages_update" foram capturados ao vivo
   // ainda (só "messages" — ver normalize.ts). Tolera tanto `data`
   // quanto `message` como o campo que carrega o corpo do evento, já
