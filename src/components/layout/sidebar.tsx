@@ -9,6 +9,7 @@ import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   Bell,
+  BookOpen,
   Bot,
   Crown,
   GitBranch,
@@ -110,6 +111,10 @@ const navItems: NavItem[] = [
 ];
 
 const bottomNavItems = [
+  // O manual fica junto de Configurações, no rodapé do menu: é
+  // utilitário, não faz parte do fluxo de atendimento — mas precisa
+  // estar sempre à mão para quem travar no meio de um atendimento.
+  { href: "/manual", labelKey: "manual", icon: BookOpen },
   { href: "/settings", labelKey: "settings", icon: Settings },
 ];
 
@@ -196,6 +201,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.
           "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          // Impressão (usada pelo "Baixar PDF" do Manual): navegação não
+          // vai para o papel.
+          "print:hidden",
         )}
         aria-label="Primary"
       >
