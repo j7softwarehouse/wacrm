@@ -247,3 +247,45 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+
+/* ============================================================
+ * Impressão do Manual (botão "Baixar PDF" → salvar como PDF).
+ *
+ * Escopado por `body.manual-print-scope`, que a página do manual
+ * adiciona ao montar e remove ao sair: imprimir qualquer outra tela
+ * do sistema continua com o comportamento padrão do navegador.
+ *
+ * A casca do app usa `h-screen` + `overflow-hidden`, com o conteúdo
+ * rolando dentro de um `<main>` próprio. Na impressão isso corta tudo
+ * na primeira página — o navegador só desenha o que cabe na viewport.
+ * Por isso as alturas e os overflows precisam ser soltos aqui, senão
+ * o PDF sai com uma folha só.
+ * ============================================================ */
+@media print {
+  /* A barra lateral e o cabeçalho já se escondem sozinhos na
+   * impressão (`print:hidden` nos próprios componentes) — aqui só
+   * resta soltar o layout. */
+  body.manual-print-scope,
+  body.manual-print-scope > div,
+  body.manual-print-scope main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  body.manual-print-scope main {
+    padding: 0 !important;
+  }
+
+  /* Fundo branco e texto preto: economiza tinta e evita que o tema
+   * escuro vire uma folha inteira preta. */
+  body.manual-print-scope {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  @page {
+    margin: 18mm 16mm;
+  }
+}

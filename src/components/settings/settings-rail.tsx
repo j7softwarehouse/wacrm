@@ -43,7 +43,7 @@ export function SettingsRail({
 }) {
   const t = useTranslations('Settings');
   const activeRef = useRef<HTMLButtonElement>(null);
-  const { salesEnabled, accountRole } = useAuth();
+  const { salesEnabled, defaultChannelSupportsTemplates, accountRole } = useAuth();
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -71,6 +71,10 @@ export function SettingsRail({
           if (SECTION_META[s].group !== group) return false;
           const requiredModule = SECTION_MODULE[s];
           if (requiredModule === MODULES.SALES && !salesEnabled) return false;
+          // Modelos só serve o disparo de Broadcasts, que sempre usa o
+          // canal mais antigo da conta — um canal uazapi recusa envio
+          // de modelo, então a seção não teria o que gerenciar.
+          if (s === 'templates' && !defaultChannelSupportsTemplates) return false;
           return canAccessSection(s, accountRole);
         });
         return (

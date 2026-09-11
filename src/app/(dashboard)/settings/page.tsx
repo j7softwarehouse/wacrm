@@ -44,7 +44,13 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency, salesEnabled, accountRole, profileLoading } = useAuth();
+  const {
+    defaultCurrency,
+    salesEnabled,
+    defaultChannelSupportsTemplates,
+    accountRole,
+    profileLoading,
+  } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -58,6 +64,12 @@ function SettingsPageInner() {
   // Overview), a seção não é a de Negócios e moeda — cai na Overview
   // como qualquer tab desconhecida.
   if (section === 'deals' && !salesEnabled) {
+    section = 'overview';
+  }
+  // Mesma lógica: `?tab=templates` colado direto na URL não deve abrir
+  // a seção quando o canal mais antigo da conta (o único que o disparo
+  // de Broadcasts/modelo usa) é uazapi e recusaria o envio.
+  if (section === 'templates' && !defaultChannelSupportsTemplates) {
     section = 'overview';
   }
   // Controle de acesso por papel (2026-09-09-settings-role-gating).

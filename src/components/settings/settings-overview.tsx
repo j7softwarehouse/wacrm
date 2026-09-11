@@ -48,6 +48,7 @@ export function SettingsOverview({
     defaultCurrency,
     canManageMembers,
     salesEnabled,
+    defaultChannelSupportsTemplates,
   } = useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
@@ -207,18 +208,24 @@ export function SettingsOverview({
                 : ''
             }`,
     },
-    {
-      section: 'templates',
-      loading: countsLoading,
-      subtitle:
-        counts?.templates == null
-          ? t('manageTemplates')
-          : `${t('templatesCount', { count: counts.templates })}${
-              counts.templatesPending
-                ? ` · ${t('pendingReview', { count: counts.templatesPending })}`
-                : ''
-            }`,
-    },
+    // Canal mais antigo da conta é uazapi (recusa envio de modelo):
+    // mesmo colapso declarativo do módulo de vendas, logo abaixo.
+    ...(defaultChannelSupportsTemplates
+      ? [
+          {
+            section: 'templates' as const,
+            loading: countsLoading,
+            subtitle:
+              counts?.templates == null
+                ? t('manageTemplates')
+                : `${t('templatesCount', { count: counts.templates })}${
+                    counts.templatesPending
+                      ? ` · ${t('pendingReview', { count: counts.templatesPending })}`
+                      : ''
+                  }`,
+          },
+        ]
+      : []),
     // Módulo de vendas desligado (Task 10): o ternário abaixo colapsa
     // pra `[]` em vez de sumir com um `if` no meio do array literal —
     // mantém a lista declarativa e o spread funciona igual.

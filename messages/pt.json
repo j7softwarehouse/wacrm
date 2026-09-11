@@ -25,6 +25,7 @@
     "automations": "Automações",
     "flows": "Fluxos",
     "aiAgents": "Agentes IA",
+    "manual": "Manual",
     "settings": "Configurações",
     "beta": "Beta",
     "unreadConversations": "{count} não lido {count, plural, =1 {conversa} other {conversas}}",
