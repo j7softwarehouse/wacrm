@@ -179,6 +179,12 @@ export function CapituloConfiguracoes() {
           Poucas tags bem escolhidas funcionam melhor que dezenas parecidas. Se
           a equipe não souber qual usar, a classificação perde o valor.
         </Aviso>
+        <Aviso tipo="admin">
+          Qualquer atendente cria e usa <Termo>tags</Termo> livremente. Já a
+          lista de <Termo>campos personalizados</Termo> — quais campos existem
+          para todo contato — só administradores conseguem criar ou editar; um
+          atendente comum nem vê esse bloco da tela.
+        </Aviso>
       </Secao>
 
       <Secao id="config-membros" titulo="Membros da equipe e papéis">
@@ -186,9 +192,17 @@ export function CapituloConfiguracoes() {
           <Botao icone={UsersRound}>Configurações → Membros da equipe</Botao>
         </Onde>
         <p>
-          Lista quem tem acesso, com o papel de cada um e se está online. Para
-          incluir alguém, use <Termo>Convidar membro</Termo>: o sistema gera um
-          link de convite.
+          Lista quem tem acesso, com o papel de cada um e se está online.
+        </p>
+        <Aviso tipo="admin">
+          Qualquer atendente pode abrir esta tela e ver a lista. Só
+          administradores conseguem usar <Termo>Convidar membro</Termo>,
+          remover alguém ou trocar o papel de um colega — para um atendente
+          comum, esses botões simplesmente não aparecem.
+        </Aviso>
+        <p>
+          Para incluir alguém, um administrador usa{" "}
+          <Termo>Convidar membro</Termo>: o sistema gera um link de convite.
         </p>
         <Aviso tipo="atencao">
           O link de convite aparece <Termo>uma única vez</Termo>, no momento da
@@ -229,6 +243,10 @@ export function CapituloConfiguracoes() {
           site que cadastra interessados automaticamente. Só faz sentido se
           houver uma integração sendo construída.
         </p>
+        <Aviso tipo="admin">
+          Criar ou revogar uma chave é só para administradores. Um atendente
+          comum não vê os controles desta tela.
+        </Aviso>
         <Aviso tipo="atencao">
           Uma chave de API dá acesso programático aos dados da instituição.
           Trate como senha: não compartilhe por mensagem, e revogue assim que a
