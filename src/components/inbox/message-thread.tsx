@@ -292,13 +292,17 @@ export function MessageThread({
    * provider-specific and lives in a hook, which must run before the
    * component's early returns.
    */
-  const threadChannel = useMemo(
-    () =>
-      conversation?.channel_id
-        ? channelsById?.get(conversation.channel_id)
-        : undefined,
-    [conversation?.channel_id, channelsById],
-  );
+  const threadChannel = useMemo(() => {
+    if (conversation?.channel_id) return channelsById?.get(conversation.channel_id);
+    // Canal removido (FK é ON DELETE SET NULL) ou conversa sem
+    // channel_id: cai no canal mais antigo da conta — o MESMO fallback
+    // que o envio já usa no servidor (resolveDefaultChannelId), para
+    // uma conversa não ficar travada como "somente leitura" enquanto a
+    // conta ainda tem um canal funcionando. `channelsById` já chega
+    // ordenado por created_at ascendente (GET /api/whatsapp/channels),
+    // então o primeiro valor do Map é sempre o mais antigo.
+    return channelsById?.values().next().value;
+  }, [conversation?.channel_id, channelsById]);
 
   /**
    * Approved templates are Meta-only; `providers/uazapi.ts#sendTemplate`
@@ -1069,15 +1073,19 @@ export function MessageThread({
 
   const displayName = conversationDisplayName(conversation) || "Unknown";
 
-  // Which channel this conversation came in on, and whether sending is
-  // currently possible on it. `channel_id === null` means the channel was
-  // removed from Settings (FK is `ON DELETE SET NULL`) — that's a
-  // permanent, read-only state, distinct from a channel that's merely
-  // disconnected right now. Both cases are gated on `channelsLoaded` so a
-  // conversation whose channel simply hasn't loaded in yet isn't briefly
-  // flashed as orphaned.
+  // Which channel this conversation effectively uses, and whether
+  // sending is currently possible on it. `channel_id === null` (canal
+  // removido de Configurações, FK `ON DELETE SET NULL`, ou conversa que
+  // nunca teve canal) já foi resolvido para o canal padrão da conta em
+  // `threadChannel` acima — não é mais tratado como estado permanente
+  // de somente leitura, pelo mesmo motivo que o servidor também cai no
+  // canal padrão nesse caso (`resolveDefaultChannelId`). Só sobra
+  // "indisponível" de verdade quando a conta não tem NENHUM canal
+  // (`channelMissing`) ou quando o canal resolvido está desconectado.
+  // Ambos gated em `channelsLoaded` para não piscar como indisponível
+  // enquanto a lista de canais ainda está carregando.
   const channel = threadChannel;
-  const channelOrphaned = channelsLoaded && !conversation.channel_id;
+  const channelMissing = channelsLoaded && !channel;
   // Only UAZAPI is gated on `status`. This mirrors the server-side rule in
   // `providers/resolve.ts`: a UAZAPI `connected` is a live session and
   // sending genuinely requires it, while Meta's `status` is registration
@@ -1087,12 +1095,12 @@ export function MessageThread({
   // would happily accept.
   const channelDisconnected =
     channelsLoaded &&
-    !!conversation.channel_id &&
-    channel?.provider === "uazapi" &&
+    !!channel &&
+    channel.provider === "uazapi" &&
     channel.status !== "connected";
-  const channelUnavailable = channelOrphaned || channelDisconnected;
+  const channelUnavailable = channelMissing || channelDisconnected;
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
-  const channelWarning = channelOrphaned
+  const channelWarning = channelMissing
     ? t("channelRemovedWarning")
     : channelDisconnected
       ? t("channelDisconnectedWarning", {
