@@ -238,7 +238,8 @@
       "openMedia": "Abrir em tamanho real",
       "downloadMedia": "Baixar",
       "closeMedia": "Fechar",
-      "participant": "Participante"
+      "participant": "Participante",
+      "forwardedTag": "Encaminhada"
     },
     "actions": {
       "reply": "Responder",
@@ -253,7 +254,8 @@
       "deleteConfirmBody": "Apagar esta mensagem para todos no WhatsApp? Esta ação não pode ser desfeita.",
       "deleteSuccess": "Mensagem apagada",
       "deleteError": "Não foi possível apagar a mensagem",
-      "editError": "Não foi possível editar a mensagem"
+      "editError": "Não foi possível editar a mensagem",
+      "forward": "Encaminhar"
     },
     "replyQuote": {
       "photo": "[Foto]",
@@ -300,6 +302,19 @@
       "resumed": "IA retomada.",
       "updateError": "Não foi possível atualizar o assistente de IA.",
       "networkError": "Não foi possível alcançar o servidor."
+    },
+    "forward": {
+      "title": "Encaminhar para",
+      "selectedCount": "{count} de {max} selecionadas",
+      "searchPlaceholder": "Buscar por nome ou telefone",
+      "empty": "Nenhuma conversa encontrada.",
+      "unknown": "Sem nome",
+      "loadError": "Não foi possível carregar as conversas.",
+      "send": "Encaminhar",
+      "cancel": "Cancelar",
+      "success": "{count, plural, =1 {Mensagem encaminhada} other {Mensagem encaminhada para # conversas}}",
+      "partialFailure": "{count, plural, =1 {1 conversa não recebeu} other {# conversas não receberam}}",
+      "error": "Não foi possível encaminhar a mensagem."
     }
   },
   "Contacts": {

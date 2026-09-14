@@ -232,7 +232,8 @@
       "openMedia": "원본 크기로 보기",
       "downloadMedia": "다운로드",
       "closeMedia": "닫기",
-      "participant": "참가자"
+      "participant": "참가자",
+      "forwardedTag": "전달됨"
     },
     "actions": {
       "reply": "답장",
@@ -247,7 +248,8 @@
       "deleteConfirmBody": "이 메시지를 WhatsApp의 모든 사람에게서 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
       "deleteSuccess": "메시지가 삭제되었습니다",
       "deleteError": "메시지를 삭제할 수 없습니다",
-      "editError": "메시지를 수정할 수 없습니다"
+      "editError": "메시지를 수정할 수 없습니다",
+      "forward": "전달"
     },
     "replyQuote": {
       "photo": "[사진]",
@@ -294,6 +296,19 @@
       "resumed": "AI가 재개되었습니다.",
       "updateError": "AI 어시스턴트를 업데이트하지 못했습니다.",
       "networkError": "서버에 연결할 수 없습니다."
+    },
+    "forward": {
+      "title": "전달 대상",
+      "selectedCount": "{max}개 중 {count}개 선택됨",
+      "searchPlaceholder": "이름 또는 전화번호로 검색",
+      "empty": "대화를 찾을 수 없습니다.",
+      "unknown": "이름 없음",
+      "loadError": "대화를 불러올 수 없습니다.",
+      "send": "전달",
+      "cancel": "취소",
+      "success": "{count}개 대화로 메시지를 전달했습니다",
+      "partialFailure": "{count}개 대화가 수신하지 못했습니다",
+      "error": "메시지를 전달할 수 없습니다."
     }
   },
   "Contacts": {

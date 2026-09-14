@@ -45,6 +45,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
+import { ForwardDialog } from "./forward-dialog";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -225,6 +226,8 @@ export function MessageThread({
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  /** Mensagem escolhida para encaminhar; abre o diálogo de destinos. */
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -1390,6 +1393,23 @@ export function MessageThread({
                       msg.content_type === "text" &&
                       threadChannel?.provider === "uazapi" &&
                       (msg.sender_id === user?.id || canEditSettings);
+                    // Encaminhar vale para QUALQUER mensagem, recebida ou
+                    // enviada (é assim no WhatsApp) — o que impede é a
+                    // mensagem estar apagada, ser de um tipo que não se
+                    // reenvia (template/interativo/localização), ou ter a
+                    // mídia já expirada do storage (vídeo após 48h).
+                    const isForwardableType =
+                      msg.content_type === "text" ||
+                      msg.content_type === "image" ||
+                      msg.content_type === "video" ||
+                      msg.content_type === "audio" ||
+                      msg.content_type === "document";
+                    const hasContentToForward =
+                      msg.content_type === "text"
+                        ? !!msg.content_text
+                        : !!msg.media_url;
+                    const canForwardMsg =
+                      !msg.deleted_at && isForwardableType && hasContentToForward;
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1400,6 +1420,9 @@ export function MessageThread({
                         }}
                         onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
                         onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
+                        onForward={
+                          canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
+                        }
                       >
                         <MessageBubble
                           message={msg}
@@ -1461,6 +1484,13 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ForwardDialog
+        messageId={forwardMessageId}
+        open={forwardMessageId !== null}
+        onOpenChange={(next) => !next && setForwardMessageId(null)}
+        currentConversationId={conversation.id}
       />
     </div>
   );

@@ -238,7 +238,8 @@
       "openMedia": "Open full size",
       "downloadMedia": "Download",
       "closeMedia": "Close",
-      "participant": "Participant"
+      "participant": "Participant",
+      "forwardedTag": "Forwarded"
     },
     "actions": {
       "reply": "Reply",
@@ -253,7 +254,8 @@
       "deleteConfirmBody": "Delete this message for everyone on WhatsApp? This action cannot be undone.",
       "deleteSuccess": "Message deleted",
       "deleteError": "Could not delete the message",
-      "editError": "Could not edit the message"
+      "editError": "Could not edit the message",
+      "forward": "Forward"
     },
     "replyQuote": {
       "photo": "[Photo]",
@@ -300,6 +302,19 @@
       "resumed": "AI resumed.",
       "updateError": "Couldn’t update the AI assistant.",
       "networkError": "Couldn’t reach the server."
+    },
+    "forward": {
+      "title": "Forward to",
+      "selectedCount": "{count} of {max} selected",
+      "searchPlaceholder": "Search by name or phone",
+      "empty": "No conversations found.",
+      "unknown": "No name",
+      "loadError": "Could not load conversations.",
+      "send": "Forward",
+      "cancel": "Cancel",
+      "success": "{count, plural, =1 {Message forwarded} other {Message forwarded to # chats}}",
+      "partialFailure": "{count, plural, =1 {1 chat did not receive it} other {# chats did not receive it}}",
+      "error": "Could not forward the message."
     }
   },
   "Contacts": {

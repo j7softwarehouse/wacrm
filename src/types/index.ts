@@ -307,6 +307,10 @@ export interface Message {
    *  mesmo com edições seguintes. Uso interno/auditoria, nunca
    *  exibido na thread normal. */
   original_content_text?: string | null;
+  /** Preenchido quando ESTA mensagem foi criada por um encaminhamento
+   *  (2026-09-14). A bolha exibe a etiqueta "Encaminhada", igual ao
+   *  WhatsApp. É uma cópia independente: não aponta para a original. */
+  forwarded_at?: string | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';

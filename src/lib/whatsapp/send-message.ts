@@ -108,6 +108,12 @@ export interface SendMessageParams {
    * distinguida por `ai_generated`.
    */
   senderUserId?: string | null;
+  /**
+   * Encaminhamento: marca a mensagem como "Encaminhada" no WhatsApp de
+   * quem recebe (flag nativa da UAZAPI) e grava `forwarded_at` para a
+   * bolha do CRM exibir a mesma etiqueta.
+   */
+  forwarded?: boolean;
 }
 
 export interface SendMessageResult {
@@ -221,6 +227,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    forwarded,
   } = params;
 
   if (!conversationId) {
@@ -418,6 +425,7 @@ export async function sendMessageToConversation(
         caption: outboundText || undefined,
         filename: filename || undefined,
         contextMessageId,
+        forward: forwarded || undefined,
       });
       return result.messageId;
     }
@@ -449,6 +457,7 @@ export async function sendMessageToConversation(
       to: phone,
       text: outboundText!,
       contextMessageId,
+      forward: forwarded || undefined,
     });
     return result.messageId;
   };
@@ -566,6 +575,7 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      forwarded_at: forwarded ? new Date().toISOString() : null,
     })
     .select()
     .single();

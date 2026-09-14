@@ -14,6 +14,7 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  Forward,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -377,6 +378,19 @@ export function MessageBubble({
         {showAuthor && authorName && (
           <span className="mb-0.5 block text-[11px] font-medium opacity-70">
             {authorName}
+          </span>
+        )}
+        {/* Etiqueta "Encaminhada" ACIMA do conteúdo, como o WhatsApp
+            posiciona — não no rodapé junto do horário. */}
+        {message.forwarded_at && !message.deleted_at && (
+          <span
+            className={cn(
+              "mb-0.5 flex items-center gap-1 text-[11px] italic",
+              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+            )}
+          >
+            <Forward className="h-3 w-3" />
+            {t("forwardedTag")}
           </span>
         )}
         <MessageContent message={message} t={t} />
