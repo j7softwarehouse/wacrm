@@ -159,7 +159,11 @@ export function ConversarButton({
             icon
           )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="bg-popover border-border">
+        {/* w-72 sobrepõe o w-(--anchor-width) padrão do componente base
+            (que amarra a largura do menu à do próprio botão-gatilho) --
+            sem isso, com o gatilho sendo só um ícone, o menu ficava
+            estreito demais pra mostrar o telefone do canal inteiro. */}
+        <DropdownMenuContent align="end" className="bg-popover border-border w-72">
           {/* DropdownMenuGroup (base-ui Menu.Group) é OBRIGATÓRIO aqui: o
               DropdownMenuLabel abaixo é o Menu.GroupLabel do base-ui, que
               lê um contexto de grupo e lança exceção em render quando ele
@@ -179,12 +183,14 @@ export function ConversarButton({
                     go(channel.id);
                   }}
                 >
-                  <span className={cn('size-2 rounded-full', color?.dot ?? 'bg-muted-foreground')} />
-                  <span className="flex-1 truncate">
-                    {channel.label || channel.phone_e164 || channel.id}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {hasConversation ? t('existingConversation') : t('newConversation')}
+                  <span className={cn('mt-1 size-2 shrink-0 rounded-full', color?.dot ?? 'bg-muted-foreground')} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">
+                      {channel.label || channel.phone_e164 || channel.id}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {hasConversation ? t('existingConversation') : t('newConversation')}
+                    </span>
                   </span>
                 </DropdownMenuItem>
               );
