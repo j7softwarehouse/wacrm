@@ -15,6 +15,9 @@ export interface ResolvedGroupConversation {
   conversationId: string;
   groupId: string;
   participantId: string;
+  /** `unread_count` atual da conversa, ANTES desta mensagem — o chamador
+   *  soma 1 antes de gravar, mesmo padrão do caminho 1:1. */
+  unreadCount: number;
 }
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`; `...@lid` → null. */
@@ -133,15 +136,17 @@ export async function resolveGroupConversation(
   // (de qualquer participante) violar a constraint.
   const { data: existingConversation } = await db
     .from('conversations')
-    .select('id')
+    .select('id, unread_count')
     .eq('account_id', accountId)
     .eq('group_id', groupId)
     .eq('channel_id', channelId)
     .maybeSingle();
 
   let conversationId: string;
+  let unreadCount: number;
   if (existingConversation) {
     conversationId = existingConversation.id;
+    unreadCount = existingConversation.unread_count ?? 0;
   } else {
     const { data: created, error } = await db
       .from('conversations')
@@ -152,7 +157,7 @@ export async function resolveGroupConversation(
         group_id: groupId,
         channel_id: channelId,
       })
-      .select('id')
+      .select('id, unread_count')
       .single();
     if (error) {
       // Perdeu uma corrida: o clique em "Conversar"
@@ -165,21 +170,26 @@ export async function resolveGroupConversation(
       if (isUniqueViolation(error)) {
         const { data: raced } = await db
           .from('conversations')
-          .select('id')
+          .select('id, unread_count')
           .eq('account_id', accountId)
           .eq('group_id', groupId)
           .eq('channel_id', channelId)
           .maybeSingle();
         if (raced) {
-          conversationId = raced.id;
-          return { conversationId, groupId, participantId: participant.id };
+          return {
+            conversationId: raced.id,
+            groupId,
+            participantId: participant.id,
+            unreadCount: raced.unread_count ?? 0,
+          };
         }
       }
       return null;
     }
     if (!created) return null;
     conversationId = created.id;
+    unreadCount = created.unread_count ?? 0;
   }
 
-  return { conversationId, groupId, participantId: participant.id };
+  return { conversationId, groupId, participantId: participant.id, unreadCount };
 }
