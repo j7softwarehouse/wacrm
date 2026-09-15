@@ -102,6 +102,26 @@ export function matchesContactFilters(
 }
 
 /**
+ * Se a conversa passa na busca de texto livre da Inbox (nome, telefone
+ * ou última mensagem). Usa {@link conversationDisplayName} — não
+ * `conversation.contact?.name` direto — para que uma conversa de grupo
+ * (sem `contact`) seja encontrada pelo nome do GRUPO. Bug real (2026-09-15):
+ * a busca antiga só olhava `contact?.name`, então nenhuma conversa de
+ * grupo aparecia numa busca por texto, dando a impressão de que a
+ * mensagem "não tinha chegado" quando na verdade só estava escondida da
+ * lista filtrada.
+ */
+export function matchesSearch(conversation: Conversation, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const name = conversationDisplayName(conversation)?.toLowerCase() ?? "";
+  const phone = conversation.contact?.phone?.toLowerCase() ?? "";
+  const lastMsg = conversation.last_message_text?.toLowerCase() ?? "";
+  return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+}
+
+/**
  * Display label for a WhatsApp channel: its custom `label` when set,
  * otherwise the phone number. Returns `undefined` when neither is
  * available (e.g. a UAZAPI channel that's never connected), which
