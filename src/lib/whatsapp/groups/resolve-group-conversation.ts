@@ -15,6 +15,9 @@ export interface ResolvedGroupConversation {
   conversationId: string;
   groupId: string;
   participantId: string;
+  /** `unread_count` atual da conversa, ANTES desta mensagem — o chamador
+   *  soma 1 antes de gravar, mesmo padrão do caminho 1:1. */
+  unreadCount: number;
 }
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`; `...@lid` → null. */
@@ -33,18 +36,62 @@ export async function resolveGroupConversation(
   userId: string,
   group: { groupJid: string; participantJid: string; participantName?: string },
 ): Promise<ResolvedGroupConversation | null> {
-  const { data: existing } = await db
+  // Busca TODAS as linhas deste grupo na conta (não só a do canal atual):
+  // necessário pra curar uma linha ÓRFÃ (channel_id nulo, deixada por um
+  // canal recriado/removido — ver [[wacrm-canal-identidade-telefone]])
+  // em vez de criar uma segunda linha desabilitada e descartar a
+  // mensagem em silêncio. Achado ao vivo em 2026-09-15: a instância
+  // UAZAPI de homolog foi recriada várias vezes na mesma sessão, e todo
+  // grupo antes habilitado virou órfão — cada mensagem nova passou a
+  // criar uma linha nova e desabilitada pro canal atual, com a órfã
+  // (ainda mostrada como "ligada" na tela de Configurações) nunca mais
+  // recebendo nada.
+  const { data: rows, error: findError } = await db
     .from('whatsapp_groups')
-    .select('id, enabled')
+    .select('id, channel_id, enabled')
     .eq('account_id', accountId)
-    .eq('channel_id', channelId)
-    .eq('group_jid', group.groupJid)
-    .maybeSingle();
+    .eq('group_jid', group.groupJid);
+
+  if (findError) return null;
+
+  const rowsList = rows ?? [];
+  const current = rowsList.find((r) => r.channel_id === channelId) ?? null;
+  const orphan = rowsList.find((r) => r.channel_id === null) ?? null;
 
   let groupId: string;
   let enabled: boolean;
 
-  if (!existing) {
+  if (orphan) {
+    // A órfã é a fonte de verdade (enabled, histórico) de antes do canal
+    // ser recriado. Se já existe uma linha ruim pro canal atual (criada
+    // por uma mensagem que chegou ANTES desta cura existir), funde as
+    // duas — mesma lógica de merge-orphaned-groups.ts, só que aqui é a
+    // ÓRFÃ que sobrevive (ela é quem carrega o enabled/histórico real).
+    if (current && current.id !== orphan.id) {
+      await db
+        .from('conversations')
+        .update({ group_id: orphan.id })
+        .eq('group_id', current.id);
+      await db.from('whatsapp_groups').delete().eq('id', current.id);
+    }
+    // `.is('channel_id', null)` torna isto um no-op se outro processo já
+    // curou a mesma linha entre o SELECT acima e este UPDATE.
+    await db
+      .from('conversations')
+      .update({ channel_id: channelId })
+      .eq('group_id', orphan.id)
+      .is('channel_id', null);
+    await db
+      .from('whatsapp_groups')
+      .update({ channel_id: channelId })
+      .eq('id', orphan.id)
+      .is('channel_id', null);
+    groupId = orphan.id;
+    enabled = orphan.enabled;
+  } else if (current) {
+    groupId = current.id;
+    enabled = current.enabled;
+  } else {
     const { data: created, error } = await db
       .from('whatsapp_groups')
       .insert({
@@ -58,9 +105,6 @@ export async function resolveGroupConversation(
     if (error || !created) return null;
     groupId = created.id;
     enabled = false;
-  } else {
-    groupId = existing.id;
-    enabled = existing.enabled;
   }
 
   // Grupo não habilitado: já está registrado para a tela de seleção,
@@ -92,15 +136,17 @@ export async function resolveGroupConversation(
   // (de qualquer participante) violar a constraint.
   const { data: existingConversation } = await db
     .from('conversations')
-    .select('id')
+    .select('id, unread_count')
     .eq('account_id', accountId)
     .eq('group_id', groupId)
     .eq('channel_id', channelId)
     .maybeSingle();
 
   let conversationId: string;
+  let unreadCount: number;
   if (existingConversation) {
     conversationId = existingConversation.id;
+    unreadCount = existingConversation.unread_count ?? 0;
   } else {
     const { data: created, error } = await db
       .from('conversations')
@@ -111,7 +157,7 @@ export async function resolveGroupConversation(
         group_id: groupId,
         channel_id: channelId,
       })
-      .select('id')
+      .select('id, unread_count')
       .single();
     if (error) {
       // Perdeu uma corrida: o clique em "Conversar"
@@ -124,21 +170,26 @@ export async function resolveGroupConversation(
       if (isUniqueViolation(error)) {
         const { data: raced } = await db
           .from('conversations')
-          .select('id')
+          .select('id, unread_count')
           .eq('account_id', accountId)
           .eq('group_id', groupId)
           .eq('channel_id', channelId)
           .maybeSingle();
         if (raced) {
-          conversationId = raced.id;
-          return { conversationId, groupId, participantId: participant.id };
+          return {
+            conversationId: raced.id,
+            groupId,
+            participantId: participant.id,
+            unreadCount: raced.unread_count ?? 0,
+          };
         }
       }
       return null;
     }
     if (!created) return null;
     conversationId = created.id;
+    unreadCount = created.unread_count ?? 0;
   }
 
-  return { conversationId, groupId, participantId: participant.id };
+  return { conversationId, groupId, participantId: participant.id, unreadCount };
 }

@@ -527,6 +527,13 @@ async function ingestGroupMessage(
     .update({
       last_message_text: buildConversationPreview(params.content),
       last_message_at: new Date().toISOString(),
+      // Faltava aqui — o caminho 1:1 (ingestInboundMessage, abaixo)
+      // sempre soma 1 no unread_count ao inserir mensagem de cliente,
+      // mas este caminho separado de grupo nunca fazia isso. Resultado:
+      // uma mensagem de grupo chegava e ficava com unread_count preso em
+      // 0 pra sempre, como se alguém já tivesse lido assim que ela
+      // chegou — mesmo sem ninguém ter aberto a conversa.
+      unread_count: resolved.unreadCount + 1,
       updated_at: new Date().toISOString(),
     })
     .eq("id", resolved.conversationId);

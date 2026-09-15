@@ -5,6 +5,7 @@ import {
   matchesContactFilters,
   matchesSearch,
   normalizeConversation,
+  sortConversationsByRecency,
 } from "./conversations";
 import type { Conversation } from "@/types";
 
@@ -219,6 +220,58 @@ describe("matchesSearch", () => {
     const conv = makeConversation(null);
     expect(matchesSearch(conv, "")).toBe(true);
     expect(matchesSearch(conv, "   ")).toBe(true);
+  });
+});
+
+describe("sortConversationsByRecency", () => {
+  // Pedido do usuário: a lista da Inbox deve sempre mostrar a mensagem
+  // mais recente primeiro, igual ao WhatsApp -- inclusive quando uma
+  // conversa recebe mensagem nova e precisa "pular" pro topo, não só
+  // na carga inicial da página.
+  function conv(id: string, lastMessageAt: string | null, createdAt: string): Conversation {
+    return {
+      id,
+      user_id: "u1",
+      contact_id: "ct1",
+      status: "open",
+      unread_count: 0,
+      created_at: createdAt,
+      updated_at: createdAt,
+      last_message_at: lastMessageAt ?? undefined,
+    };
+  }
+
+  it("ordena da mensagem mais recente para a mais antiga", () => {
+    const older = conv("c-older", "2026-09-15T09:00:00Z", "2026-09-15T08:00:00Z");
+    const newer = conv("c-newer", "2026-09-15T10:00:00Z", "2026-09-15T08:00:00Z");
+    const result = sortConversationsByRecency([older, newer]);
+    expect(result.map((c) => c.id)).toEqual(["c-newer", "c-older"]);
+  });
+
+  it("usa created_at como fallback quando a conversa nunca recebeu mensagem", () => {
+    const semMensagemAntiga = conv("c-sem-msg-antiga", null, "2026-09-15T07:00:00Z");
+    const comMensagem = conv("c-com-msg", "2026-09-15T08:00:00Z", "2026-09-15T06:00:00Z");
+    const semMensagemRecente = conv("c-sem-msg-recente", null, "2026-09-15T09:00:00Z");
+    const result = sortConversationsByRecency([
+      semMensagemAntiga,
+      comMensagem,
+      semMensagemRecente,
+    ]);
+    expect(result.map((c) => c.id)).toEqual([
+      "c-sem-msg-recente",
+      "c-com-msg",
+      "c-sem-msg-antiga",
+    ]);
+  });
+
+  it("não modifica o array original (retorna uma cópia nova)", () => {
+    const list = [
+      conv("a", "2026-09-15T08:00:00Z", "2026-09-15T07:00:00Z"),
+      conv("b", "2026-09-15T09:00:00Z", "2026-09-15T07:00:00Z"),
+    ];
+    const original = [...list];
+    sortConversationsByRecency(list);
+    expect(list).toEqual(original);
   });
 });
 

@@ -122,6 +122,29 @@ export function matchesSearch(conversation: Conversation, query: string): boolea
 }
 
 /**
+ * Ordena conversas da mensagem mais recente para a mais antiga — igual
+ * ao WhatsApp, cuja lista de conversas sempre reflete a última
+ * atividade. Usa `last_message_at`, caindo para `created_at` numa
+ * conversa que nunca recebeu mensagem (criada pelo botão "Conversar",
+ * por exemplo), para que ela apareça pela recência da criação em vez
+ * de ficar com posição indefinida.
+ *
+ * Devolve uma cópia nova — nunca ordena o array recebido no lugar.
+ * Chamado toda vez que a lista é renderizada (não só na carga inicial),
+ * para que uma conversa "suba" pro topo assim que uma mensagem nova
+ * atualiza seu `last_message_at`, mesmo que o estado em memória só
+ * tenha atualizado o campo sem mexer na posição do item no array.
+ */
+export function sortConversationsByRecency(
+  conversations: Conversation[],
+): Conversation[] {
+  const recency = (c: Conversation) => c.last_message_at ?? c.created_at;
+  return [...conversations].sort(
+    (a, b) => new Date(recency(b)).getTime() - new Date(recency(a)).getTime(),
+  );
+}
+
+/**
  * Display label for a WhatsApp channel: its custom `label` when set,
  * otherwise the phone number. Returns `undefined` when neither is
  * available (e.g. a UAZAPI channel that's never connected), which

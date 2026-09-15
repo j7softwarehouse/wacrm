@@ -81,8 +81,9 @@ function conversationKey(row: Row): string {
 
 class FakeQuery {
   private conds: ((row: Row) => boolean)[] = [];
-  private mode: "select" | "insert" | "update" = "select";
+  private mode: "select" | "insert" | "update" | "upsert" = "select";
   private payload: Row | null = null;
+  private onConflictCols: string[] | null = null;
   private orderCol: string | null = null;
   private orderAsc = true;
   private limitN: number | null = null;
@@ -115,6 +116,13 @@ class FakeQuery {
   update(payload: Row) {
     this.mode = "update";
     this.payload = payload;
+    return this;
+  }
+
+  upsert(payload: Row, opts?: { onConflict?: string }) {
+    this.mode = "upsert";
+    this.payload = payload;
+    this.onConflictCols = opts?.onConflict ? opts.onConflict.split(",") : null;
     return this;
   }
 
@@ -223,6 +231,20 @@ class FakeQuery {
           };
         }
       }
+      this.rows.push(created);
+      return { data: [created], error: null };
+    }
+
+    if (this.mode === "upsert") {
+      const cols = this.onConflictCols ?? [];
+      const existing = this.rows.find((r) =>
+        cols.every((c) => r[c] === this.payload![c]),
+      );
+      if (existing) {
+        Object.assign(existing, this.payload);
+        return { data: [existing], error: null };
+      }
+      const created: Row = { id: `${this.table}-${this.db.nextId++}`, ...this.payload };
       this.rows.push(created);
       return { data: [created], error: null };
     }
@@ -389,5 +411,81 @@ describe("ingestInboundMessage — mensagem de grupo nao aciona motores", () => 
     expect(dispatchInboundToFlows).not.toHaveBeenCalled();
     expect(runAutomationsForTrigger).not.toHaveBeenCalled();
     expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+  });
+});
+
+describe("ingestInboundMessage — unread_count de mensagem de grupo", () => {
+  it("soma 1 no unread_count da conversa, igual ao caminho 1:1", async () => {
+    // Bug real (2026-09-15): ingestGroupMessage nunca escrevia
+    // unread_count no UPDATE da conversa -- a mensagem chegava e ficava
+    // com unread_count preso em 0 pra sempre, como se alguém já tivesse
+    // lido assim que ela chegou.
+    const { ingestInboundMessage } = await import("./ingest");
+
+    const channel = {
+      id: "chan-1",
+      account_id: "acc-1",
+      user_id: "user-1",
+      provider: "uazapi",
+      status: "connected",
+    };
+
+    const db = new FakeDb({
+      whatsapp_groups: [
+        {
+          id: "grp-1",
+          account_id: "acc-1",
+          channel_id: "chan-1",
+          group_jid: "120363000000000000@g.us",
+          enabled: true,
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: null,
+          group_id: "grp-1",
+          channel_id: "chan-1",
+          unread_count: 0,
+        },
+      ],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP-UNREAD-1",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi do grupo" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-1");
+    expect(conv?.unread_count).toBe(1);
+
+    // Uma segunda mensagem soma de novo, não reseta.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP-UNREAD-2",
+      timestamp: 1_700_000_001,
+      content: { type: "text", text: "segunda mensagem" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+    expect(conv?.unread_count).toBe(2);
   });
 });
