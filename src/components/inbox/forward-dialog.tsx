@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { CONVERSATION_SELECT, normalizeConversations } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
+import { resolveChannelPhone } from "@/lib/whatsapp/channel-identity";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -53,11 +54,13 @@ export function ForwardDialog({
   /** Conversa de onde a mensagem saiu — some da lista, igual ao
    *  WhatsApp, que não oferece encaminhar para o próprio chat. */
   currentConversationId,
-  /** Canal da conversa de origem. Dois canais da mesma conta se
-   *  comportam como duas contas de WhatsApp independentes — a lista só
-   *  mostra (e a rota só aceita) destinos do MESMO canal. `null`/
-   *  `undefined` = conta com um canal só ou conversa sem canal fixo;
-   *  nesse caso não filtra (não há "outro canal" pra confundir). */
+  /** Canal (resolvido, já com fallback pro padrão da conta quando a
+   *  conversa não tem um) de onde a mensagem saiu. Dois canais só são
+   *  "contas independentes" quando o TELEFONE é diferente — a lista
+   *  resolve o telefone de cada canal e compara por ele, nunca pelo id
+   *  bruto, porque recriar a instância UAZAPI do mesmo número não pode
+   *  virar um canal novo pra este efeito (ver channel-identity.ts).
+   *  `null`/`undefined` = conta sem canal nenhum; nesse caso não filtra. */
   channelId,
   /** Rótulo de exibição desse canal (nome ou telefone) — mostrado no
    *  topo do diálogo pra deixar claro por qual número o encaminhamento
@@ -73,6 +76,10 @@ export function ForwardDialog({
 }) {
   const t = useTranslations("Inbox.forward");
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [phoneByChannelId, setPhoneByChannelId] = useState<Map<string, string | null>>(
+    new Map(),
+  );
+  const [defaultChannelId, setDefaultChannelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -87,20 +94,40 @@ export function ForwardDialog({
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      let query = supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false })
-        .limit(200);
-      // Mesmo canal da origem — ver o comentário do prop `channelId`.
-      if (channelId) query = query.eq("channel_id", channelId);
-      const { data, error } = await query;
+      // Canais da conta (id + telefone) e conversas rodam em paralelo —
+      // o filtro por telefone acontece depois, em memória, porque
+      // comparar telefone exige resolver canal-a-canal (mesma lógica
+      // da rota, ver channel-identity.ts).
+      const [channelsRes, conversationsRes] = await Promise.all([
+        supabase
+          .from("whatsapp_channels")
+          .select("id, phone_e164")
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          .order("last_message_at", { ascending: false })
+          .limit(200),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.error("[ForwardDialog] load error:", error.message);
+
+      if (channelsRes.error) {
+        console.error("[ForwardDialog] channels load error:", channelsRes.error.message);
+      } else {
+        const rows = channelsRes.data ?? [];
+        setPhoneByChannelId(
+          new Map(rows.map((c) => [c.id as string, c.phone_e164 as string | null])),
+        );
+        // Já vem ordenado por created_at ascendente — o primeiro é o
+        // canal padrão da conta, mesma definição de resolveDefaultChannelId.
+        setDefaultChannelId((rows[0]?.id as string | undefined) ?? null);
+      }
+
+      if (conversationsRes.error) {
+        console.error("[ForwardDialog] load error:", conversationsRes.error.message);
         toast.error(t("loadError"));
       } else {
-        setConversations(normalizeConversations(data ?? []));
+        setConversations(normalizeConversations(conversationsRes.data ?? []));
       }
       setLoading(false);
     })();
@@ -108,15 +135,25 @@ export function ForwardDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, t, channelId]);
+  }, [open, t]);
+
+  const sourcePhone = useMemo(
+    () => resolveChannelPhone(channelId ?? null, phoneByChannelId, defaultChannelId),
+    [channelId, phoneByChannelId, defaultChannelId],
+  );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return conversations
       .filter((c) => c.id !== currentConversationId)
-      // Defesa extra além do filtro já aplicado na consulta acima —
-      // mesmo canal da origem, nunca mistura entre canais da conta.
-      .filter((c) => !channelId || c.channel_id === channelId)
+      // Mesmo NÚMERO da origem — nunca mistura entre canais/contas
+      // independentes. Resolvido por telefone, não por id de canal.
+      .filter(
+        (c) =>
+          !sourcePhone ||
+          resolveChannelPhone(c.channel_id ?? null, phoneByChannelId, defaultChannelId) ===
+            sourcePhone,
+      )
       // Grupo do qual o número já saiu não aceita envio — não faz
       // sentido oferecer como destino.
       .filter((c) => !c.group?.left_at)
@@ -126,7 +163,7 @@ export function ForwardDialog({
         const phone = (c.contact?.phone ?? "").toLowerCase();
         return name.includes(query) || phone.includes(query);
       });
-  }, [conversations, search, currentConversationId, channelId]);
+  }, [conversations, search, currentConversationId, sourcePhone, phoneByChannelId, defaultChannelId]);
 
   function toggle(id: string, checked: boolean) {
     setSelected((prev) => {

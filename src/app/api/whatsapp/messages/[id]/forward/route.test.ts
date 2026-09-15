@@ -18,16 +18,18 @@ const ACCOUNT = 'acct-1';
 
 /**
  * Cliente com sessão em `acct-1`. `message` é a mensagem de origem;
- * `sourceChannelId` é o canal da conversa de origem (null = conversa
- * sem canal fixo); `destinations` são as conversas reais do banco,
- * cada uma com seu próprio canal — a consulta de destino filtra por
- * `account_id` E `channel_id`, então uma conversa de outro canal
- * nunca aparece em `data`, mesmo pertencendo à mesma conta.
+ * `sourceChannelId` é o canal (bruto, pode ser null) da conversa de
+ * origem; `channels` são as linhas de `whatsapp_channels` da conta
+ * (id + phone_e164, JÁ na ordem de criação — o primeiro item é o
+ * "canal padrão" que `resolveDefaultChannelId` devolveria);
+ * `destinations` são as conversas candidatas a destino, cada uma com
+ * seu próprio `channel_id` (bruto, pode ser null).
  */
 function comSessao(options: {
   message?: Record<string, unknown> | null;
   sourceConversationFound?: boolean;
   sourceChannelId?: string | null;
+  channels?: { id: string; phone_e164: string | null }[];
   destinations?: { id: string; channel_id: string | null }[];
 } = {}) {
   const {
@@ -41,6 +43,7 @@ function comSessao(options: {
     },
     sourceConversationFound = true,
     sourceChannelId = 'chan-1',
+    channels = [{ id: 'chan-1', phone_e164: '553183886076' }],
     destinations = [
       { id: 'conv-a', channel_id: 'chan-1' },
       { id: 'conv-b', channel_id: 'chan-1' },
@@ -69,13 +72,41 @@ function comSessao(options: {
           }),
         };
       }
+      if (table === 'whatsapp_channels') {
+        // Atende dois formatos de chamada sobre a MESMA tabela:
+        // resolveDefaultChannelId() (.select('id').eq().order().limit()
+        // .maybeSingle(), devolve só o primeiro canal) e a consulta
+        // própria da rota (.select('id, phone_e164').eq(), resolvida
+        // direto como array quando dá `await` na cadeia sem mais nada).
+        const chain: PromiseLike<{ data: typeof channels; error: null }> & {
+          select: () => typeof chain;
+          eq: () => typeof chain;
+          order: () => typeof chain;
+          limit: () => typeof chain;
+          maybeSingle: () => Promise<{ data: unknown; error: null }>;
+        } = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({ data: channels[0] ?? null, error: null }),
+          then: (resolve) =>
+            Promise.resolve({ data: channels, error: null }).then(resolve as never),
+        };
+        return chain;
+      }
       // conversations — usada tanto para checar a origem (termina em
-      // .maybeSingle()) quanto os destinos (termina em .in()). Um Map
-      // acumula os filtros `.eq()`/`.is()` da cadeia ATUAL — cada
-      // chamada a `from('conversations')` cria seu próprio, então a
-      // checagem da origem nunca vaza filtro pra checagem do destino.
+      // .maybeSingle()) quanto os destinos (termina resolvendo direto
+      // via `then`, sem `.in()` explícito — a rota busca todos os
+      // candidatos da conta e filtra por telefone em código).
       const filters = new Map<string, unknown>();
-      const chain = {
+      const chain: PromiseLike<{ data: typeof destinations; error: null }> & {
+        select: () => typeof chain;
+        eq: (col: string, val: unknown) => typeof chain;
+        is: (col: string, val: unknown) => typeof chain;
+        maybeSingle: () => Promise<{ data: unknown; error: null }>;
+        in: (col: string, ids: string[]) => Promise<{ data: unknown; error: null }>;
+      } = {
         select: () => chain,
         eq: (col: string, val: unknown) => {
           filters.set(col, val);
@@ -91,19 +122,12 @@ function comSessao(options: {
             : null,
           error: null,
         }),
-        in: async (_col: string, ids: string[]) => {
-          const channelFilter = filters.has('channel_id')
-            ? filters.get('channel_id')
-            : undefined;
-          const matched = destinations.filter((d) => {
-            if (!ids.includes(d.id)) return false;
-            if (channelFilter !== undefined && d.channel_id !== channelFilter) {
-              return false;
-            }
-            return true;
-          });
-          return { data: matched.map((d) => ({ id: d.id })), error: null };
-        },
+        in: async (_col: string, ids: string[]) => ({
+          data: destinations.filter((d) => ids.includes(d.id)),
+          error: null,
+        }),
+        then: (resolve) =>
+          Promise.resolve({ data: destinations, error: null }).then(resolve as never),
       };
       return chain;
     },
@@ -224,14 +248,17 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
   });
 
-  it('devolve 400 quando um destino e de OUTRO CANAL, mesmo pertencendo a mesma conta', async () => {
-    // Encaminhar precisa ficar dentro do mesmo canal — dois canais da
-    // mesma conta se comportam como duas contas de WhatsApp
-    // independentes, então "conv-b" (canal diferente) não pode ser um
-    // destino válido mesmo sendo tecnicamente da mesma conta.
+  it('devolve 400 quando um destino e de OUTRO NUMERO, mesmo pertencendo a mesma conta', async () => {
+    // Encaminhar precisa ficar dentro do mesmo NUMERO — dois canais com
+    // telefones diferentes da mesma conta se comportam como duas contas
+    // de WhatsApp independentes.
     mocks.createClient.mockResolvedValue(
       comSessao({
         sourceChannelId: 'chan-1',
+        channels: [
+          { id: 'chan-1', phone_e164: '553183886076' },
+          { id: 'chan-2', phone_e164: '553183839660' },
+        ],
         destinations: [
           { id: 'conv-a', channel_id: 'chan-1' },
           { id: 'conv-b', channel_id: 'chan-2' },
@@ -250,7 +277,27 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
   });
 
-  it('encaminha para cada destino do MESMO canal marcando forwarded: true', async () => {
+  it('permite destino em canal com id DIFERENTE mas MESMO numero (instancia UAZAPI recriada)', async () => {
+    // O caso real que motivou a correção: a origem ficou orfã
+    // (channel_id nulo) quando o canal antigo foi apagado, mas o canal
+    // padrão atual da conta tem o MESMO telefone de quando essa
+    // conversa foi criada -- não pode ser tratado como conta diferente.
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        sourceChannelId: null,
+        channels: [{ id: 'chan-novo', phone_e164: '553183886076' }],
+        destinations: [{ id: 'conv-a', channel_id: 'chan-novo' }],
+      }),
+    );
+
+    const res = await POST(request({ conversationIds: ['conv-a'] }), { params });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.sent).toBe(1);
+  });
+
+  it('encaminha para cada destino do MESMO numero marcando forwarded: true', async () => {
     mocks.createClient.mockResolvedValue(comSessao());
 
     const res = await POST(

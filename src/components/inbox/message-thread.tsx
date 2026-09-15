@@ -1512,15 +1512,17 @@ export function MessageThread({
         open={forwardMessageId !== null}
         onOpenChange={(next) => !next && setForwardMessageId(null)}
         currentConversationId={conversation.id}
-        // O canal REAL da conversa (não o de fallback usado só pra
-        // liberar envio) — encaminhar precisa respeitar de qual das
-        // "contas" independentes esta mensagem realmente veio.
+        // O diálogo resolve por TELEFONE (com o mesmo fallback pro
+        // canal padrão da conta quando isto for nulo) — ver
+        // channel-identity.ts. Passar o valor bruto é o certo: recriar
+        // a instância UAZAPI do mesmo número não pode virar "conta
+        // independente" só porque o id do canal mudou.
         channelId={conversation.channel_id}
-        channelDisplayLabel={
-          conversation.channel_id
-            ? channelLabel(channelsById?.get(conversation.channel_id) ?? {})
-            : undefined
-        }
+        // Rótulo de exibição usa o canal JÁ resolvido com fallback
+        // (`channel`/`threadChannel`, mesmo usado no badge acima) —
+        // uma conversa órfã (channel_id nulo) ainda mostra o canal que
+        // ela efetivamente vai usar, em vez de nada.
+        channelDisplayLabel={channelDisplayLabel}
       />
     </div>
   );

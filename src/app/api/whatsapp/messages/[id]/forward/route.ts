@@ -7,6 +7,8 @@ import {
   sendMessageToConversation,
 } from '@/lib/whatsapp/send-message';
 import { ProviderRateLimitError } from '@/lib/whatsapp/providers/types';
+import { resolveDefaultChannelId } from '@/lib/whatsapp/providers/resolve';
+import { resolveChannelPhone } from '@/lib/whatsapp/channel-identity';
 
 // ============================================================
 // POST /api/whatsapp/messages/[id]/forward — encaminha uma mensagem
@@ -162,24 +164,45 @@ export async function POST(
       );
     }
 
-    // Tenancy do DESTINO + MESMO CANAL da origem: dois canais da mesma
-    // conta se comportam como duas contas de WhatsApp independentes
-    // (decisão de produto — encaminhar não pode misturar entre eles).
-    // Uma consulta só resolve os N destinos válidos; qualquer id que
-    // não pertença à conta OU seja de outro canal simplesmente não
-    // volta, e cai no mesmo "not found" de sempre — não revela que o
-    // id existe em outro canal.
-    const sourceChannelId = (sourceConversation.channel_id as string | null) ?? null;
-    let destinationsQuery = supabase
-      .from('conversations')
-      .select('id')
-      .eq('account_id', accountId);
-    destinationsQuery = sourceChannelId
-      ? destinationsQuery.eq('channel_id', sourceChannelId)
-      : destinationsQuery.is('channel_id', null);
-    const { data: destinations } = await destinationsQuery.in('id', conversationIds);
+    // Tenancy do DESTINO + MESMO CANAL (mesmo NÚMERO) da origem: dois
+    // canais só são "contas independentes" quando o telefone é
+    // diferente — recriar a instância UAZAPI do mesmo número (ex.: após
+    // "Invalid token") não pode virar um canal novo pra este efeito, e
+    // uma conversa órfã (channel_id nulo, canal antigo já apagado) cai
+    // no canal padrão da conta em vez de ficar travada pra sempre — ver
+    // channel-identity.ts.
+    const [defaultChannelId, { data: accountChannels }] = await Promise.all([
+      resolveDefaultChannelId(supabase, accountId),
+      supabase.from('whatsapp_channels').select('id, phone_e164').eq('account_id', accountId),
+    ]);
+    const phoneByChannelId = new Map(
+      (accountChannels ?? []).map((c) => [c.id as string, c.phone_e164 as string | null]),
+    );
+    const sourcePhone = resolveChannelPhone(
+      (sourceConversation.channel_id as string | null) ?? null,
+      phoneByChannelId,
+      defaultChannelId,
+    );
 
-    const allowed = new Set((destinations ?? []).map((d) => d.id as string));
+    // Uma consulta só resolve os candidatos da CONTA; o filtro por
+    // telefone acontece em cima disso, porque comparar telefone exige
+    // resolver canal-a-canal (Postgrest não faz esse COALESCE sozinho).
+    const { data: destinationRows } = await supabase
+      .from('conversations')
+      .select('id, channel_id')
+      .eq('account_id', accountId)
+      .in('id', conversationIds);
+
+    const allowed = new Set(
+      (destinationRows ?? [])
+        .filter(
+          (d) =>
+            sourcePhone !== null &&
+            resolveChannelPhone(d.channel_id as string | null, phoneByChannelId, defaultChannelId) ===
+              sourcePhone,
+        )
+        .map((d) => d.id as string),
+    );
     const unknown = conversationIds.filter((c) => !allowed.has(c));
     if (unknown.length > 0) {
       return NextResponse.json(
