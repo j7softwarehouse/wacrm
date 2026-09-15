@@ -172,7 +172,14 @@
       "selectConversation": "대화를 선택하세요",
       "selectConversationHint": "왼쪽에서 대화를 선택해 메시지를 시작하세요",
       "today": "오늘",
-      "yesterday": "어제"
+      "yesterday": "어제",
+      "searchInConversation": "대화에서 검색",
+      "searchPlaceholder": "이 대화에서 검색...",
+      "searchCount": "{total}개 중 {current}번째",
+      "searchNoResults": "결과 없음",
+      "searchPrevious": "이전",
+      "searchNext": "다음",
+      "searchClose": "검색 닫기"
     },
     "sessionTimer": {
       "expired": "만료됨",

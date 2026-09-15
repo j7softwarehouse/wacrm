@@ -33,6 +33,7 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
+import { conversationStatusPatch } from "@/lib/inbox/conversation-status";
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -1040,7 +1041,11 @@ async function handleReplyForActiveRun(
     if (run.conversation_id) {
       await db
         .from("conversations")
-        .update({ status: "pending", updated_at: new Date().toISOString() })
+        // Limpa `closed_at` junto: um handoff numa conversa que estava
+        // fechada não pode deixar o carimbo antigo para trás, ou a
+        // varredura de 24h reabriria a conversa que o fluxo acabou de
+        // mandar para "Pendente" (que é estado manual).
+        .update(conversationStatusPatch("pending"))
         .eq("id", run.conversation_id);
     }
     await logEvent(db, run.id, "handoff", run.current_node_key, {

@@ -108,6 +108,9 @@ export function MessageActions({
   // in the row no longer reveals the toolbar.
   return (
     <div
+      // Âncora da busca dentro da conversa: é por este atributo que a
+      // thread acha a linha da mensagem para rolar até ela.
+      data-message-id={message.id}
       className={cn(
         "flex w-full",
         isAgent ? "justify-end" : "justify-start",

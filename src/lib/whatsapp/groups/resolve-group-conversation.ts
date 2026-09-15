@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { isUniqueViolation } from '@/lib/contacts/dedupe';
+import type { ConversationStatus } from '@/types';
 
 export interface ResolvedGroupConversation {
   conversationId: string;
@@ -18,6 +19,9 @@ export interface ResolvedGroupConversation {
   /** `unread_count` atual da conversa, ANTES desta mensagem — o chamador
    *  soma 1 antes de gravar, mesmo padrão do caminho 1:1. */
   unreadCount: number;
+  /** Status atual da conversa, para o chamador reabrir uma conversa
+   *  fechada que acabou de receber mensagem (ver `reopenOnInboundPatch`). */
+  status: ConversationStatus | null;
 }
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`; `...@lid` → null. */
@@ -136,7 +140,7 @@ export async function resolveGroupConversation(
   // (de qualquer participante) violar a constraint.
   const { data: existingConversation } = await db
     .from('conversations')
-    .select('id, unread_count')
+    .select('id, unread_count, status')
     .eq('account_id', accountId)
     .eq('group_id', groupId)
     .eq('channel_id', channelId)
@@ -144,9 +148,11 @@ export async function resolveGroupConversation(
 
   let conversationId: string;
   let unreadCount: number;
+  let status: ConversationStatus | null;
   if (existingConversation) {
     conversationId = existingConversation.id;
     unreadCount = existingConversation.unread_count ?? 0;
+    status = existingConversation.status ?? null;
   } else {
     const { data: created, error } = await db
       .from('conversations')
@@ -157,7 +163,7 @@ export async function resolveGroupConversation(
         group_id: groupId,
         channel_id: channelId,
       })
-      .select('id, unread_count')
+      .select('id, unread_count, status')
       .single();
     if (error) {
       // Perdeu uma corrida: o clique em "Conversar"
@@ -170,7 +176,7 @@ export async function resolveGroupConversation(
       if (isUniqueViolation(error)) {
         const { data: raced } = await db
           .from('conversations')
-          .select('id, unread_count')
+          .select('id, unread_count, status')
           .eq('account_id', accountId)
           .eq('group_id', groupId)
           .eq('channel_id', channelId)
@@ -181,6 +187,7 @@ export async function resolveGroupConversation(
             groupId,
             participantId: participant.id,
             unreadCount: raced.unread_count ?? 0,
+            status: raced.status ?? null,
           };
         }
       }
@@ -189,7 +196,8 @@ export async function resolveGroupConversation(
     if (!created) return null;
     conversationId = created.id;
     unreadCount = created.unread_count ?? 0;
+    status = created.status ?? null;
   }
 
-  return { conversationId, groupId, participantId: participant.id, unreadCount };
+  return { conversationId, groupId, participantId: participant.id, unreadCount, status };
 }

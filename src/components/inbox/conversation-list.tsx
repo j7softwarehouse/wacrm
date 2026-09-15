@@ -12,7 +12,10 @@ import {
   sortConversationsByRecency,
 } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
-import { CONVERSATION_STATUS_DOT_CLASS } from "@/lib/inbox/conversation-status";
+import {
+  CONVERSATION_STATUS_DOT_CLASS,
+  reopenStaleClosedConversations,
+} from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
@@ -112,6 +115,13 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
+      // Reabre o que está fechado há mais de 24h ANTES de listar, senão a
+      // lista mostraria por um instante o status velho. Escopado à conta
+      // pela RLS; ver conversation-status.ts para por que isto roda aqui
+      // e não numa cron.
+      await reopenStaleClosedConversations(supabase);
+      if (cancelled) return;
+
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)

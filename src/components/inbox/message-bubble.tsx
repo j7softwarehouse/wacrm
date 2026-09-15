@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { splitHighlight } from "@/lib/inbox/message-search";
 import type { Message, MessageReaction } from "@/types";
 import {
   Clock,
@@ -35,6 +36,11 @@ interface MessageBubbleProps {
   /** Nome do autor a estampar; ausente (automação/broadcast/API) cai
    * no rótulo "Sistema". */
   authorName?: string;
+  /** Termo da busca dentro da conversa; vazio = sem destaque. */
+  highlightQuery?: string;
+  /** True na ocorrência "atual" da busca — ganha um anel para o
+   *  atendente saber em qual das ocorrências ele está. */
+  highlightActive?: boolean;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -182,12 +188,39 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
  * normal pra nota — a leitura fica "isto veio de outro lugar" + "isto
  * eu escrevi agora", igual a intenção visual do WhatsApp de verdade.
  */
+/**
+ * Texto com o trecho buscado destacado (busca dentro da conversa). Sem
+ * busca ativa, renderiza o texto puro — nenhum nó extra no caminho
+ * normal, que é a esmagadora maioria dos renders.
+ */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  return (
+    <>
+      {splitHighlight(text, query).map((chunk, i) =>
+        chunk.match ? (
+          <mark
+            key={i}
+            className="rounded-sm bg-amber-300 px-0.5 text-foreground dark:bg-amber-400/80"
+          >
+            {chunk.text}
+          </mark>
+        ) : (
+          <span key={i}>{chunk.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 function ForwardableText({
   message,
   className,
+  highlightQuery = "",
 }: {
   message: Message;
   className?: string;
+  highlightQuery?: string;
 }) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const full = message.content_text ?? "";
@@ -196,7 +229,11 @@ function ForwardableText({
   const hasSplit = !!note && full.endsWith(suffix);
 
   if (!hasSplit) {
-    return <p className={cn("whitespace-pre-wrap break-words text-sm", className)}>{full}</p>;
+    return (
+      <p className={cn("whitespace-pre-wrap break-words text-sm", className)}>
+        <Highlighted text={full} query={highlightQuery} />
+      </p>
+    );
   }
 
   const original = full.slice(0, full.length - suffix.length);
@@ -212,15 +249,25 @@ function ForwardableText({
               : "border-primary bg-muted/60 text-foreground/90",
           )}
         >
-          {original}
+          <Highlighted text={original} query={highlightQuery} />
         </div>
       )}
-      <p className="text-sm whitespace-pre-wrap break-words">{note}</p>
+      <p className="text-sm whitespace-pre-wrap break-words">
+        <Highlighted text={note ?? ""} query={highlightQuery} />
+      </p>
     </div>
   );
 }
 
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+function MessageContent({
+  message,
+  t,
+  highlightQuery = "",
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  highlightQuery?: string;
+}) {
   if (message.deleted_at) {
     return (
       <p className="text-sm italic text-muted-foreground">
@@ -231,7 +278,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
 
   switch (message.content_type) {
     case "text":
-      return <ForwardableText message={message} />;
+      return <ForwardableText message={message} highlightQuery={highlightQuery} />;
 
     case "image":
       return (
@@ -242,7 +289,11 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("photo")} t={t} />
           )}
           {message.content_text && (
-            <ForwardableText message={message} className="mt-1" />
+            <ForwardableText
+              message={message}
+              className="mt-1"
+              highlightQuery={highlightQuery}
+            />
           )}
         </div>
       );
@@ -269,7 +320,11 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("video")} t={t} />
           )}
           {message.content_text && (
-            <ForwardableText message={message} className="mt-1" />
+            <ForwardableText
+              message={message}
+              className="mt-1"
+              highlightQuery={highlightQuery}
+            />
           )}
         </div>
       );
@@ -376,6 +431,8 @@ export function MessageBubble({
   onToggleReaction,
   showAuthor,
   authorName,
+  highlightQuery = "",
+  highlightActive = false,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -397,6 +454,9 @@ export function MessageBubble({
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
+          // Ocorrência atual da busca: um anel marca em qual das N
+          // ocorrências o atendente está, já que todas ficam destacadas.
+          highlightActive && "ring-2 ring-amber-400 ring-offset-1 ring-offset-background",
         )}
       >
         {reply && (
@@ -434,7 +494,7 @@ export function MessageBubble({
             {t("forwardedTag")}
           </span>
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent message={message} t={t} highlightQuery={highlightQuery} />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
