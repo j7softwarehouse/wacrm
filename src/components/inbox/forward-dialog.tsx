@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 
 const MAX_DESTINATIONS = 5;
 
@@ -84,11 +85,13 @@ export function ForwardDialog({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setSearch("");
     setSelected(new Set());
+    setNote("");
     setLoading(true);
 
     let cancelled = false;
@@ -185,7 +188,10 @@ export function ForwardDialog({
       const res = await fetch(`/api/whatsapp/messages/${messageId}/forward`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationIds: Array.from(selected) }),
+        body: JSON.stringify({
+          conversationIds: Array.from(selected),
+          note: note.trim() || undefined,
+        }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -295,6 +301,18 @@ export function ForwardDialog({
               </div>
             </ScrollArea>
           )}
+
+          {/* Opcional, igual ao WhatsApp: manda como mensagem comum
+              separada, DEPOIS da encaminhada — nunca junto na mesma
+              bolha (não é uma legenda da mensagem original). */}
+          <Textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t("notePlaceholder")}
+            disabled={sending}
+            rows={2}
+            className="resize-none text-sm"
+          />
         </div>
 
         <DialogFooter>

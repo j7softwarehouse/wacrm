@@ -363,4 +363,94 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(json.results[0].ok).toBe(false);
     expect(json.results[1].ok).toBe(true);
   });
+
+  it('envia a mensagem adicional (note) como texto comum, DEPOIS do encaminhado', async () => {
+    mocks.createClient.mockResolvedValue(comSessao());
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a'], note: 'Olha isso aí' }),
+      { params },
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.sent).toBe(1);
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(2);
+    const [forwardCall, noteCall] = mocks.sendMessageToConversation.mock.calls.map(
+      (c) => c[2],
+    );
+    expect(forwardCall).toMatchObject({ conversationId: 'conv-a', forwarded: true });
+    // A nota NUNCA carrega forwarded: true -- é uma mensagem comum, não
+    // uma cópia encaminhada.
+    expect(noteCall).toMatchObject({
+      conversationId: 'conv-a',
+      messageType: 'text',
+      contentText: 'Olha isso aí',
+    });
+    expect(noteCall.forwarded).toBeFalsy();
+  });
+
+  it('nao manda a nota quando o campo vem vazio ou so espaco', async () => {
+    mocks.createClient.mockResolvedValue(comSessao());
+
+    await POST(request({ conversationIds: ['conv-a'], note: '   ' }), { params });
+
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('se a nota falhar depois de um encaminhamento bem-sucedido, o destino conta como falho', async () => {
+    mocks.createClient.mockResolvedValue(comSessao());
+    mocks.sendMessageToConversation
+      .mockResolvedValueOnce({ messageId: 'm1', whatsappMessageId: 'WA1' }) // encaminhado ok
+      .mockRejectedValueOnce(new Error('nota falhou')); // nota falha
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a'], note: 'segue o link' }),
+      { params },
+    );
+    const json = await res.json();
+
+    expect(json.sent).toBe(0);
+    expect(json.results[0].ok).toBe(false);
+    expect(json.results[0].error).toMatch(/nota falhou/i);
+  });
+
+  it('nao tenta mandar a nota quando o proprio encaminhamento ja falhou', async () => {
+    mocks.createClient.mockResolvedValue(comSessao());
+    mocks.sendMessageToConversation.mockRejectedValueOnce(new Error('canal caiu'));
+
+    await POST(request({ conversationIds: ['conv-a'], note: 'oi' }), { params });
+
+    // Só a tentativa do encaminhamento -- a nota nunca chega a ser
+    // tentada pra um destino que já falhou.
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('rate limit na NOTA para os proximos destinos, igual ao encaminhamento', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        destinations: [
+          { id: 'conv-a', channel_id: 'chan-1' },
+          { id: 'conv-b', channel_id: 'chan-1' },
+        ],
+      }),
+    );
+    const { ProviderRateLimitError } = await import('@/lib/whatsapp/providers/types');
+    mocks.sendMessageToConversation
+      .mockResolvedValueOnce({ messageId: 'm1', whatsappMessageId: 'WA1' }) // encaminhado conv-a ok
+      .mockRejectedValueOnce(
+        new ProviderRateLimitError('uazapi', { providerMessage: 'limite atingido' }),
+      ); // nota conv-a bate no limite
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a', 'conv-b'], note: 'oi' }),
+      { params },
+    );
+    const json = await res.json();
+
+    expect(json.sent).toBe(0);
+    // conv-b nem chega a ter o encaminhamento tentado.
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(2);
+    expect(json.results[1].error).toMatch(/rate limit/i);
+  });
 });

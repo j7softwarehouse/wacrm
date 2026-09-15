@@ -309,7 +309,8 @@
       "success": "{count}개 대화로 메시지를 전달했습니다",
       "partialFailure": "{count}개 대화가 수신하지 못했습니다",
       "error": "메시지를 전달할 수 없습니다.",
-      "usingChannel": "{label} 채널로 전달 중"
+      "usingChannel": "{label} 채널로 전달 중",
+      "notePlaceholder": "메시지 추가 (선택 사항)"
     }
   },
   "Contacts": {

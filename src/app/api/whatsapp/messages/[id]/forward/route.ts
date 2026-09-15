@@ -94,6 +94,12 @@ export async function POST(
     const conversationIds: string[] = Array.isArray(body?.conversationIds)
       ? body.conversationIds.filter((c: unknown) => typeof c === 'string')
       : [];
+    // Mensagem opcional que acompanha o encaminhamento — igual ao
+    // WhatsApp, que deixa escrever algo na própria tela de "Encaminhar
+    // para". Vai como mensagem COMUM separada, nunca com forwarded:
+    // true (não é uma cópia da original, é conteúdo novo do atendente).
+    const note: string =
+      typeof body?.note === 'string' ? body.note.trim() : '';
 
     if (conversationIds.length === 0) {
       return NextResponse.json(
@@ -238,6 +244,17 @@ export async function POST(
           senderUserId: user.id,
           forwarded: true,
         });
+        // A nota só tenta DEPOIS do encaminhamento ter saído — se ela
+        // falhar, o destino inteiro conta como falho: do ponto de vista
+        // do atendente, "encaminhar com uma mensagem" é uma entrega só.
+        if (note) {
+          await sendMessageToConversation(supabase, accountId, {
+            conversationId: destinationId,
+            messageType: 'text',
+            contentText: note,
+            senderUserId: user.id,
+          });
+        }
         results.push({ conversationId: destinationId, ok: true });
       } catch (err) {
         if (err instanceof ProviderRateLimitError) {
