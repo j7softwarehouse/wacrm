@@ -12,6 +12,15 @@
 > API). O restante desta spec (atribuição de operador a canal via
 > `channel_members`, escopo de conversas por canal na Caixa de Entrada)
 > continua válido e não implementado.
+>
+> **Atualização 2026-09-15:** a decisão de fazer o próprio `viewer` passar
+> a escrever foi **substituída** por
+> `2026-09-15-escopo-de-conversas-design.md`, que separa papel e escopo em
+> eixos independentes — o `viewer` segue somente-leitura e quem responde
+> com alcance reduzido é o `agent` com escopo restrito. O escopo da caixa
+> de entrada passa a ser por **atribuição da conversa**, não por canal. A
+> atribuição por canal (`channel_members`) continua válida, em aberto e
+> não implementada — os dois eixos são compatíveis.
 
 ## 1. Objetivo
 
