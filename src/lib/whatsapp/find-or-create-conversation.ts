@@ -31,17 +31,28 @@ type FindOrCreateSupabase = Awaited<ReturnType<typeof createClient>>
  * inbound webhook's channel-scoped lookup fork into two threads, and the
  * next send's `.maybeSingle()` errors on two rows → insert → unique
  * violation on the NULL slot → permanent 500 for that contact.
+ *
+ * `explicitChannelId` (2026-09-15): quando o chamador já sabe qual canal
+ * quer usar (o seletor de canal em Contatos, quando a conta tem 2+
+ * números), a busca fica restrita a ESSE canal — nunca casa com uma
+ * conversa órfã (`channel_id` nulo). Diferente do caminho automático:
+ * uma conversa órfã pode, de fato, pertencer a OUTRO canal cujo id já
+ * foi apagado (ver [[wacrm-canal-identidade-telefone]]), e adotá-la
+ * aqui misturaria conversas entre canais que o usuário quer
+ * independentes. Uma escolha explícita sempre cria uma conversa nova
+ * nesse canal quando não encontra uma já existente ali.
  */
 export async function findOrCreateConversationForContact(
   supabase: FindOrCreateSupabase,
   accountId: string,
   userId: string,
   contactId: string,
+  explicitChannelId?: string,
 ): Promise<string | null> {
   // May legitimately be null (account has no channel at all). The send
   // itself fails later with a clear "not configured" error; we still
   // want the find-or-create to behave sanely in the meantime.
-  const channelId = await resolveDefaultChannelId(supabase, accountId)
+  const channelId = explicitChannelId ?? (await resolveDefaultChannelId(supabase, accountId))
 
   // Ordered oldest-first + `.limit(1)` rather than `.maybeSingle()`:
   // maybeSingle errors on ≥2 rows, and the old code treated that error
@@ -51,10 +62,12 @@ export async function findOrCreateConversationForContact(
     .select('id, channel_id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
-  // `channelId` is a UUID this function just read from our own
-  // `whatsapp_channels` table — never caller-supplied text — so
-  // interpolating it into PostgREST's `or` filter grammar is safe.
-  if (channelId) {
+  if (explicitChannelId) {
+    query = query.eq('channel_id', explicitChannelId)
+  } else if (channelId) {
+    // `channelId` is a UUID this function just read from our own
+    // `whatsapp_channels` table — never caller-supplied text — so
+    // interpolating it into PostgREST's `or` filter grammar is safe.
     query = query.or(`channel_id.eq.${channelId},channel_id.is.null`)
   }
   const { data: existingRows, error: findError } = await query
@@ -68,7 +81,9 @@ export async function findOrCreateConversationForContact(
 
   if (existingRows && existingRows.length > 0) {
     const found = existingRows[0]
-    if (channelId && !found.channel_id) {
+    // Cura de órfã só no caminho AUTOMÁTICO — ver comentário de
+    // `explicitChannelId` acima.
+    if (!explicitChannelId && channelId && !found.channel_id) {
       // Heal the orphan. `.is('channel_id', null)` makes this a no-op if
       // a concurrent writer already claimed it.
       await supabase

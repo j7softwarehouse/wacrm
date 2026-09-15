@@ -323,6 +323,11 @@
     "newBadge": "New",
     "newBadgeTooltip": "Unidentified contact — arrived via inbound message",
     "filterUnidentified": "Unidentified only",
+    "channelPicker": {
+      "chooseChannel": "Choose channel",
+      "existingConversation": "open conversation",
+      "newConversation": "start new"
+    },
     "page": {
       "title": "Contacts",
       "subtitle": "Manage your contact list. {count} total contacts.",

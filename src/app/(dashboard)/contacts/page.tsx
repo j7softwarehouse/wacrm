@@ -1,10 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { openConversationForContact } from '@/lib/contacts/open-conversation';
 import type { Contact, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +43,6 @@ import {
   Pencil,
   Trash2,
   Loader2,
-  MessageCircle,
   Users,
   ChevronLeft,
   ChevronRight,
@@ -60,10 +57,12 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { ConversarButton } from '@/components/contacts/conversar-button';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
 import { CONTACT_SOURCE, isUnidentified } from '@/lib/contacts/source';
+import type { PublicChannel } from '@/app/api/whatsapp/channels/route';
 
 const PAGE_SIZE = 25;
 
@@ -76,7 +75,6 @@ export default function ContactsPage() {
   // Shared with the inbox contact panel — kept at the `Contacts` root
   // (not `.page`) so both consumers read the same badge/filter copy.
   const tContacts = useTranslations('Contacts');
-  const router = useRouter();
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
@@ -122,9 +120,9 @@ export default function ContactsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
-  // Which row's "Conversar" button is mid-flight, so only that row shows
-  // a spinner instead of freezing the whole table.
-  const [openingConvContactId, setOpeningConvContactId] = useState<string | null>(null);
+  // Lista de canais da conta — decide se o botão "Conversar" mostra um
+  // menu de escolha de canal (2+) ou o comportamento automático de sempre.
+  const [channels, setChannels] = useState<PublicChannel[]>([]);
 
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -276,6 +274,16 @@ export default function ContactsPage() {
   }, [fetchTags]);
 
   useEffect(() => {
+    (async () => {
+      const res = await fetch('/api/whatsapp/channels');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data?.channels)) {
+        setChannels(data.channels);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
@@ -299,17 +307,6 @@ export default function ContactsPage() {
   function openDetail(contactId: string) {
     setDetailContactId(contactId);
     setDetailOpen(true);
-  }
-
-  async function goToConversation(contactId: string) {
-    setOpeningConvContactId(contactId);
-    try {
-      const conversationId = await openConversationForContact(contactId);
-      router.push(`/inbox?c=${conversationId}`);
-    } catch {
-      toast.error(t('toastFailedOpenConversation'));
-      setOpeningConvContactId(null);
-    }
   }
 
   function confirmDelete(contact: Contact) {
@@ -783,25 +780,16 @@ export default function ContactsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
-                      <GatedButton
-                        variant="ghost"
-                        size="icon-sm"
-                        canAct={canEdit}
-                        gateReason="send messages"
-                        title={t('goToConversationBtn')}
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          goToConversation(contact.id);
-                        }}
-                        disabled={openingConvContactId === contact.id}
-                      >
-                        {openingConvContactId === contact.id ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <MessageCircle className="size-4" />
-                        )}
-                      </GatedButton>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <ConversarButton
+                          contactId={contact.id}
+                          channels={channels}
+                          canAct={canEdit}
+                          gateReason="send messages"
+                          label={t('goToConversationBtn')}
+                          onError={() => toast.error(t('toastFailedOpenConversation'))}
+                        />
+                      </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={

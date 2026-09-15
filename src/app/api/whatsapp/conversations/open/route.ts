@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { contact_id } = await request.json()
+    const { contact_id, channel_id } = await request.json()
     if (!contact_id) {
       return NextResponse.json({ error: 'contact_id is required' }, { status: 400 })
     }
@@ -62,11 +62,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     }
 
+    // channel_id vem do seletor de canal em Contatos (quando a conta tem
+    // 2+ canais). Confirma que pertence à mesma conta antes de repassar —
+    // senão um id forjado/de outra conta escolheria canal alheio.
+    let explicitChannelId: string | undefined
+    if (channel_id) {
+      const { data: channelRow } = await supabase
+        .from('whatsapp_channels')
+        .select('id')
+        .eq('id', channel_id)
+        .eq('account_id', accountId)
+        .maybeSingle()
+      if (!channelRow) {
+        return NextResponse.json({ error: 'Invalid channel_id' }, { status: 400 })
+      }
+      explicitChannelId = channel_id
+    }
+
     const conversationId = await findOrCreateConversationForContact(
       supabase,
       accountId,
       user.id,
       contact_id,
+      explicitChannelId,
     )
     if (!conversationId) {
       return NextResponse.json(

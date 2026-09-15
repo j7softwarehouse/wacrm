@@ -12,6 +12,10 @@ const conversationInserts: Array<Record<string, unknown>> = []
 let existingConversation: Record<string, unknown> | null = null
 let contactRow: Record<string, unknown> | null = null
 let createdConversation: Record<string, unknown> | null = null
+// Canal "de verdade" pertencente à conta, usado pela checagem de posse de
+// `channel_id` explícito na rota. `null` simula um id que não pertence a
+// esta conta (forjado ou de outra conta).
+let ownedChannel: Record<string, unknown> | null = { id: 'chan-2' }
 
 const CONTACT = {
   id: 'contact-1',
@@ -22,6 +26,7 @@ const CONTACT = {
 function makeSupabaseMock() {
   function builder(table: string) {
     let didInsert = false
+    const eqCalls: Array<[string, unknown]> = []
 
     const selectResult = () => {
       switch (table) {
@@ -31,8 +36,14 @@ function makeSupabaseMock() {
           return { data: contactRow, error: null }
         case 'conversations':
           return { data: createdConversation ?? existingConversation, error: null }
-        case 'whatsapp_channels':
+        case 'whatsapp_channels': {
+          const idFilter = eqCalls.find(([col]) => col === 'id')
+          if (idFilter) {
+            const [, id] = idFilter
+            return { data: ownedChannel && ownedChannel.id === id ? ownedChannel : null, error: null }
+          }
           return { data: { id: 'chan-1' }, error: null }
+        }
         default:
           return { data: null, error: null }
       }
@@ -59,9 +70,13 @@ function makeSupabaseMock() {
 
     const b: Record<string, unknown> = {}
     const chain = () => b
-    for (const m of ['select', 'eq', 'in', 'or', 'is', 'order', 'limit', 'update']) {
+    for (const m of ['select', 'in', 'or', 'is', 'order', 'limit', 'update']) {
       b[m] = vi.fn(chain)
     }
+    b.eq = vi.fn((col: string, val: unknown) => {
+      eqCalls.push([col, val])
+      return b
+    })
     b.insert = vi.fn((payload: Record<string, unknown>) => {
       didInsert = true
       if (table === 'conversations') {
@@ -115,6 +130,7 @@ describe('POST /api/whatsapp/conversations/open', () => {
     existingConversation = null
     createdConversation = null
     contactRow = CONTACT
+    ownedChannel = { id: 'chan-2' }
     supabaseMock = makeSupabaseMock()
   })
 
@@ -170,5 +186,41 @@ describe('POST /api/whatsapp/conversations/open', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+
+  it('uses an explicit channel_id that belongs to the account, instead of the default channel', async () => {
+    ownedChannel = { id: 'chan-2' }
+
+    const res = await postOpen({ channel_id: 'chan-2' })
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.conversation_id).toBe('conv-new')
+    expect(conversationInserts).toHaveLength(1)
+    expect(conversationInserts[0]).toMatchObject({
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      channel_id: 'chan-2',
+    })
+  })
+
+  it('400s when channel_id does not belong to the caller account', async () => {
+    ownedChannel = null // simula id forjado ou de outra conta
+
+    const res = await postOpen({ channel_id: 'chan-alheio' })
+    const json = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(json.error).toMatch(/channel/i)
+    expect(conversationInserts).toHaveLength(0)
+  })
+
+  it('falls back to the default channel when channel_id is not provided', async () => {
+    const res = await postOpen()
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.conversation_id).toBe('conv-new')
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-1' })
   })
 })

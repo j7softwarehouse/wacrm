@@ -323,6 +323,11 @@
     "newBadge": "Novo",
     "newBadgeTooltip": "Contato ainda não identificado — chegou por mensagem recebida",
     "filterUnidentified": "Somente não identificados",
+    "channelPicker": {
+      "chooseChannel": "Escolher canal",
+      "existingConversation": "abrir conversa",
+      "newConversation": "iniciar nova"
+    },
     "page": {
       "title": "Contatos",
       "subtitle": "Gerencie sua lista de contatos. {count} contatos no total.",

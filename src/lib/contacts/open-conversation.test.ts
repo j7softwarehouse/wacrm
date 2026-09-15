@@ -25,6 +25,24 @@ describe('openConversationForContact', () => {
     )
   })
 
+  it('sends the channelId when provided, targeting a specific channel', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ conversation_id: 'conv-1' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await openConversationForContact('contact-1', 'chan-2')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/whatsapp/conversations/open',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ contact_id: 'contact-1', channel_id: 'chan-2' }),
+      }),
+    )
+  })
+
   it('throws the server error message when the request fails', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: false,
