@@ -15,18 +15,19 @@ export interface ChannelColorClasses {
   border: string;
 }
 
-// Tons escolhidos por serem visualmente distintos entre si e legíveis
-// tanto no tema claro quanto escuro (mesma família de saturação/brilho
-// que os badges de status já usam no resto do app).
+// Poucas cores, bem espaçadas no círculo cromático (vermelho, laranja,
+// verde, azul, roxo, rosa) em vez de muitas — a primeira versão tinha
+// emerald/cyan/lime lado a lado, tons de verde/ciano parecidos demais
+// entre si num badge pequeno (achado do usuário testando com 2 canais
+// reais). Poucas cores bem separadas garantem contraste mesmo com só
+// 2-3 canais ativos, que é o caso comum.
 const PALETTE: ChannelColorClasses[] = [
-  { dot: "bg-sky-500", text: "text-sky-500", border: "border-sky-500/40" },
-  { dot: "bg-emerald-500", text: "text-emerald-500", border: "border-emerald-500/40" },
-  { dot: "bg-amber-500", text: "text-amber-500", border: "border-amber-500/40" },
-  { dot: "bg-fuchsia-500", text: "text-fuchsia-500", border: "border-fuchsia-500/40" },
-  { dot: "bg-rose-500", text: "text-rose-500", border: "border-rose-500/40" },
-  { dot: "bg-cyan-500", text: "text-cyan-500", border: "border-cyan-500/40" },
-  { dot: "bg-lime-500", text: "text-lime-500", border: "border-lime-500/40" },
+  { dot: "bg-red-500", text: "text-red-500", border: "border-red-500/40" },
+  { dot: "bg-orange-500", text: "text-orange-500", border: "border-orange-500/40" },
+  { dot: "bg-green-500", text: "text-green-500", border: "border-green-500/40" },
+  { dot: "bg-blue-500", text: "text-blue-500", border: "border-blue-500/40" },
   { dot: "bg-violet-500", text: "text-violet-500", border: "border-violet-500/40" },
+  { dot: "bg-pink-500", text: "text-pink-500", border: "border-pink-500/40" },
 ];
 
 export function channelColor(channelId: string): ChannelColorClasses {
