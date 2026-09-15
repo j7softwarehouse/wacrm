@@ -33,18 +33,62 @@ export async function resolveGroupConversation(
   userId: string,
   group: { groupJid: string; participantJid: string; participantName?: string },
 ): Promise<ResolvedGroupConversation | null> {
-  const { data: existing } = await db
+  // Busca TODAS as linhas deste grupo na conta (não só a do canal atual):
+  // necessário pra curar uma linha ÓRFÃ (channel_id nulo, deixada por um
+  // canal recriado/removido — ver [[wacrm-canal-identidade-telefone]])
+  // em vez de criar uma segunda linha desabilitada e descartar a
+  // mensagem em silêncio. Achado ao vivo em 2026-09-15: a instância
+  // UAZAPI de homolog foi recriada várias vezes na mesma sessão, e todo
+  // grupo antes habilitado virou órfão — cada mensagem nova passou a
+  // criar uma linha nova e desabilitada pro canal atual, com a órfã
+  // (ainda mostrada como "ligada" na tela de Configurações) nunca mais
+  // recebendo nada.
+  const { data: rows, error: findError } = await db
     .from('whatsapp_groups')
-    .select('id, enabled')
+    .select('id, channel_id, enabled')
     .eq('account_id', accountId)
-    .eq('channel_id', channelId)
-    .eq('group_jid', group.groupJid)
-    .maybeSingle();
+    .eq('group_jid', group.groupJid);
+
+  if (findError) return null;
+
+  const rowsList = rows ?? [];
+  const current = rowsList.find((r) => r.channel_id === channelId) ?? null;
+  const orphan = rowsList.find((r) => r.channel_id === null) ?? null;
 
   let groupId: string;
   let enabled: boolean;
 
-  if (!existing) {
+  if (orphan) {
+    // A órfã é a fonte de verdade (enabled, histórico) de antes do canal
+    // ser recriado. Se já existe uma linha ruim pro canal atual (criada
+    // por uma mensagem que chegou ANTES desta cura existir), funde as
+    // duas — mesma lógica de merge-orphaned-groups.ts, só que aqui é a
+    // ÓRFÃ que sobrevive (ela é quem carrega o enabled/histórico real).
+    if (current && current.id !== orphan.id) {
+      await db
+        .from('conversations')
+        .update({ group_id: orphan.id })
+        .eq('group_id', current.id);
+      await db.from('whatsapp_groups').delete().eq('id', current.id);
+    }
+    // `.is('channel_id', null)` torna isto um no-op se outro processo já
+    // curou a mesma linha entre o SELECT acima e este UPDATE.
+    await db
+      .from('conversations')
+      .update({ channel_id: channelId })
+      .eq('group_id', orphan.id)
+      .is('channel_id', null);
+    await db
+      .from('whatsapp_groups')
+      .update({ channel_id: channelId })
+      .eq('id', orphan.id)
+      .is('channel_id', null);
+    groupId = orphan.id;
+    enabled = orphan.enabled;
+  } else if (current) {
+    groupId = current.id;
+    enabled = current.enabled;
+  } else {
     const { data: created, error } = await db
       .from('whatsapp_groups')
       .insert({
@@ -58,9 +102,6 @@ export async function resolveGroupConversation(
     if (error || !created) return null;
     groupId = created.id;
     enabled = false;
-  } else {
-    groupId = existing.id;
-    enabled = existing.enabled;
   }
 
   // Grupo não habilitado: já está registrado para a tela de seleção,
