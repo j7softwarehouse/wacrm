@@ -58,7 +58,18 @@ export function ConversationList({
   channelsById,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  
+
+  // Lista de telefones da conta, pra `channelColor` posicionar cada
+  // canal numa cor fixa (ver channel-color.ts) — recalcula só quando o
+  // conjunto de canais muda, não a cada render.
+  const allPhones = useMemo(
+    () =>
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
+  );
+
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
@@ -430,6 +441,7 @@ export function ConversationList({
                 // A cor só ajuda quando há o que diferenciar — com um
                 // canal só, seria ruído visual sem propósito.
                 multiChannel={(channelsById?.size ?? 0) > 1}
+                allPhones={allPhones}
                 t={t}
               />
             ))}
@@ -453,6 +465,9 @@ interface ConversationItemProps {
   channel?: PublicChannel;
   /** Só true quando a conta tem 2+ canais — aí sim vale colorir. */
   multiChannel?: boolean;
+  /** Telefones de TODOS os canais da conta, na mesma ordem usada pra
+   *  posicionar a cor de cada um (ver channel-color.ts). */
+  allPhones: string[];
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -462,6 +477,7 @@ function ConversationItem({
   onSelect,
   channel,
   multiChannel,
+  allPhones,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -470,14 +486,16 @@ function ConversationItem({
   const label = channel ? channelLabel(channel) : undefined;
   // `channel` já vem com o fallback pro canal padrão aplicado (ver
   // comentário em `channelsById?.values().next().value` na chamada) —
-  // usar `channel.id` aqui em vez de `conversation.channel_id` bruto é
-  // o que faz uma conversa órfã (canal removido) mostrar a MESMA cor
-  // que o cabeçalho da conversa já mostra, em vez de nenhum selo.
-  // Cor pelo TELEFONE, não pelo id do canal: recriar a instância
-  // UAZAPI do mesmo número troca o id, e a cor mudaria toda hora sem
-  // motivo — mesmo raciocínio de channel-identity.ts.
+  // usar `channel.phone_e164` aqui em vez de `conversation.channel_id`
+  // bruto é o que faz uma conversa órfã (canal removido) mostrar a
+  // MESMA cor que o cabeçalho da conversa já mostra, em vez de nenhum
+  // selo. A posição na paleta vem do TELEFONE, não do id do canal:
+  // recriar a instância UAZAPI do mesmo número não pode mudar a cor
+  // (mesmo raciocínio de channel-identity.ts).
   const color =
-    multiChannel && channel ? channelColor(channel.phone_e164 || channel.id) : undefined;
+    multiChannel && channel?.phone_e164
+      ? channelColor(channel.phone_e164, allPhones)
+      : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);

@@ -3,6 +3,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   sendMessageToConversation: vi.fn(),
+  // Preenchido pelo fake de `messages.update()` -- não passa por
+  // `comSessao()` porque os testes já existentes chamam `comSessao()`
+  // como o cliente inteiro, sem embrulho; um array hoisted evita
+  // reescrever todas as chamadas só pra capturar isso.
+  messageUpdates: [] as { id: string; patch: Record<string, unknown> }[],
 }));
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }));
@@ -69,6 +74,12 @@ function comSessao(options: {
         return {
           select: () => ({
             eq: () => ({ maybeSingle: async () => ({ data: message, error: null }) }),
+          }),
+          update: (patch: Record<string, unknown>) => ({
+            eq: async (_col: string, id: string) => {
+              mocks.messageUpdates.push({ id, patch });
+              return { data: null, error: null };
+            },
           }),
         };
       }
@@ -146,6 +157,7 @@ const params = Promise.resolve({ id: 'msg-1' });
 describe('POST /api/whatsapp/messages/[id]/forward', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.messageUpdates.length = 0;
     mocks.sendMessageToConversation.mockResolvedValue({
       messageId: 'm-novo',
       whatsappMessageId: 'WA1',
@@ -385,6 +397,11 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
       forwarded: true,
       contentText: 'bom dia\n\nOlha isso aí',
     });
+    // Grava a nota separada também -- é o que deixa a bolha do CRM
+    // saber onde o trecho digitado começa dentro do content_text.
+    expect(mocks.messageUpdates).toEqual([
+      { id: 'm-novo', patch: { forwarded_note: 'Olha isso aí' } },
+    ]);
   });
 
   it('junta a nota como legenda quando a mensagem original e midia (imagem/video/documento)', async () => {
@@ -446,6 +463,9 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(forwardCall.contentText).toBeNull();
     expect(noteCall).toMatchObject({ messageType: 'text', contentText: 'ouve isso' });
     expect(noteCall.forwarded).toBeFalsy();
+    // Em áudio a nota NUNCA foi anexada ao content_text encaminhado --
+    // não há o que gravar em forwarded_note pra essa mensagem.
+    expect(mocks.messageUpdates).toEqual([]);
   });
 
   it('nao muda o conteudo quando o campo nota vem vazio ou so espaco', async () => {

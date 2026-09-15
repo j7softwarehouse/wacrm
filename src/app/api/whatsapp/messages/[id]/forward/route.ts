@@ -249,7 +249,7 @@ export async function POST(
         continue;
       }
       try {
-        await sendMessageToConversation(supabase, accountId, {
+        const forwardResult = await sendMessageToConversation(supabase, accountId, {
           conversationId: destinationId,
           messageType: contentType,
           contentText: combinedContentText,
@@ -258,6 +258,17 @@ export async function POST(
           senderUserId: user.id,
           forwarded: true,
         });
+        // A nota foi anexada ao MESMO content_text que acabou de ser
+        // enviado — grava separada também, só pra bolha do CRM saber
+        // onde o trecho digitado pelo atendente começa (ver migration
+        // 20260915000001). Não falha o encaminhamento se isto der
+        // errado: é cosmético, o conteúdo real já saiu certo.
+        if (note && !noteMustBeSeparateMessage) {
+          await supabase
+            .from('messages')
+            .update({ forwarded_note: note })
+            .eq('id', forwardResult.messageId);
+        }
         // Só chega aqui quando a nota NÃO pôde ir junto (áudio). Tenta
         // DEPOIS do encaminhamento ter saído — se ela falhar, o destino
         // inteiro conta como falho: pro atendente, "encaminhar com uma

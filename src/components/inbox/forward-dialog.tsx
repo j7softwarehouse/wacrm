@@ -144,6 +144,10 @@ export function ForwardDialog({
     () => resolveChannelPhone(channelId ?? null, phoneByChannelId, defaultChannelId),
     [channelId, phoneByChannelId, defaultChannelId],
   );
+  const allPhones = useMemo(
+    () => Array.from(phoneByChannelId.values()).filter((p): p is string => !!p),
+    [phoneByChannelId],
+  );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -229,7 +233,9 @@ export function ForwardDialog({
                   "h-1.5 w-1.5 shrink-0 rounded-full",
                   // Pelo telefone já resolvido, não pelo id do canal —
                   // mesma cor que a lista/cabeçalho mostram pro mesmo número.
-                  sourcePhone ? channelColor(sourcePhone).dot : "bg-muted-foreground",
+                  sourcePhone
+                    ? channelColor(sourcePhone, allPhones).dot
+                    : "bg-muted-foreground",
                 )}
               />
               {t("usingChannel", { label: channelDisplayLabel })}

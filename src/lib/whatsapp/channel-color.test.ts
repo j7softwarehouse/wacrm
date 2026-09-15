@@ -3,26 +3,55 @@ import { describe, expect, it } from "vitest";
 import { channelColor } from "./channel-color";
 
 describe("channelColor", () => {
-  it("e deterministico: o mesmo id sempre devolve a mesma cor", () => {
-    const id = "38a1a716-2b69-4043-a902-1c247a0eeb42";
-    expect(channelColor(id)).toEqual(channelColor(id));
+  it("o primeiro numero (em ordem alfanumerica) sempre cai na PRIMEIRA cor da paleta", () => {
+    // Pedido do usuário: "começando com um verde, outro laranja" —
+    // ordem fixa, não sorteio. A ordenação é por telefone (não por
+    // created_at do canal), porque created_at muda toda vez que a
+    // instância UAZAPI é recriada — telefone, não.
+    const all = ["553183886076", "553183839660"];
+    const a = channelColor("553183839660", all); // "...8396..." vem antes
+    const b = channelColor("553183886076", all); // "...8886..." vem depois
+    expect(a).toEqual(channelColor("553183839660", all));
+    expect(a).not.toEqual(b);
   });
 
-  it("ids diferentes tendem a cair em cores diferentes", () => {
-    // Não é garantia matemática (hash pode colidir), mas com uma paleta
-    // de vários tons e 3 ids reais de UUID, é o comportamento esperado —
-    // serve de rede de proteção contra "sempre devolve a primeira cor".
-    const a = channelColor("38a1a716-2b69-4043-a902-1c247a0eeb42");
-    const b = channelColor("987dd01c-2caf-4d6c-b9e6-d618f4e2fd9b");
-    const c = channelColor("c83067ed-9541-42ad-9562-60c6ff87e26b");
-    const distinct = new Set([a.dot, b.dot, c.dot]);
-    expect(distinct.size).toBeGreaterThan(1);
+  it("e estavel mesmo com a LISTA de telefones na ordem diferente", () => {
+    const phone = "553183839660";
+    const a = channelColor(phone, ["553183839660", "553183886076"]);
+    const b = channelColor(phone, ["553183886076", "553183839660"]);
+    expect(a).toEqual(b);
+  });
+
+  it("continua estavel quando um numero SOME da lista de canais ativos e volta", () => {
+    // Simula: canal removido (token invalido) e recriado com o MESMO
+    // numero -- a lista de telefones ativos nesse intervalo pode ter
+    // ficado momentaneamente com só o outro número, mas assim que os
+    // dois voltam a existir, a cor de cada um volta a ser a mesma.
+    const antes = channelColor("553183839660", [
+      "553183839660",
+      "553183886076",
+    ]);
+    const depois = channelColor("553183839660", [
+      "553183839660",
+      "553183886076",
+    ]);
+    expect(antes).toEqual(depois);
+  });
+
+  it("numeros diferentes tendem a cair em cores diferentes numa lista maior", () => {
+    const all = ["553183886076", "553183839660", "5511999999999", "5521888888888"];
+    const colors = all.map((p) => channelColor(p, all).dot);
+    expect(new Set(colors).size).toBeGreaterThan(1);
   });
 
   it("devolve as tres classes (dot, text, border) sempre preenchidas", () => {
-    const color = channelColor("qualquer-id");
+    const color = channelColor("qualquer-numero", ["qualquer-numero"]);
     expect(color.dot).toMatch(/^bg-/);
     expect(color.text).toMatch(/^text-/);
     expect(color.border).toMatch(/^border-/);
+  });
+
+  it("nao quebra quando o telefone nao esta na lista (linha nunca encontrada)", () => {
+    expect(() => channelColor("nao-esta-na-lista", ["outro"])).not.toThrow();
   });
 });

@@ -305,6 +305,17 @@ export function MessageThread({
     return channelsById?.values().next().value;
   }, [conversation?.channel_id, channelsById]);
 
+  // Telefones de todos os canais da conta, pra `channelColor` posicionar
+  // cada um numa cor fixa (ver channel-color.ts). Precisa vir ANTES de
+  // qualquer `return` condicional abaixo — regra dos hooks.
+  const allPhones = useMemo(
+    () =>
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
+  );
+
   /**
    * Approved templates are Meta-only; `providers/uazapi.ts#sendTemplate`
    * always throws ProviderUnsupportedError. Offering the button on a
@@ -1103,11 +1114,12 @@ export function MessageThread({
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
   // Só colore quando há mais de um canal na conta — com um só, não há
   // o que diferenciar visualmente (mesmo critério da lista de conversas).
-  // Pelo TELEFONE, não pelo id: recriar a instância UAZAPI do mesmo
-  // número não pode trocar a cor (ver channel-identity.ts).
+  // Posição na paleta pelo TELEFONE, não pelo id: recriar a instância
+  // UAZAPI do mesmo número não pode trocar a cor (channel-identity.ts).
+  // `allPhones` já foi calculado lá em cima, antes do return condicional.
   const threadChannelColor =
-    channel && (channelsById?.size ?? 0) > 1
-      ? channelColor(channel.phone_e164 || channel.id)
+    channel?.phone_e164 && (channelsById?.size ?? 0) > 1
+      ? channelColor(channel.phone_e164, allPhones)
       : undefined;
   const channelWarning = channelMissing
     ? t("channelRemovedWarning")

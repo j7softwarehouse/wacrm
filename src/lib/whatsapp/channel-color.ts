@@ -1,9 +1,18 @@
 // ============================================================
-// Cor determinística por canal — pedido do usuário para identificar
-// visualmente qual número/canal cada conversa pertence quando a conta
-// tem mais de um conectado. Sem coluna nova no banco: a cor é derivada
-// do próprio id do canal (hash simples), então funciona pra qualquer
-// número de canais sem precisar de configuração ou migration.
+// Cor por canal — pedido do usuário para identificar visualmente qual
+// número/canal cada conversa pertence quando a conta tem mais de um
+// conectado.
+//
+// A cor é a POSIÇÃO do telefone numa lista ordenada (alfanumérica) dos
+// telefones da conta — não um hash aleatório do id do canal. Dois
+// motivos:
+//   1. Ordem fixa e previsível: "começa com verde, o segundo laranja"
+//      (pedido explícito), não um sorteio que podia calhar em cores
+//      parecidas.
+//   2. Estabilidade: ordenar por TELEFONE (não por `created_at` do
+//      canal) é o que faz a cor sobreviver a recriar a instância
+//      UAZAPI do mesmo número — `created_at` muda a cada recriação,
+//      o telefone não (mesmo raciocínio de channel-identity.ts).
 // ============================================================
 
 export interface ChannelColorClasses {
@@ -15,26 +24,25 @@ export interface ChannelColorClasses {
   border: string;
 }
 
-// Poucas cores, bem espaçadas no círculo cromático (vermelho, laranja,
-// verde, azul, roxo, rosa) em vez de muitas — a primeira versão tinha
-// emerald/cyan/lime lado a lado, tons de verde/ciano parecidos demais
-// entre si num badge pequeno (achado do usuário testando com 2 canais
-// reais). Poucas cores bem separadas garantem contraste mesmo com só
-// 2-3 canais ativos, que é o caso comum.
+// Tons SUAVES (a versão 400 do Tailwind, não a 500 mais saturada —
+// achado do usuário: a paleta anterior "pesava" na imagem), em ordem
+// fixa começando por verde e laranja como pedido, depois espalhados
+// pelo resto do círculo cromático pra continuar distinguível se a
+// conta crescer além de 2 canais.
 const PALETTE: ChannelColorClasses[] = [
-  { dot: "bg-red-500", text: "text-red-500", border: "border-red-500/40" },
-  { dot: "bg-orange-500", text: "text-orange-500", border: "border-orange-500/40" },
-  { dot: "bg-green-500", text: "text-green-500", border: "border-green-500/40" },
-  { dot: "bg-blue-500", text: "text-blue-500", border: "border-blue-500/40" },
-  { dot: "bg-violet-500", text: "text-violet-500", border: "border-violet-500/40" },
-  { dot: "bg-pink-500", text: "text-pink-500", border: "border-pink-500/40" },
+  { dot: "bg-emerald-400", text: "text-emerald-400", border: "border-emerald-400/40" },
+  { dot: "bg-orange-400", text: "text-orange-400", border: "border-orange-400/40" },
+  { dot: "bg-sky-400", text: "text-sky-400", border: "border-sky-400/40" },
+  { dot: "bg-rose-400", text: "text-rose-400", border: "border-rose-400/40" },
+  { dot: "bg-violet-400", text: "text-violet-400", border: "border-violet-400/40" },
+  { dot: "bg-amber-400", text: "text-amber-400", border: "border-amber-400/40" },
 ];
 
-export function channelColor(channelId: string): ChannelColorClasses {
-  let hash = 0;
-  for (let i = 0; i < channelId.length; i++) {
-    hash = (hash * 31 + channelId.charCodeAt(i)) | 0;
-  }
-  const index = Math.abs(hash) % PALETTE.length;
-  return PALETTE[index];
+export function channelColor(
+  phone: string,
+  allPhones: string[],
+): ChannelColorClasses {
+  const ordered = Array.from(new Set(allPhones)).sort();
+  const index = ordered.indexOf(phone);
+  return PALETTE[Math.max(index, 0) % PALETTE.length];
 }
