@@ -9,6 +9,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
 import { CONVERSATION_STATUS_DOT_CLASS } from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
@@ -57,7 +58,18 @@ export function ConversationList({
   channelsById,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  
+
+  // Lista de telefones da conta, pra `channelColor` posicionar cada
+  // canal numa cor fixa (ver channel-color.ts) — recalcula só quando o
+  // conjunto de canais muda, não a cada render.
+  const allPhones = useMemo(
+    () =>
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
+  );
+
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
@@ -416,9 +428,20 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                // Sem canal próprio (conversa órfã — canal removido de
+                // Configurações): cai no canal mais antigo da conta,
+                // MESMO fallback que a thread já aplica pra liberar
+                // envio (ver comentário em message-thread.tsx). Sem
+                // isto, a linha ficava sem selo nenhum de canal.
                 channel={
-                  conv.channel_id ? channelsById?.get(conv.channel_id) : undefined
+                  conv.channel_id
+                    ? channelsById?.get(conv.channel_id)
+                    : channelsById?.values().next().value
                 }
+                // A cor só ajuda quando há o que diferenciar — com um
+                // canal só, seria ruído visual sem propósito.
+                multiChannel={(channelsById?.size ?? 0) > 1}
+                allPhones={allPhones}
                 t={t}
               />
             ))}
@@ -440,6 +463,11 @@ interface ConversationItemProps {
    * way there's nothing to look up, so the chip below is simply omitted.
    */
   channel?: PublicChannel;
+  /** Só true quando a conta tem 2+ canais — aí sim vale colorir. */
+  multiChannel?: boolean;
+  /** Telefones de TODOS os canais da conta, na mesma ordem usada pra
+   *  posicionar a cor de cada um (ver channel-color.ts). */
+  allPhones: string[];
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -448,12 +476,26 @@ function ConversationItem({
   isActive,
   onSelect,
   channel,
+  multiChannel,
+  allPhones,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
+  // `channel` já vem com o fallback pro canal padrão aplicado (ver
+  // comentário em `channelsById?.values().next().value` na chamada) —
+  // usar `channel.phone_e164` aqui em vez de `conversation.channel_id`
+  // bruto é o que faz uma conversa órfã (canal removido) mostrar a
+  // MESMA cor que o cabeçalho da conversa já mostra, em vez de nenhum
+  // selo. A posição na paleta vem do TELEFONE, não do id do canal:
+  // recriar a instância UAZAPI do mesmo número não pode mudar a cor
+  // (mesmo raciocínio de channel-identity.ts).
+  const color =
+    multiChannel && channel?.phone_e164
+      ? channelColor(channel.phone_e164, allPhones)
+      : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -506,10 +548,19 @@ function ConversationItem({
             )}
             {label && (
               <span
-                className="hidden max-w-24 items-center gap-1 truncate rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                className={cn(
+                  "hidden max-w-24 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] sm:inline-flex",
+                  color
+                    ? cn("bg-transparent", color.text, color.border)
+                    : "border-transparent bg-muted text-muted-foreground",
+                )}
                 title={t("channelHint", { label })}
               >
-                <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                {color ? (
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", color.dot)} />
+                ) : (
+                  <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                )}
                 <span className="truncate">{label}</span>
               </span>
             )}

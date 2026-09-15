@@ -14,6 +14,7 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  Forward,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -170,6 +171,55 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
+/**
+ * Renderiza `content_text`/legenda distinguindo o trecho ENCAMINHADO
+ * do trecho que o atendente digitou junto (`forwarded_note`), pedido
+ * do usuário depois de ver os dois num balão só sem diferença nenhuma
+ * — "gera confusão". O WhatsApp real recebeu tudo como uma string só
+ * (não dá pra colorir texto lá), então a separação é só na nossa
+ * própria bolha: usa o MESMO estilo de bloco citado que already existe
+ * pra resposta (`reply-quote.tsx`) pro trecho encaminhado, e texto
+ * normal pra nota — a leitura fica "isto veio de outro lugar" + "isto
+ * eu escrevi agora", igual a intenção visual do WhatsApp de verdade.
+ */
+function ForwardableText({
+  message,
+  className,
+}: {
+  message: Message;
+  className?: string;
+}) {
+  const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  const full = message.content_text ?? "";
+  const note = message.forwarded_note;
+  const suffix = note ? `\n\n${note}` : "";
+  const hasSplit = !!note && full.endsWith(suffix);
+
+  if (!hasSplit) {
+    return <p className={cn("whitespace-pre-wrap break-words text-sm", className)}>{full}</p>;
+  }
+
+  const original = full.slice(0, full.length - suffix.length);
+
+  return (
+    <div className={cn("space-y-1", className)}>
+      {original && (
+        <div
+          className={cn(
+            "rounded-md border-l-2 px-2 py-1 text-sm whitespace-pre-wrap break-words",
+            isAgent
+              ? "border-primary-foreground/50 bg-primary-foreground/15 text-primary-foreground/90"
+              : "border-primary bg-muted/60 text-foreground/90",
+          )}
+        >
+          {original}
+        </div>
+      )}
+      <p className="text-sm whitespace-pre-wrap break-words">{note}</p>
+    </div>
+  );
+}
+
 function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
   if (message.deleted_at) {
     return (
@@ -181,11 +231,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
 
   switch (message.content_type) {
     case "text":
-      return (
-        <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
-        </p>
-      );
+      return <ForwardableText message={message} />;
 
     case "image":
       return (
@@ -196,9 +242,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("photo")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
+            <ForwardableText message={message} className="mt-1" />
           )}
         </div>
       );
@@ -225,9 +269,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("video")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
+            <ForwardableText message={message} className="mt-1" />
           )}
         </div>
       );
@@ -377,6 +419,19 @@ export function MessageBubble({
         {showAuthor && authorName && (
           <span className="mb-0.5 block text-[11px] font-medium opacity-70">
             {authorName}
+          </span>
+        )}
+        {/* Etiqueta "Encaminhada" ACIMA do conteúdo, como o WhatsApp
+            posiciona — não no rodapé junto do horário. */}
+        {message.forwarded_at && !message.deleted_at && (
+          <span
+            className={cn(
+              "mb-0.5 flex items-center gap-1 text-[11px] italic",
+              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+            )}
+          >
+            <Forward className="h-3 w-3" />
+            {t("forwardedTag")}
           </span>
         )}
         <MessageContent message={message} t={t} />

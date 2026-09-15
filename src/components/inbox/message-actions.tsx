@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, Pencil, SmilePlus, Trash2 } from "lucide-react";
+import { CornerUpLeft, Copy, Forward, Pencil, SmilePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +26,9 @@ interface MessageActionsProps {
   /** Ausente = botão de editar não aparece (mensagem não é de texto,
    *  já apagada, canal não-uazapi, ou sem permissão). */
   onEdit?: () => void;
+  /** Ausente = botão de encaminhar não aparece (mensagem apagada, tipo
+   *  não encaminhável, ou mídia que já expirou do storage). */
+  onForward?: () => void;
   children: ReactNode;
 }
 
@@ -40,6 +43,7 @@ export function MessageActions({
   onReact,
   onDelete,
   onEdit,
+  onForward,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -91,6 +95,11 @@ export function MessageActions({
 
   const handleEdit = () => {
     onEdit?.();
+    setTouchOpen(false);
+  };
+
+  const handleForward = () => {
+    onForward?.();
     setTouchOpen(false);
   };
 
@@ -154,6 +163,16 @@ export function MessageActions({
         >
           <CornerUpLeft className="h-3.5 w-3.5" />
         </button>
+        {onForward && (
+          <button
+            type="button"
+            onClick={handleForward}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t("forward")}
+          >
+            <Forward className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={handleCopy}

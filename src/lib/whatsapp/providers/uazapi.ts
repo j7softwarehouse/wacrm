@@ -112,6 +112,9 @@ export function createUazapiProvider(
     async sendText(args: SendTextArgs): Promise<SendResult> {
       const body: Record<string, unknown> = { number: args.to, text: args.text };
       if (args.contextMessageId) body.replyid = args.contextMessageId;
+      // Só inclui a chave quando é encaminhamento de verdade — mandar
+      // `forward: false` mudaria o payload de todo envio comum.
+      if (args.forward) body.forward = true;
       return toSendResult(await client.post<UazapiSendResponse>("/send/text", body));
     },
 
@@ -124,6 +127,7 @@ export function createUazapiProvider(
       if (args.caption) body.text = args.caption;
       if (args.filename) body.docName = args.filename;
       if (args.contextMessageId) body.replyid = args.contextMessageId;
+      if (args.forward) body.forward = true;
       return toSendResult(await client.post<UazapiSendResponse>("/send/media", body));
     },
 

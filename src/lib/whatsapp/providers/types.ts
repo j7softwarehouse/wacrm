@@ -89,6 +89,9 @@ export interface SendTextArgs {
   text: string;
   /** Id (do provedor) da mensagem sendo respondida — gera a citação. */
   contextMessageId?: string;
+  /** Marca a mensagem como "Encaminhada" no WhatsApp de quem recebe.
+   *  Só a UAZAPI suporta; a Cloud API da Meta ignora (ver meta.ts). */
+  forward?: boolean;
 }
 
 export interface SendMediaArgs {
@@ -100,6 +103,8 @@ export interface SendMediaArgs {
   /** Só para documentos; é o nome exibido no chat. */
   filename?: string;
   contextMessageId?: string;
+  /** Ver `SendTextArgs.forward`. */
+  forward?: boolean;
 }
 
 export interface SendInteractiveButtonsArgs {

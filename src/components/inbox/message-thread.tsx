@@ -8,6 +8,7 @@ import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
 import { CONVERSATION_STATUS_TEXT_CLASS } from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
@@ -45,6 +46,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
+import { ForwardDialog } from "./forward-dialog";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -225,6 +227,8 @@ export function MessageThread({
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  /** Mensagem escolhida para encaminhar; abre o diálogo de destinos. */
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -289,12 +293,27 @@ export function MessageThread({
    * provider-specific and lives in a hook, which must run before the
    * component's early returns.
    */
-  const threadChannel = useMemo(
+  const threadChannel = useMemo(() => {
+    if (conversation?.channel_id) return channelsById?.get(conversation.channel_id);
+    // Canal removido (FK é ON DELETE SET NULL) ou conversa sem
+    // channel_id: cai no canal mais antigo da conta — o MESMO fallback
+    // que o envio já usa no servidor (resolveDefaultChannelId), para
+    // uma conversa não ficar travada como "somente leitura" enquanto a
+    // conta ainda tem um canal funcionando. `channelsById` já chega
+    // ordenado por created_at ascendente (GET /api/whatsapp/channels),
+    // então o primeiro valor do Map é sempre o mais antigo.
+    return channelsById?.values().next().value;
+  }, [conversation?.channel_id, channelsById]);
+
+  // Telefones de todos os canais da conta, pra `channelColor` posicionar
+  // cada um numa cor fixa (ver channel-color.ts). Precisa vir ANTES de
+  // qualquer `return` condicional abaixo — regra dos hooks.
+  const allPhones = useMemo(
     () =>
-      conversation?.channel_id
-        ? channelsById?.get(conversation.channel_id)
-        : undefined,
-    [conversation?.channel_id, channelsById],
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
   );
 
   /**
@@ -1066,15 +1085,19 @@ export function MessageThread({
 
   const displayName = conversationDisplayName(conversation) || "Unknown";
 
-  // Which channel this conversation came in on, and whether sending is
-  // currently possible on it. `channel_id === null` means the channel was
-  // removed from Settings (FK is `ON DELETE SET NULL`) — that's a
-  // permanent, read-only state, distinct from a channel that's merely
-  // disconnected right now. Both cases are gated on `channelsLoaded` so a
-  // conversation whose channel simply hasn't loaded in yet isn't briefly
-  // flashed as orphaned.
+  // Which channel this conversation effectively uses, and whether
+  // sending is currently possible on it. `channel_id === null` (canal
+  // removido de Configurações, FK `ON DELETE SET NULL`, ou conversa que
+  // nunca teve canal) já foi resolvido para o canal padrão da conta em
+  // `threadChannel` acima — não é mais tratado como estado permanente
+  // de somente leitura, pelo mesmo motivo que o servidor também cai no
+  // canal padrão nesse caso (`resolveDefaultChannelId`). Só sobra
+  // "indisponível" de verdade quando a conta não tem NENHUM canal
+  // (`channelMissing`) ou quando o canal resolvido está desconectado.
+  // Ambos gated em `channelsLoaded` para não piscar como indisponível
+  // enquanto a lista de canais ainda está carregando.
   const channel = threadChannel;
-  const channelOrphaned = channelsLoaded && !conversation.channel_id;
+  const channelMissing = channelsLoaded && !channel;
   // Only UAZAPI is gated on `status`. This mirrors the server-side rule in
   // `providers/resolve.ts`: a UAZAPI `connected` is a live session and
   // sending genuinely requires it, while Meta's `status` is registration
@@ -1084,12 +1107,21 @@ export function MessageThread({
   // would happily accept.
   const channelDisconnected =
     channelsLoaded &&
-    !!conversation.channel_id &&
-    channel?.provider === "uazapi" &&
+    !!channel &&
+    channel.provider === "uazapi" &&
     channel.status !== "connected";
-  const channelUnavailable = channelOrphaned || channelDisconnected;
+  const channelUnavailable = channelMissing || channelDisconnected;
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
-  const channelWarning = channelOrphaned
+  // Só colore quando há mais de um canal na conta — com um só, não há
+  // o que diferenciar visualmente (mesmo critério da lista de conversas).
+  // Posição na paleta pelo TELEFONE, não pelo id: recriar a instância
+  // UAZAPI do mesmo número não pode trocar a cor (channel-identity.ts).
+  // `allPhones` já foi calculado lá em cima, antes do return condicional.
+  const threadChannelColor =
+    channel?.phone_e164 && (channelsById?.size ?? 0) > 1
+      ? channelColor(channel.phone_e164, allPhones)
+      : undefined;
+  const channelWarning = channelMissing
     ? t("channelRemovedWarning")
     : channelDisconnected
       ? t("channelDisconnectedWarning", {
@@ -1161,12 +1193,20 @@ export function MessageThread({
             <Badge
               variant="outline"
               className={cn(
-                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-                channelUnavailable ? "text-red-400" : "text-muted-foreground"
+                "ml-1 hidden gap-1 text-[10px] sm:inline-flex sm:ml-2",
+                channelUnavailable
+                  ? "border-border text-red-400"
+                  : threadChannelColor
+                    ? cn(threadChannelColor.text, threadChannelColor.border)
+                    : "border-border text-muted-foreground"
               )}
               title={channelWarning ?? undefined}
             >
-              <Smartphone className="h-3 w-3" />
+              {threadChannelColor && !channelUnavailable ? (
+                <span className={cn("h-2 w-2 rounded-full", threadChannelColor.dot)} />
+              ) : (
+                <Smartphone className="h-3 w-3" />
+              )}
               {channelDisplayLabel ?? t("channelRemovedBadge")}
             </Badge>
           )}
@@ -1390,6 +1430,23 @@ export function MessageThread({
                       msg.content_type === "text" &&
                       threadChannel?.provider === "uazapi" &&
                       (msg.sender_id === user?.id || canEditSettings);
+                    // Encaminhar vale para QUALQUER mensagem, recebida ou
+                    // enviada (é assim no WhatsApp) — o que impede é a
+                    // mensagem estar apagada, ser de um tipo que não se
+                    // reenvia (template/interativo/localização), ou ter a
+                    // mídia já expirada do storage (vídeo após 48h).
+                    const isForwardableType =
+                      msg.content_type === "text" ||
+                      msg.content_type === "image" ||
+                      msg.content_type === "video" ||
+                      msg.content_type === "audio" ||
+                      msg.content_type === "document";
+                    const hasContentToForward =
+                      msg.content_type === "text"
+                        ? !!msg.content_text
+                        : !!msg.media_url;
+                    const canForwardMsg =
+                      !msg.deleted_at && isForwardableType && hasContentToForward;
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1400,6 +1457,9 @@ export function MessageThread({
                         }}
                         onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
                         onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
+                        onForward={
+                          canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
+                        }
                       >
                         <MessageBubble
                           message={msg}
@@ -1461,6 +1521,24 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ForwardDialog
+        messageId={forwardMessageId}
+        open={forwardMessageId !== null}
+        onOpenChange={(next) => !next && setForwardMessageId(null)}
+        currentConversationId={conversation.id}
+        // O diálogo resolve por TELEFONE (com o mesmo fallback pro
+        // canal padrão da conta quando isto for nulo) — ver
+        // channel-identity.ts. Passar o valor bruto é o certo: recriar
+        // a instância UAZAPI do mesmo número não pode virar "conta
+        // independente" só porque o id do canal mudou.
+        channelId={conversation.channel_id}
+        // Rótulo de exibição usa o canal JÁ resolvido com fallback
+        // (`channel`/`threadChannel`, mesmo usado no badge acima) —
+        // uma conversa órfã (channel_id nulo) ainda mostra o canal que
+        // ela efetivamente vai usar, em vez de nada.
+        channelDisplayLabel={channelDisplayLabel}
       />
     </div>
   );

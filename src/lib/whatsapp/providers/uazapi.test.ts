@@ -45,6 +45,47 @@ describe("createUazapiProvider", () => {
     });
   });
 
+  it("marca texto como encaminhado com forward: true", async () => {
+    // Campo `forward` de /send/text: "Marca a mensagem como encaminhada
+    // no WhatsApp" — é o que faz a etiqueta nativa aparecer pra quem
+    // recebe, sem precisar reescrever o texto.
+    const provider = createUazapiProvider(config);
+    await provider.sendText({ to: "55119", text: "oi", forward: true });
+    expect(post).toHaveBeenCalledWith("/send/text", {
+      number: "55119",
+      text: "oi",
+      forward: true,
+    });
+  });
+
+  it("nao manda o campo forward quando nao e encaminhamento", async () => {
+    // Envio normal não pode carregar `forward: false` no corpo — a
+    // ausência do campo é o comportamento padrão, e mandar a chave
+    // mudaria o payload de TODO envio comum do sistema.
+    const provider = createUazapiProvider(config);
+    await provider.sendText({ to: "55119", text: "oi" });
+    expect(post).toHaveBeenCalledWith("/send/text", {
+      number: "55119",
+      text: "oi",
+    });
+  });
+
+  it("marca mídia como encaminhada com forward: true", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.sendMedia({
+      to: "55119",
+      kind: "video",
+      link: "https://exemplo.com/a.mp4",
+      forward: true,
+    });
+    expect(post).toHaveBeenCalledWith("/send/media", {
+      number: "55119",
+      type: "video",
+      file: "https://exemplo.com/a.mp4",
+      forward: true,
+    });
+  });
+
   it("envia mídia com type, file e caption em text", async () => {
     // Na UAZAPI a legenda vai no campo `text`, não em `caption`.
     const provider = createUazapiProvider(config);
