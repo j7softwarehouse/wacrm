@@ -120,7 +120,7 @@ export async function POST(
     // viraria conteúdo encaminhável para dentro desta conta.
     const { data: sourceConversation } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, channel_id')
       .eq('id', message.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -162,13 +162,22 @@ export async function POST(
       );
     }
 
-    // Tenancy do DESTINO: uma consulta só resolve os N destinos, e
-    // qualquer id que não pertença à conta simplesmente não volta.
-    const { data: destinations } = await supabase
+    // Tenancy do DESTINO + MESMO CANAL da origem: dois canais da mesma
+    // conta se comportam como duas contas de WhatsApp independentes
+    // (decisão de produto — encaminhar não pode misturar entre eles).
+    // Uma consulta só resolve os N destinos válidos; qualquer id que
+    // não pertença à conta OU seja de outro canal simplesmente não
+    // volta, e cai no mesmo "not found" de sempre — não revela que o
+    // id existe em outro canal.
+    const sourceChannelId = (sourceConversation.channel_id as string | null) ?? null;
+    let destinationsQuery = supabase
       .from('conversations')
       .select('id')
-      .eq('account_id', accountId)
-      .in('id', conversationIds);
+      .eq('account_id', accountId);
+    destinationsQuery = sourceChannelId
+      ? destinationsQuery.eq('channel_id', sourceChannelId)
+      : destinationsQuery.is('channel_id', null);
+    const { data: destinations } = await destinationsQuery.in('id', conversationIds);
 
     const allowed = new Set((destinations ?? []).map((d) => d.id as string));
     const unknown = conversationIds.filter((c) => !allowed.has(c));

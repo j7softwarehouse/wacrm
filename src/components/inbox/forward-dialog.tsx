@@ -51,11 +51,18 @@ export function ForwardDialog({
   /** Conversa de onde a mensagem saiu — some da lista, igual ao
    *  WhatsApp, que não oferece encaminhar para o próprio chat. */
   currentConversationId,
+  /** Canal da conversa de origem. Dois canais da mesma conta se
+   *  comportam como duas contas de WhatsApp independentes — a lista só
+   *  mostra (e a rota só aceita) destinos do MESMO canal. `null`/
+   *  `undefined` = conta com um canal só ou conversa sem canal fixo;
+   *  nesse caso não filtra (não há "outro canal" pra confundir). */
+  channelId,
 }: {
   messageId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentConversationId?: string;
+  channelId?: string | null;
 }) {
   const t = useTranslations("Inbox.forward");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -73,11 +80,14 @@ export function ForwardDialog({
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
         .order("last_message_at", { ascending: false })
         .limit(200);
+      // Mesmo canal da origem — ver o comentário do prop `channelId`.
+      if (channelId) query = query.eq("channel_id", channelId);
+      const { data, error } = await query;
       if (cancelled) return;
       if (error) {
         console.error("[ForwardDialog] load error:", error.message);
@@ -91,12 +101,15 @@ export function ForwardDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, t]);
+  }, [open, t, channelId]);
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return conversations
       .filter((c) => c.id !== currentConversationId)
+      // Defesa extra além do filtro já aplicado na consulta acima —
+      // mesmo canal da origem, nunca mistura entre canais da conta.
+      .filter((c) => !channelId || c.channel_id === channelId)
       // Grupo do qual o número já saiu não aceita envio — não faz
       // sentido oferecer como destino.
       .filter((c) => !c.group?.left_at)
@@ -106,7 +119,7 @@ export function ForwardDialog({
         const phone = (c.contact?.phone ?? "").toLowerCase();
         return name.includes(query) || phone.includes(query);
       });
-  }, [conversations, search, currentConversationId]);
+  }, [conversations, search, currentConversationId, channelId]);
 
   function toggle(id: string, checked: boolean) {
     setSelected((prev) => {

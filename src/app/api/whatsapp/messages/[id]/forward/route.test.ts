@@ -18,13 +18,17 @@ const ACCOUNT = 'acct-1';
 
 /**
  * Cliente com sessão em `acct-1`. `message` é a mensagem de origem;
- * `destinationIds` são as conversas que a consulta de destino devolve
- * (o que NÃO estiver aqui conta como "de outra conta").
+ * `sourceChannelId` é o canal da conversa de origem (null = conversa
+ * sem canal fixo); `destinations` são as conversas reais do banco,
+ * cada uma com seu próprio canal — a consulta de destino filtra por
+ * `account_id` E `channel_id`, então uma conversa de outro canal
+ * nunca aparece em `data`, mesmo pertencendo à mesma conta.
  */
 function comSessao(options: {
   message?: Record<string, unknown> | null;
   sourceConversationFound?: boolean;
-  destinationIds?: string[];
+  sourceChannelId?: string | null;
+  destinations?: { id: string; channel_id: string | null }[];
 } = {}) {
   const {
     message = {
@@ -36,7 +40,11 @@ function comSessao(options: {
       deleted_at: null,
     },
     sourceConversationFound = true,
-    destinationIds = ['conv-a', 'conv-b'],
+    sourceChannelId = 'chan-1',
+    destinations = [
+      { id: 'conv-a', channel_id: 'chan-1' },
+      { id: 'conv-b', channel_id: 'chan-1' },
+    ],
   } = options;
 
   return {
@@ -61,26 +69,43 @@ function comSessao(options: {
           }),
         };
       }
-      // conversations — serve tanto a checagem da origem (.eq.eq.maybeSingle)
-      // quanto a dos destinos (.eq.in)
-      return {
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: sourceConversationFound ? { id: 'conv-origem' } : null,
-                error: null,
-              }),
-            }),
-            in: async (_col: string, ids: string[]) => ({
-              data: ids
-                .filter((i) => destinationIds.includes(i))
-                .map((id) => ({ id })),
-              error: null,
-            }),
-          }),
+      // conversations — usada tanto para checar a origem (termina em
+      // .maybeSingle()) quanto os destinos (termina em .in()). Um Map
+      // acumula os filtros `.eq()`/`.is()` da cadeia ATUAL — cada
+      // chamada a `from('conversations')` cria seu próprio, então a
+      // checagem da origem nunca vaza filtro pra checagem do destino.
+      const filters = new Map<string, unknown>();
+      const chain = {
+        select: () => chain,
+        eq: (col: string, val: unknown) => {
+          filters.set(col, val);
+          return chain;
+        },
+        is: (col: string, val: unknown) => {
+          filters.set(col, val);
+          return chain;
+        },
+        maybeSingle: async () => ({
+          data: sourceConversationFound
+            ? { id: 'conv-origem', channel_id: sourceChannelId }
+            : null,
+          error: null,
         }),
+        in: async (_col: string, ids: string[]) => {
+          const channelFilter = filters.has('channel_id')
+            ? filters.get('channel_id')
+            : undefined;
+          const matched = destinations.filter((d) => {
+            if (!ids.includes(d.id)) return false;
+            if (channelFilter !== undefined && d.channel_id !== channelFilter) {
+              return false;
+            }
+            return true;
+          });
+          return { data: matched.map((d) => ({ id: d.id })), error: null };
+        },
       };
+      return chain;
     },
   };
 }
@@ -187,7 +212,7 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
 
   it('devolve 400 quando um destino nao pertence a conta', async () => {
     mocks.createClient.mockResolvedValue(
-      comSessao({ destinationIds: ['conv-a'] }),
+      comSessao({ destinations: [{ id: 'conv-a', channel_id: 'chan-1' }] }),
     );
 
     const res = await POST(
@@ -199,7 +224,33 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
   });
 
-  it('encaminha para cada destino marcando forwarded: true', async () => {
+  it('devolve 400 quando um destino e de OUTRO CANAL, mesmo pertencendo a mesma conta', async () => {
+    // Encaminhar precisa ficar dentro do mesmo canal — dois canais da
+    // mesma conta se comportam como duas contas de WhatsApp
+    // independentes, então "conv-b" (canal diferente) não pode ser um
+    // destino válido mesmo sendo tecnicamente da mesma conta.
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        sourceChannelId: 'chan-1',
+        destinations: [
+          { id: 'conv-a', channel_id: 'chan-1' },
+          { id: 'conv-b', channel_id: 'chan-2' },
+        ],
+      }),
+    );
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a', 'conv-b'] }),
+      { params },
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error).toMatch(/not found/i);
+    expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
+  });
+
+  it('encaminha para cada destino do MESMO canal marcando forwarded: true', async () => {
     mocks.createClient.mockResolvedValue(comSessao());
 
     const res = await POST(
@@ -222,7 +273,13 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
 
   it('para de vez quando o provedor recusa por limite, sem tentar os proximos', async () => {
     mocks.createClient.mockResolvedValue(
-      comSessao({ destinationIds: ['conv-a', 'conv-b', 'conv-c'] }),
+      comSessao({
+        destinations: [
+          { id: 'conv-a', channel_id: 'chan-1' },
+          { id: 'conv-b', channel_id: 'chan-1' },
+          { id: 'conv-c', channel_id: 'chan-1' },
+        ],
+      }),
     );
     const { ProviderRateLimitError } = await import('@/lib/whatsapp/providers/types');
     mocks.sendMessageToConversation.mockRejectedValueOnce(

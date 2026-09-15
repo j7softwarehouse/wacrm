@@ -1499,6 +1499,10 @@ export function MessageThread({
         open={forwardMessageId !== null}
         onOpenChange={(next) => !next && setForwardMessageId(null)}
         currentConversationId={conversation.id}
+        // O canal REAL da conversa (não o de fallback usado só pra
+        // liberar envio) — encaminhar precisa respeitar de qual das
+        // "contas" independentes esta mensagem realmente veio.
+        channelId={conversation.channel_id}
       />
     </div>
   );
