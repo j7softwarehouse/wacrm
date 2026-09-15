@@ -7,6 +7,7 @@ import {
   channelLabel,
   conversationDisplayName,
   matchesContactFilters,
+  matchesSearch,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
@@ -193,13 +194,7 @@ export function ConversationList({
     }
 
     if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => {
-        const name = c.contact?.name?.toLowerCase() ?? "";
-        const phone = c.contact?.phone?.toLowerCase() ?? "";
-        const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
-      });
+      result = result.filter((c) => matchesSearch(c, search));
     }
 
     return result;

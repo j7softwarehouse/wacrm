@@ -3,6 +3,7 @@ import {
   channelLabel,
   conversationDisplayName,
   matchesContactFilters,
+  matchesSearch,
   normalizeConversation,
 } from "./conversations";
 import type { Conversation } from "@/types";
@@ -176,6 +177,48 @@ describe("conversationDisplayName", () => {
 
   it("devolve null quando não há grupo nem contato (chamador decide o fallback)", () => {
     expect(conversationDisplayName({ group: undefined, contact: undefined })).toBeNull();
+  });
+});
+
+describe("matchesSearch", () => {
+  // Bug real em produção (2026-09-15): a busca da Inbox só olhava
+  // `contact?.name`/`contact?.phone`, então NENHUMA conversa de grupo
+  // (contact_id nulo) aparecia numa busca por texto — mesma classe de
+  // bug do `conversationDisplayName` acima ("Desconhecido"), só que na
+  // caixa de busca em vez do rótulo da lista.
+  it("acha uma conversa de grupo pelo nome do grupo, sem contato", () => {
+    const conv = {
+      group: { id: "g1", name: "Pais Laura dos Santos", avatar_url: null, left_at: null },
+      contact: null,
+    } as unknown as Conversation;
+    expect(matchesSearch(conv, "laura")).toBe(true);
+    expect(matchesSearch(conv, "pai")).toBe(true);
+  });
+
+  it("nome do grupo com espaço sobrando não atrapalha a busca", () => {
+    const conv = {
+      group: { id: "g1", name: "Pais Laura dos Santos ", avatar_url: null, left_at: null },
+      contact: null,
+    } as unknown as Conversation;
+    expect(matchesSearch(conv, "santos")).toBe(true);
+  });
+
+  it("continua achando pelo nome ou telefone do contato no caminho 1:1", () => {
+    const conv = makeConversation({ name: "Fulano de Tal", phone: "5511999999999" });
+    expect(matchesSearch(conv, "fulano")).toBe(true);
+    expect(matchesSearch(conv, "5511999999999")).toBe(true);
+    expect(matchesSearch(conv, "outro")).toBe(false);
+  });
+
+  it("acha pelo texto da última mensagem", () => {
+    const conv = { ...makeConversation(null), last_message_text: "Bom dia, tudo bem?" };
+    expect(matchesSearch(conv, "tudo bem")).toBe(true);
+  });
+
+  it("string vazia (ou só espaços) não filtra nada", () => {
+    const conv = makeConversation(null);
+    expect(matchesSearch(conv, "")).toBe(true);
+    expect(matchesSearch(conv, "   ")).toBe(true);
   });
 });
 
