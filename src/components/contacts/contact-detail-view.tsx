@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
@@ -9,7 +8,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
-import { openConversationForContact } from '@/lib/contacts/open-conversation';
+import { ConversarButton } from '@/components/contacts/conversar-button';
+import type { PublicChannel } from '@/app/api/whatsapp/channels/route';
 import {
   Sheet,
   SheetContent,
@@ -37,7 +37,6 @@ import {
   Save,
   X,
   DollarSign,
-  MessageCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -55,20 +54,15 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
-  const router = useRouter();
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
-
-  // "Conversar" — jumps to this contact's thread in the Inbox, finding or
-  // creating it server-side first so a contact with no prior conversation
-  // still opens straight into a composer the user can type into (free-form
-  // text, no template — the Inbox composer only asks for one when the
-  // channel actually requires it).
-  const [openingConversation, setOpeningConversation] = useState(false);
+  // Lista de canais da conta — decide se "Conversar" mostra o menu de
+  // escolha de canal (ver conversar-button.tsx).
+  const [channels, setChannels] = useState<PublicChannel[]>([]);
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -190,6 +184,17 @@ export function ContactDetailView({
       fetchDeals();
     }
   }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const res = await fetch('/api/whatsapp/channels');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data?.channels)) {
+        setChannels(data.channels);
+      }
+    })();
+  }, [open]);
 
   async function copyPhone() {
     if (!contact) return;
@@ -335,19 +340,6 @@ export function ContactDetailView({
     setSavingCustom(false);
   }
 
-  async function handleGoToConversation() {
-    if (!contactId) return;
-    setOpeningConversation(true);
-    try {
-      const conversationId = await openConversationForContact(contactId);
-      router.push(`/inbox?c=${conversationId}`);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : 'network error';
-      toast.error(t('toastOpenConversationFailed', { reason }));
-      setOpeningConversation(false);
-    }
-  }
-
   function getInitials(name?: string | null) {
     if (!name) return '?';
     return name
@@ -414,19 +406,16 @@ export function ContactDetailView({
                 </div>
               </div>
               <div className="mt-3">
-                <Button
-                  size="sm"
-                  onClick={handleGoToConversation}
-                  disabled={openingConversation}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
-                >
-                  {openingConversation ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <MessageCircle className="size-4" />
-                  )}
-                  {t('goToConversationBtn')}
-                </Button>
+                <ConversarButton
+                  contactId={contact.id}
+                  channels={channels}
+                  variant="full"
+                  label={t('goToConversationBtn')}
+                  onError={(err) => {
+                    const reason = err instanceof Error ? err.message : 'network error';
+                    toast.error(t('toastOpenConversationFailed', { reason }));
+                  }}
+                />
               </div>
             </SheetHeader>
 
