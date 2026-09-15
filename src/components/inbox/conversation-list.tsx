@@ -417,8 +417,15 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                // Sem canal próprio (conversa órfã — canal removido de
+                // Configurações): cai no canal mais antigo da conta,
+                // MESMO fallback que a thread já aplica pra liberar
+                // envio (ver comentário em message-thread.tsx). Sem
+                // isto, a linha ficava sem selo nenhum de canal.
                 channel={
-                  conv.channel_id ? channelsById?.get(conv.channel_id) : undefined
+                  conv.channel_id
+                    ? channelsById?.get(conv.channel_id)
+                    : channelsById?.values().next().value
                 }
                 // A cor só ajuda quando há o que diferenciar — com um
                 // canal só, seria ruído visual sem propósito.
@@ -461,10 +468,12 @@ function ConversationItem({
   const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
-  const color =
-    multiChannel && conversation.channel_id
-      ? channelColor(conversation.channel_id)
-      : undefined;
+  // `channel` já vem com o fallback pro canal padrão aplicado (ver
+  // comentário em `channelsById?.values().next().value` na chamada) —
+  // usar `channel.id` aqui em vez de `conversation.channel_id` bruto é
+  // o que faz uma conversa órfã (canal removido) mostrar a MESMA cor
+  // que o cabeçalho da conversa já mostra, em vez de nenhum selo.
+  const color = multiChannel && channel ? channelColor(channel.id) : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
