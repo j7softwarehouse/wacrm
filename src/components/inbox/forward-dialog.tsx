@@ -227,7 +227,9 @@ export function ForwardDialog({
               <span
                 className={cn(
                   "h-1.5 w-1.5 shrink-0 rounded-full",
-                  channelId ? channelColor(channelId).dot : "bg-muted-foreground",
+                  // Pelo telefone já resolvido, não pelo id do canal —
+                  // mesma cor que a lista/cabeçalho mostram pro mesmo número.
+                  sourcePhone ? channelColor(sourcePhone).dot : "bg-muted-foreground",
                 )}
               />
               {t("usingChannel", { label: channelDisplayLabel })}

@@ -364,7 +364,10 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(json.results[1].ok).toBe(true);
   });
 
-  it('envia a mensagem adicional (note) como texto comum, DEPOIS do encaminhado', async () => {
+  it('junta a nota no MESMO balao do texto encaminhado, separada por linha em branco', async () => {
+    // Pedido do usuario apos ver dois baloes separados na pratica --
+    // "gera confusao". Um encaminhamento de texto vira UMA chamada so,
+    // com a nota anexada ao final do conteudo original.
     mocks.createClient.mockResolvedValue(comSessao());
 
     const res = await POST(
@@ -375,31 +378,122 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
 
     expect(res.status).toBe(200);
     expect(json.sent).toBe(1);
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+    const call = mocks.sendMessageToConversation.mock.calls[0][2];
+    expect(call).toMatchObject({
+      conversationId: 'conv-a',
+      forwarded: true,
+      contentText: 'bom dia\n\nOlha isso aí',
+    });
+  });
+
+  it('junta a nota como legenda quando a mensagem original e midia (imagem/video/documento)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        message: {
+          id: 'msg-1',
+          conversation_id: 'conv-origem',
+          content_type: 'image',
+          content_text: null,
+          media_url: 'https://x/foto.jpg',
+          deleted_at: null,
+        },
+      }),
+    );
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a'], note: 'segue a foto' }),
+      { params },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+    const call = mocks.sendMessageToConversation.mock.calls[0][2];
+    expect(call).toMatchObject({
+      messageType: 'image',
+      contentText: 'segue a foto',
+      forwarded: true,
+    });
+  });
+
+  it('AUDIO continua em dois baloes -- WhatsApp recusa legenda em audio', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        message: {
+          id: 'msg-1',
+          conversation_id: 'conv-origem',
+          content_type: 'audio',
+          content_text: null,
+          media_url: 'https://x/audio.ogg',
+          deleted_at: null,
+        },
+      }),
+    );
+
+    const res = await POST(
+      request({ conversationIds: ['conv-a'], note: 'ouve isso' }),
+      { params },
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.sent).toBe(1);
     expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(2);
     const [forwardCall, noteCall] = mocks.sendMessageToConversation.mock.calls.map(
       (c) => c[2],
     );
-    expect(forwardCall).toMatchObject({ conversationId: 'conv-a', forwarded: true });
-    // A nota NUNCA carrega forwarded: true -- é uma mensagem comum, não
-    // uma cópia encaminhada.
-    expect(noteCall).toMatchObject({
-      conversationId: 'conv-a',
-      messageType: 'text',
-      contentText: 'Olha isso aí',
-    });
+    expect(forwardCall).toMatchObject({ messageType: 'audio', forwarded: true });
+    expect(forwardCall.contentText).toBeNull();
+    expect(noteCall).toMatchObject({ messageType: 'text', contentText: 'ouve isso' });
     expect(noteCall.forwarded).toBeFalsy();
   });
 
-  it('nao manda a nota quando o campo vem vazio ou so espaco', async () => {
+  it('nao muda o conteudo quando o campo nota vem vazio ou so espaco', async () => {
     mocks.createClient.mockResolvedValue(comSessao());
 
     await POST(request({ conversationIds: ['conv-a'], note: '   ' }), { params });
 
     expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessageToConversation.mock.calls[0][2]).toMatchObject({
+      contentText: 'bom dia',
+    });
   });
 
-  it('se a nota falhar depois de um encaminhamento bem-sucedido, o destino conta como falho', async () => {
-    mocks.createClient.mockResolvedValue(comSessao());
+  it('em audio, nao tenta mandar a nota quando o proprio encaminhamento ja falhou', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        message: {
+          id: 'msg-1',
+          conversation_id: 'conv-origem',
+          content_type: 'audio',
+          content_text: null,
+          media_url: 'https://x/audio.ogg',
+          deleted_at: null,
+        },
+      }),
+    );
+    mocks.sendMessageToConversation.mockRejectedValueOnce(new Error('canal caiu'));
+
+    await POST(request({ conversationIds: ['conv-a'], note: 'oi' }), { params });
+
+    // Só a tentativa do encaminhamento -- a nota nunca chega a ser
+    // tentada pra um destino que já falhou.
+    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('em audio, se a nota falhar depois do encaminhamento ok, o destino conta como falho', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        message: {
+          id: 'msg-1',
+          conversation_id: 'conv-origem',
+          content_type: 'audio',
+          content_text: null,
+          media_url: 'https://x/audio.ogg',
+          deleted_at: null,
+        },
+      }),
+    );
     mocks.sendMessageToConversation
       .mockResolvedValueOnce({ messageId: 'm1', whatsappMessageId: 'WA1' }) // encaminhado ok
       .mockRejectedValueOnce(new Error('nota falhou')); // nota falha
@@ -415,20 +509,17 @@ describe('POST /api/whatsapp/messages/[id]/forward', () => {
     expect(json.results[0].error).toMatch(/nota falhou/i);
   });
 
-  it('nao tenta mandar a nota quando o proprio encaminhamento ja falhou', async () => {
-    mocks.createClient.mockResolvedValue(comSessao());
-    mocks.sendMessageToConversation.mockRejectedValueOnce(new Error('canal caiu'));
-
-    await POST(request({ conversationIds: ['conv-a'], note: 'oi' }), { params });
-
-    // Só a tentativa do encaminhamento -- a nota nunca chega a ser
-    // tentada pra um destino que já falhou.
-    expect(mocks.sendMessageToConversation).toHaveBeenCalledTimes(1);
-  });
-
-  it('rate limit na NOTA para os proximos destinos, igual ao encaminhamento', async () => {
+  it('rate limit na nota de AUDIO para os proximos destinos, igual ao encaminhamento', async () => {
     mocks.createClient.mockResolvedValue(
       comSessao({
+        message: {
+          id: 'msg-1',
+          conversation_id: 'conv-origem',
+          content_type: 'audio',
+          content_text: null,
+          media_url: 'https://x/audio.ogg',
+          deleted_at: null,
+        },
         destinations: [
           { id: 'conv-a', channel_id: 'chan-1' },
           { id: 'conv-b', channel_id: 'chan-1' },

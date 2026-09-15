@@ -473,7 +473,11 @@ function ConversationItem({
   // usar `channel.id` aqui em vez de `conversation.channel_id` bruto é
   // o que faz uma conversa órfã (canal removido) mostrar a MESMA cor
   // que o cabeçalho da conversa já mostra, em vez de nenhum selo.
-  const color = multiChannel && channel ? channelColor(channel.id) : undefined;
+  // Cor pelo TELEFONE, não pelo id do canal: recriar a instância
+  // UAZAPI do mesmo número troca o id, e a cor mudaria toda hora sem
+  // motivo — mesmo raciocínio de channel-identity.ts.
+  const color =
+    multiChannel && channel ? channelColor(channel.phone_e164 || channel.id) : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);

@@ -316,7 +316,7 @@
       "partialFailure": "{count, plural, =1 {1 conversa não recebeu} other {# conversas não receberam}}",
       "error": "Não foi possível encaminhar a mensagem.",
       "usingChannel": "Encaminhando pelo canal {label}",
-      "notePlaceholder": "Adicionar uma mensagem (opcional)"
+      "notePlaceholder": "Adicionar uma mensagem (opcional) — vai junto no mesmo balão"
     }
   },
   "Contacts": {

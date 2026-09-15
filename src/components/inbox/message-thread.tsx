@@ -1103,8 +1103,12 @@ export function MessageThread({
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
   // Só colore quando há mais de um canal na conta — com um só, não há
   // o que diferenciar visualmente (mesmo critério da lista de conversas).
+  // Pelo TELEFONE, não pelo id: recriar a instância UAZAPI do mesmo
+  // número não pode trocar a cor (ver channel-identity.ts).
   const threadChannelColor =
-    channel && (channelsById?.size ?? 0) > 1 ? channelColor(channel.id) : undefined;
+    channel && (channelsById?.size ?? 0) > 1
+      ? channelColor(channel.phone_e164 || channel.id)
+      : undefined;
   const channelWarning = channelMissing
     ? t("channelRemovedWarning")
     : channelDisconnected

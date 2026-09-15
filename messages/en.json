@@ -316,7 +316,7 @@
       "partialFailure": "{count, plural, =1 {1 chat did not receive it} other {# chats did not receive it}}",
       "error": "Could not forward the message.",
       "usingChannel": "Forwarding via {label}",
-      "notePlaceholder": "Add a message (optional)"
+      "notePlaceholder": "Add a message (optional) — sent together in the same bubble"
     }
   },
   "Contacts": {

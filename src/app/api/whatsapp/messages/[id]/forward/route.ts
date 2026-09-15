@@ -222,6 +222,20 @@ export async function POST(
         ? filenameFromUrl(message.media_url as string)
         : undefined;
 
+    // A nota vira LEGENDA da própria mensagem encaminhada sempre que o
+    // tipo aceita legenda — um balão só, pedido do usuário depois de
+    // ver dois balões separados na prática ("gera confusão"). Áudio é
+    // a única exceção real: o WhatsApp recusa legenda em áudio (mesma
+    // regra de `message-composer.tsx`), então a nota tem que sair como
+    // mensagem de texto à parte nesse caso específico.
+    const noteMustBeSeparateMessage = note && contentType === 'audio';
+    const combinedContentText =
+      note && !noteMustBeSeparateMessage
+        ? message.content_text
+          ? `${message.content_text}\n\n${note}`
+          : note
+        : ((message.content_text as string | null) ?? null);
+
     const results: ForwardResult[] = [];
     let stoppedByRateLimit = false;
 
@@ -238,16 +252,17 @@ export async function POST(
         await sendMessageToConversation(supabase, accountId, {
           conversationId: destinationId,
           messageType: contentType,
-          contentText: message.content_text ?? null,
+          contentText: combinedContentText,
           mediaUrl: (message.media_url as string | null) ?? null,
           filename: filename ?? null,
           senderUserId: user.id,
           forwarded: true,
         });
-        // A nota só tenta DEPOIS do encaminhamento ter saído — se ela
-        // falhar, o destino inteiro conta como falho: do ponto de vista
-        // do atendente, "encaminhar com uma mensagem" é uma entrega só.
-        if (note) {
+        // Só chega aqui quando a nota NÃO pôde ir junto (áudio). Tenta
+        // DEPOIS do encaminhamento ter saído — se ela falhar, o destino
+        // inteiro conta como falho: pro atendente, "encaminhar com uma
+        // mensagem" é uma entrega só.
+        if (noteMustBeSeparateMessage) {
           await sendMessageToConversation(supabase, accountId, {
             conversationId: destinationId,
             messageType: 'text',
