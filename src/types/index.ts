@@ -1,4 +1,5 @@
 import type { AccountRole } from "@/lib/auth/roles";
+import type { ConversationScope } from "@/lib/auth/conversation-scope";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 
 export type {
@@ -74,6 +75,10 @@ export interface AccountMember {
   email: string | null;
   avatar_url: string | null;
   role: AccountRole;
+  /** Alcance de conversas — 'all' pra todo mundo, exceto quem foi
+   *  explicitamente restrito a responder só o que lhe foi atribuído.
+   *  Ver docs/superpowers/specs/2026-09-15-escopo-de-conversas-design.md. */
+  conversation_scope: ConversationScope;
   joined_at: string;
 }
 

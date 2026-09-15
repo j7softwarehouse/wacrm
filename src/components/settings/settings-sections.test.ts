@@ -11,21 +11,25 @@ describe('canAccessSection', () => {
     );
   });
 
-  it('agent perde WhatsApp e Grupos, mas mantem o resto do espaco de trabalho', () => {
-    expect(canAccessSection('whatsapp', 'agent')).toBe(false);
-    expect(canAccessSection('groups', 'agent')).toBe(false);
-
-    const restoDoEspacoDeTrabalho = [
+  it('agent mantem so as secoes operacionais do espaco de trabalho (2026-09-15)', () => {
+    // Modelos, Negocios/moeda, Membros e Chaves de API viraram
+    // administracao da conta (spec 2026-09-15-escopo-de-conversas) --
+    // so Respostas rapidas e Campos e tags continuam liberados, por
+    // serem ferramenta de atendimento do dia a dia.
+    const administrativoDoEspacoDeTrabalho = [
+      'whatsapp',
+      'groups',
       'templates',
-      'quick-replies',
-      'fields',
       'deals',
       'members',
       'api',
     ] as const;
-    for (const s of restoDoEspacoDeTrabalho) {
-      expect(canAccessSection(s, 'agent')).toBe(true);
+    for (const s of administrativoDoEspacoDeTrabalho) {
+      expect(canAccessSection(s, 'agent')).toBe(false);
     }
+
+    expect(canAccessSection('quick-replies', 'agent')).toBe(true);
+    expect(canAccessSection('fields', 'agent')).toBe(true);
   });
 
   it('admin e owner acessam todas as secoes', () => {

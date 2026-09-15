@@ -1388,7 +1388,8 @@
       "removeDialogDesc": "Remover <bold>{name}</bold> da conta? Ele será desconectado desta conta e receberá uma conta pessoal nova no próximo login. Seu login não será deletado.",
       "cancel": "Cancelar",
       "removing": "Removendo...",
-      "removeBtn": "Remover membro"
+      "removeBtn": "Remover membro",
+      "scopeUpdatedToast": "Escopo de {name} atualizado para {scope}"
     },
     "invite": {
       "inviteCreated": "Convite criado",
@@ -1942,6 +1943,10 @@
       "reindex": "Re-indexar",
       "reindexTooltip": "Re-incorporar todos os documentos (ex: após adicionar uma chave de embeddings)",
       "loading": "Carregando…"
+    },
+    "conversationScopes": {
+      "all": "Todas as conversas",
+      "assigned": "Só as atribuídas"
     }
   },
   "Notifications": {
