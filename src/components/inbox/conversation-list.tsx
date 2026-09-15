@@ -9,6 +9,7 @@ import {
   matchesContactFilters,
   matchesSearch,
   normalizeConversations,
+  sortConversationsByRecency,
 } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
 import { CONVERSATION_STATUS_DOT_CLASS } from "@/lib/inbox/conversation-status";
@@ -197,7 +198,11 @@ export function ConversationList({
       result = result.filter((c) => matchesSearch(c, search));
     }
 
-    return result;
+    // Sempre mais recente primeiro, igual ao WhatsApp -- reordenado aqui
+    // (não só na busca inicial) para que uma conversa suba pro topo assim
+    // que chega mensagem nova, mesmo quando o estado em memória só
+    // atualiza `last_message_at` no lugar sem mexer na posição do item.
+    return sortConversationsByRecency(result);
   }, [conversations, filter, search, selectedTagIds, selectedCompany]);
 
   const toggleTag = useCallback((id: string) => {
