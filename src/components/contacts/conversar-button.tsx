@@ -25,6 +25,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -159,29 +160,36 @@ export function ConversarButton({
           )}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="bg-popover border-border">
-          <DropdownMenuLabel>{t('chooseChannel')}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {channels.map((channel) => {
-            const color = channel.phone_e164 ? channelColor(channel.phone_e164, allPhones) : undefined;
-            const hasConversation = existingByChannel?.has(channel.id) ?? false;
-            return (
-              <DropdownMenuItem
-                key={channel.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  go(channel.id);
-                }}
-              >
-                <span className={cn('size-2 rounded-full', color?.dot ?? 'bg-muted-foreground')} />
-                <span className="flex-1 truncate">
-                  {channel.label || channel.phone_e164 || channel.id}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {hasConversation ? t('existingConversation') : t('newConversation')}
-                </span>
-              </DropdownMenuItem>
-            );
-          })}
+          {/* DropdownMenuGroup (base-ui Menu.Group) é OBRIGATÓRIO aqui: o
+              DropdownMenuLabel abaixo é o Menu.GroupLabel do base-ui, que
+              lê um contexto de grupo e lança exceção em render quando ele
+              não existe -- derrubando a página inteira (mesmo defeito do
+              issue #336, ver dropdown-menu-group-label.test.tsx). */}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>{t('chooseChannel')}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {channels.map((channel) => {
+              const color = channel.phone_e164 ? channelColor(channel.phone_e164, allPhones) : undefined;
+              const hasConversation = existingByChannel?.has(channel.id) ?? false;
+              return (
+                <DropdownMenuItem
+                  key={channel.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    go(channel.id);
+                  }}
+                >
+                  <span className={cn('size-2 rounded-full', color?.dot ?? 'bg-muted-foreground')} />
+                  <span className="flex-1 truncate">
+                    {channel.label || channel.phone_e164 || channel.id}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {hasConversation ? t('existingConversation') : t('newConversation')}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     );
