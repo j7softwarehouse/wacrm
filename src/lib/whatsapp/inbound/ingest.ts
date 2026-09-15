@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { runAutomationsForTrigger } from "@/lib/automations/engine";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
+import { reopenOnInboundPatch } from "@/lib/inbox/conversation-status";
 import { CONTACT_SOURCE } from "@/lib/contacts/source";
 import { dispatchInboundToFlows } from "@/lib/flows/engine";
 import {
@@ -534,6 +535,9 @@ async function ingestGroupMessage(
       // 0 pra sempre, como se alguém já tivesse lido assim que ela
       // chegou — mesmo sem ninguém ter aberto a conversa.
       unread_count: resolved.unreadCount + 1,
+      // Mesma regra do 1:1: mensagem nova num grupo fechado reabre a
+      // conversa na hora.
+      ...reopenOnInboundPatch(resolved.status),
       updated_at: new Date().toISOString(),
     })
     .eq("id", resolved.conversationId);
@@ -732,6 +736,9 @@ export async function ingestInboundMessage(
       last_message_text: buildConversationPreview(content),
       last_message_at: new Date().toISOString(),
       unread_count: (conversation.unread_count || 0) + 1,
+      // Cliente voltou a escrever: se a conversa estava fechada, reabre
+      // na hora em vez de esperar a varredura de 24h.
+      ...reopenOnInboundPatch(conversation.status),
       updated_at: new Date().toISOString(),
     })
     .eq("id", conversation.id);

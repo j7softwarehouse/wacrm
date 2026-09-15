@@ -9,7 +9,10 @@ import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
-import { CONVERSATION_STATUS_TEXT_CLASS } from "@/lib/inbox/conversation-status";
+import {
+  CONVERSATION_STATUS_TEXT_CLASS,
+  conversationStatusPatch,
+} from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
   Message,
@@ -32,6 +35,9 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Smartphone,
+  Search,
+  ChevronUp,
+  X,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -45,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
+import { findMessageMatches } from "@/lib/inbox/message-search";
 import { MessageActions } from "./message-actions";
 import { ForwardDialog } from "./forward-dialog";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
@@ -229,6 +236,11 @@ export function MessageThread({
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   /** Mensagem escolhida para encaminhar; abre o diálogo de destinos. */
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  // Busca dentro da conversa (estilo WhatsApp). Toda a filtragem é local:
+  // a thread já tem todas as mensagens em memória.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -314,6 +326,46 @@ export function MessageThread({
         .map((c) => c.phone_e164)
         .filter((p): p is string => !!p),
     [channelsById],
+  );
+
+  // ---- Busca dentro da conversa -------------------------------------
+  // Ids das mensagens que casam, em ordem. `matchIndex` é a ocorrência
+  // "atual" (o "3 de 12" da barra), navegável com as setas, igual ao
+  // WhatsApp.
+  const matchIds = useMemo(
+    () => findMessageMatches(messages, searchQuery),
+    [messages, searchQuery],
+  );
+  const activeMatchId = matchIds[matchIndex] ?? null;
+
+  // Toda busca nova recomeça na primeira ocorrência.
+  useEffect(() => {
+    setMatchIndex(0);
+  }, [searchQuery]);
+
+  // Rola até a ocorrência atual. A âncora é o `data-message-id` que
+  // MessageActions carimba na linha da mensagem.
+  useEffect(() => {
+    if (!activeMatchId) return;
+    const el = document.querySelector(`[data-message-id="${activeMatchId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeMatchId]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setMatchIndex(0);
+  }, []);
+
+  const gotoMatch = useCallback(
+    (delta: number) => {
+      setMatchIndex((prev) => {
+        if (matchIds.length === 0) return 0;
+        // Circular, como no WhatsApp: passar da última volta para a primeira.
+        return (prev + delta + matchIds.length) % matchIds.length;
+      });
+    },
+    [matchIds.length],
   );
 
   /**
@@ -736,9 +788,11 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
+      // `conversationStatusPatch` mantém `closed_at` coerente — é ele que
+      // sustenta a reabertura automática depois de 24h fechada.
       await supabase
         .from("conversations")
-        .update({ status })
+        .update(conversationStatusPatch(status))
         .eq("id", conversation.id);
 
       onStatusChange(conversation.id, status);
@@ -1240,6 +1294,23 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Busca dentro da conversa — abre a barra logo abaixo do
+              cabeçalho. Igual ao WhatsApp: lupa, contador "n de N" e
+              setas para navegar entre as ocorrências. */}
+          <button
+            type="button"
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            aria-label={t("searchInConversation")}
+            title={t("searchInConversation")}
+            aria-pressed={searchOpen}
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+              searchOpen ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
+
           {/* Manual refresh — forces a refetch of the messages + the
               conversation list (the parent bumps its resyncToken). Useful
               when realtime missed an event or the agent just wants to be
@@ -1356,6 +1427,66 @@ export function MessageThread({
         </div>
       </div>
 
+      {/* Barra de busca dentro da conversa. Fica entre o cabeçalho e as
+          mensagens, como no WhatsApp, e some junto com a busca. */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closeSearch();
+              // Enter avança; Shift+Enter volta — mesmo atalho do
+              // "localizar" de qualquer editor.
+              if (e.key === "Enter") gotoMatch(e.shiftKey ? -1 : 1);
+            }}
+            placeholder={t("searchPlaceholder")}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {searchQuery.trim() && (
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {matchIds.length === 0
+                ? t("searchNoResults")
+                : t("searchCount", {
+                    current: matchIndex + 1,
+                    total: matchIds.length,
+                  })}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => gotoMatch(-1)}
+            disabled={matchIds.length === 0}
+            aria-label={t("searchPrevious")}
+            title={t("searchPrevious")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => gotoMatch(1)}
+            disabled={matchIds.length === 0}
+            aria-label={t("searchNext")}
+            title={t("searchNext")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={closeSearch}
+            aria-label={t("searchClose")}
+            title={t("searchClose")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
@@ -1469,6 +1600,8 @@ export function MessageThread({
                           onToggleReaction={handlePillToggle}
                           showAuthor={showAuthor}
                           authorName={authorName}
+                          highlightQuery={searchOpen ? searchQuery : ""}
+                          highlightActive={msg.id === activeMatchId}
                         />
                       </MessageActions>
                     );

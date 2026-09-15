@@ -177,7 +177,14 @@
       "channelRemovedBadge": "Canal removido",
       "channelRemovedWarning": "O canal de origem desta conversa foi removido. Não é possível enviar mensagens por aqui.",
       "channelDisconnectedWarning": "O canal \"{label}\" está desconectado. Reconecte-o em Configurações → Canais para enviar mensagens.",
-      "channelUnnamed": "sem nome"
+      "channelUnnamed": "sem nome",
+      "searchInConversation": "Buscar na conversa",
+      "searchPlaceholder": "Buscar nesta conversa...",
+      "searchCount": "{current} de {total}",
+      "searchNoResults": "Nenhum resultado",
+      "searchPrevious": "Anterior",
+      "searchNext": "Próxima",
+      "searchClose": "Fechar busca"
     },
     "sessionTimer": {
       "expired": "Expirado",

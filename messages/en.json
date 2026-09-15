@@ -177,7 +177,14 @@
       "channelRemovedBadge": "Channel removed",
       "channelRemovedWarning": "This conversation's channel was removed. You can't send messages here anymore.",
       "channelDisconnectedWarning": "The \"{label}\" channel is disconnected. Reconnect it in Settings → Channels to send messages.",
-      "channelUnnamed": "unnamed"
+      "channelUnnamed": "unnamed",
+      "searchInConversation": "Search in conversation",
+      "searchPlaceholder": "Search this conversation...",
+      "searchCount": "{current} of {total}",
+      "searchNoResults": "No results",
+      "searchPrevious": "Previous",
+      "searchNext": "Next",
+      "searchClose": "Close search"
     },
     "sessionTimer": {
       "expired": "Expired",
