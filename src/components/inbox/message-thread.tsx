@@ -8,6 +8,7 @@ import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
 import { CONVERSATION_STATUS_TEXT_CLASS } from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
@@ -1100,6 +1101,10 @@ export function MessageThread({
     channel.status !== "connected";
   const channelUnavailable = channelMissing || channelDisconnected;
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
+  // Só colore quando há mais de um canal na conta — com um só, não há
+  // o que diferenciar visualmente (mesmo critério da lista de conversas).
+  const threadChannelColor =
+    channel && (channelsById?.size ?? 0) > 1 ? channelColor(channel.id) : undefined;
   const channelWarning = channelMissing
     ? t("channelRemovedWarning")
     : channelDisconnected
@@ -1172,12 +1177,20 @@ export function MessageThread({
             <Badge
               variant="outline"
               className={cn(
-                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-                channelUnavailable ? "text-red-400" : "text-muted-foreground"
+                "ml-1 hidden gap-1 text-[10px] sm:inline-flex sm:ml-2",
+                channelUnavailable
+                  ? "border-border text-red-400"
+                  : threadChannelColor
+                    ? cn(threadChannelColor.text, threadChannelColor.border)
+                    : "border-border text-muted-foreground"
               )}
               title={channelWarning ?? undefined}
             >
-              <Smartphone className="h-3 w-3" />
+              {threadChannelColor && !channelUnavailable ? (
+                <span className={cn("h-2 w-2 rounded-full", threadChannelColor.dot)} />
+              ) : (
+                <Smartphone className="h-3 w-3" />
+              )}
               {channelDisplayLabel ?? t("channelRemovedBadge")}
             </Badge>
           )}
@@ -1503,6 +1516,11 @@ export function MessageThread({
         // liberar envio) — encaminhar precisa respeitar de qual das
         // "contas" independentes esta mensagem realmente veio.
         channelId={conversation.channel_id}
+        channelDisplayLabel={
+          conversation.channel_id
+            ? channelLabel(channelsById?.get(conversation.channel_id) ?? {})
+            : undefined
+        }
       />
     </div>
   );

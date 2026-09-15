@@ -18,6 +18,8 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { CONVERSATION_SELECT, normalizeConversations } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
+import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -57,12 +59,17 @@ export function ForwardDialog({
    *  `undefined` = conta com um canal só ou conversa sem canal fixo;
    *  nesse caso não filtra (não há "outro canal" pra confundir). */
   channelId,
+  /** Rótulo de exibição desse canal (nome ou telefone) — mostrado no
+   *  topo do diálogo pra deixar claro por qual número o encaminhamento
+   *  vai sair, pedido explícito do usuário quando há mais de um canal. */
+  channelDisplayLabel,
 }: {
   messageId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentConversationId?: string;
   channelId?: string | null;
+  channelDisplayLabel?: string;
 }) {
   const t = useTranslations("Inbox.forward");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -172,6 +179,17 @@ export function ForwardDialog({
           <DialogDescription>
             {t("selectedCount", { count: selected.size, max: MAX_DESTINATIONS })}
           </DialogDescription>
+          {channelDisplayLabel && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  channelId ? channelColor(channelId).dot : "bg-muted-foreground",
+                )}
+              />
+              {t("usingChannel", { label: channelDisplayLabel })}
+            </p>
+          )}
         </DialogHeader>
 
         <div className="space-y-2">

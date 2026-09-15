@@ -9,6 +9,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
 import { CONVERSATION_STATUS_DOT_CLASS } from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
@@ -419,6 +420,9 @@ export function ConversationList({
                 channel={
                   conv.channel_id ? channelsById?.get(conv.channel_id) : undefined
                 }
+                // A cor só ajuda quando há o que diferenciar — com um
+                // canal só, seria ruído visual sem propósito.
+                multiChannel={(channelsById?.size ?? 0) > 1}
                 t={t}
               />
             ))}
@@ -440,6 +444,8 @@ interface ConversationItemProps {
    * way there's nothing to look up, so the chip below is simply omitted.
    */
   channel?: PublicChannel;
+  /** Só true quando a conta tem 2+ canais — aí sim vale colorir. */
+  multiChannel?: boolean;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -448,12 +454,17 @@ function ConversationItem({
   isActive,
   onSelect,
   channel,
+  multiChannel,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
+  const color =
+    multiChannel && conversation.channel_id
+      ? channelColor(conversation.channel_id)
+      : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -506,10 +517,19 @@ function ConversationItem({
             )}
             {label && (
               <span
-                className="hidden max-w-24 items-center gap-1 truncate rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                className={cn(
+                  "hidden max-w-24 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] sm:inline-flex",
+                  color
+                    ? cn("bg-transparent", color.text, color.border)
+                    : "border-transparent bg-muted text-muted-foreground",
+                )}
                 title={t("channelHint", { label })}
               >
-                <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                {color ? (
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", color.dot)} />
+                ) : (
+                  <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                )}
                 <span className="truncate">{label}</span>
               </span>
             )}

@@ -314,7 +314,8 @@
       "cancel": "Cancelar",
       "success": "{count, plural, =1 {Mensagem encaminhada} other {Mensagem encaminhada para # conversas}}",
       "partialFailure": "{count, plural, =1 {1 conversa não recebeu} other {# conversas não receberam}}",
-      "error": "Não foi possível encaminhar a mensagem."
+      "error": "Não foi possível encaminhar a mensagem.",
+      "usingChannel": "Encaminhando pelo canal {label}"
     }
   },
   "Contacts": {

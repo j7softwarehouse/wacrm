@@ -314,7 +314,8 @@
       "cancel": "Cancel",
       "success": "{count, plural, =1 {Message forwarded} other {Message forwarded to # chats}}",
       "partialFailure": "{count, plural, =1 {1 chat did not receive it} other {# chats did not receive it}}",
-      "error": "Could not forward the message."
+      "error": "Could not forward the message.",
+      "usingChannel": "Forwarding via {label}"
     }
   },
   "Contacts": {
