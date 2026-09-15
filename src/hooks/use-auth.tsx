@@ -20,6 +20,10 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import {
+  isConversationScope,
+  type ConversationScope,
+} from "@/lib/auth/conversation-scope";
 import { isModuleEnabled, MODULES } from "@/lib/accounts/modules";
 import { defaultChannelSupportsTemplates as computeDefaultChannelSupportsTemplates } from "@/lib/accounts/default-channel";
 import type { WhatsAppProviderKind } from "@/types";
@@ -38,6 +42,10 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  /** Alcance de conversas — ver docs/superpowers/specs/2026-09-15-escopo-de-conversas-design.md.
+   *  `null` só deveria acontecer num perfil pré-migração; tratado como
+   *  `'all'` (o padrão da coluna) por quem consome. */
+  conversation_scope: ConversationScope | null;
 }
 
 interface AccountSummary {
@@ -113,6 +121,17 @@ interface AuthContextValue {
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
   /**
+   * Alcance de conversas do usuário. `null` enquanto o perfil ainda
+   * carrega — consumidores devem esperar `!profileLoading` antes de
+   * decidir com base nisto, mesmo padrão de `accountRole`. Ignorado na
+   * prática para admin/owner (sempre enxergam tudo) — ver
+   * `canSeeConversation` em `@/lib/auth/conversation-scope`.
+   */
+  conversationScope: ConversationScope | null;
+  /** True quando o usuário só enxerga/responde conversas atribuídas a
+   *  ele mesmo (agent ou viewer com conversationScope === 'assigned'). */
+  hasRestrictedScope: boolean;
+  /**
    * True unless the account explicitly disabled the sales module
    * (`disabled_modules` contains `'sales'`). Opt-out, so it's true
    * while loading and for every account that never touched the
@@ -171,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, conversation_scope",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -257,6 +276,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const accountRole = isAccountRole(data.account_role)
           ? data.account_role
           : null;
+        const conversationScope = isConversationScope(data.conversation_scope)
+          ? data.conversation_scope
+          : "all";
 
         setProfile({
           id: data.id,
@@ -271,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          conversation_scope: conversationScope,
         });
         setAccount(accountRow);
       } else {
@@ -391,8 +414,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      conversationScope: profile?.conversation_scope ?? null,
+      hasRestrictedScope:
+        !!role &&
+        role !== "admin" &&
+        role !== "owner" &&
+        profile?.conversation_scope === "assigned",
     };
-  }, [profile?.account_role, profile?.account_id]);
+  }, [profile?.account_role, profile?.account_id, profile?.conversation_scope]);
 
   // Opt-out module gate (Task 10). Computed from `account`, not
   // `profile`, and defaults to enabled while `account` is still null
@@ -459,6 +488,8 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      conversationScope: null,
+      hasRestrictedScope: false,
       // Opt-out: fail OPEN like every other account with no
       // configuration, not closed like the role gates above.
       salesEnabled: true,

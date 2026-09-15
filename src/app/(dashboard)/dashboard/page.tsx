@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
+import { useBlockRestrictedScope } from '@/hooks/use-block-restricted-scope'
 import {
   MessageSquare,
   UserPlus,
@@ -42,6 +43,7 @@ import { useTranslations } from 'next-intl'
 type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
+  useBlockRestrictedScope();
   const t = useTranslations('Dashboard.page')
   const { defaultCurrency, accountId, salesEnabled } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)

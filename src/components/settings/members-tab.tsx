@@ -67,6 +67,7 @@ import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import { usePresence } from '@/hooks/use-presence';
 import type { AccountRole } from '@/lib/auth/roles';
+import type { ConversationScope } from '@/lib/auth/conversation-scope';
 import { presenceLabel, summarize } from '@/lib/presence';
 import {
   PRESENCE_DOT_CLASS,
@@ -82,6 +83,7 @@ interface Member {
   email: string | null;
   avatar_url: string | null;
   role: AccountRole;
+  conversation_scope: ConversationScope;
   joined_at: string;
 }
 
@@ -98,6 +100,13 @@ const EDITABLE_ROLES: { value: AccountRole }[] = [
   { value: 'admin' },
   { value: 'agent' },
   { value: 'viewer' },
+];
+
+// Escopo só faz sentido pra agent/viewer -- admin/owner sempre
+// enxergam tudo (a RPC recusa tentar mudar o deles).
+const EDITABLE_SCOPES: { value: ConversationScope }[] = [
+  { value: 'all' },
+  { value: 'assigned' },
 ];
 
 // Per-role chip metadata (icon / label / colour) lives in the shared
@@ -127,6 +136,7 @@ function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, stri
 export function MembersTab() {
   const t = useTranslations('Settings.members');
   const tRoles = useTranslations('Settings.roles');
+  const tScopes = useTranslations('Settings.conversationScopes');
   const { user, canManageMembers } = useAuth();
   const { getPresence, getRow, now } = usePresence();
 
@@ -222,6 +232,53 @@ export function MembersTab() {
         ),
       );
       console.error('[MembersTab] role change error:', err);
+      toast.error('Could not reach the server');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  }
+
+  // Escopo de conversas — ver docs/superpowers/specs/2026-09-15-escopo-de-conversas-design.md.
+  // Mesmo padrão otimista de handleRoleChange: flipa a tela na hora,
+  // reverte se o PATCH falhar.
+  async function handleScopeChange(member: Member, nextScope: ConversationScope) {
+    if (member.conversation_scope === nextScope) return;
+    const previousScope = member.conversation_scope;
+    setPendingMemberAction(member.user_id);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id ? { ...m, conversation_scope: nextScope } : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}/scope`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: nextScope }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id ? { ...m, conversation_scope: previousScope } : m,
+          ),
+        );
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update conversation scope');
+        return;
+      }
+      toast.success(
+        t('scopeUpdatedToast', {
+          name: member.full_name || t('unnamed'),
+          scope: tScopes(nextScope),
+        }),
+      );
+    } catch (err) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id ? { ...m, conversation_scope: previousScope } : m,
+        ),
+      );
+      console.error('[MembersTab] scope change error:', err);
       toast.error('Could not reach the server');
     } finally {
       setPendingMemberAction(null);
@@ -445,6 +502,42 @@ export function MembersTab() {
                         <RoleIcon className="size-3.5" />
                         {tRoles(member.role)}
                       </span>
+                    )}
+
+                    {/* Escopo de conversas — só faz sentido pra agent/
+                        viewer; admin/owner sempre enxergam tudo (a RPC
+                        recusa mudar o deles), então nem mostramos o
+                        seletor nessas linhas. */}
+                    {canManageMembers &&
+                    !isOwnerRow &&
+                    !isSelf &&
+                    (member.role === 'agent' || member.role === 'viewer') ? (
+                      <Select
+                        value={member.conversation_scope}
+                        onValueChange={(v) =>
+                          v && handleScopeChange(member, v as ConversationScope)
+                        }
+                      >
+                        <SelectTrigger
+                          className="w-36 bg-muted border-border text-foreground"
+                          disabled={isBusy}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EDITABLE_SCOPES.map((sc) => (
+                            <SelectItem key={sc.value} value={sc.value}>
+                              {tScopes(sc.value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      (member.role === 'agent' || member.role === 'viewer') && (
+                        <span className="text-xs text-muted-foreground">
+                          {tScopes(member.conversation_scope)}
+                        </span>
+                      )
                     )}
 
                     {/* Remove. Admin+ only; never on the owner row;

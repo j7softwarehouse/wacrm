@@ -8,11 +8,13 @@ import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AiConfig } from '@/components/settings/ai-config';
 import { useAuth } from '@/hooks/use-auth';
+import { useBlockRestrictedScope } from '@/hooks/use-block-restricted-scope';
 import { canEditSettings } from '@/lib/auth/roles';
 
 type Tab = 'playground' | 'setup' | 'usage';
 
 export default function AgentsPage() {
+  useBlockRestrictedScope();
   const t = useTranslations('Agents.page');
   const { accountRole } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;

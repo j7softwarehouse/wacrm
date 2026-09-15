@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { Radio, Plus, Loader2 } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
+import { useBlockRestrictedScope } from '@/hooks/use-block-restricted-scope';
 import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
@@ -58,6 +59,7 @@ function RateCell({
 }
 
 export default function BroadcastsPage() {
+  useBlockRestrictedScope();
   const router = useRouter();
   const t = useTranslations('Broadcasts.page');
   const tStatus = useTranslations('Broadcasts.status');

@@ -78,6 +78,10 @@ export default function ContactsPage() {
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
+  // Distinto de `canEdit`: quem tem escopo de conversas restrito é
+  // agent+ (edita/importa contato normalmente) mas nunca inicia
+  // conversa nova — só responde o que já foi atribuído a ele.
+  const canStartConv = useCan('start-conversation');
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -784,8 +788,8 @@ export default function ContactsPage() {
                         <ConversarButton
                           contactId={contact.id}
                           channels={channels}
-                          canAct={canEdit}
-                          gateReason="send messages"
+                          canAct={canStartConv}
+                          gateReason="start a new conversation"
                           label={t('goToConversationBtn')}
                           onError={() => toast.error(t('toastFailedOpenConversation'))}
                         />

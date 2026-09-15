@@ -1365,7 +1365,8 @@
       "removeDialogDesc": "<bold>{name}</bold>을(를) 이 계정에서 제거하시겠습니까? 이 계정에서 로그아웃되며 다음 로그인 시 새로운 개인 계정이 발급됩니다. 로그인 정보 자체는 삭제되지 않습니다.",
       "cancel": "취소",
       "removing": "제거 중...",
-      "removeBtn": "멤버 제거"
+      "removeBtn": "멤버 제거",
+      "scopeUpdatedToast": "{name}의 범위를 {scope}(으)로 업데이트했습니다"
     },
     "invite": {
       "inviteCreated": "초대가 생성되었습니다",
@@ -1867,6 +1868,10 @@
       "reindex": "재색인",
       "reindexTooltip": "모든 문서를 다시 임베딩합니다 (예: 임베딩 키 추가 후)",
       "loading": "불러오는 중…"
+    },
+    "conversationScopes": {
+      "all": "모든 대화",
+      "assigned": "배정된 대화만"
     }
   }
 }

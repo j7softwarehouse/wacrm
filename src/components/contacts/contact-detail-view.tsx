@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
@@ -56,6 +57,9 @@ export function ContactDetailView({
   const t = useTranslations('Contacts.detailView');
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
+  // Quem tem escopo de conversas restrito nunca inicia conversa nova —
+  // só responde o que já foi atribuído a ele.
+  const canStartConv = useCan('start-conversation');
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -410,6 +414,8 @@ export function ContactDetailView({
                   contactId={contact.id}
                   channels={channels}
                   variant="full"
+                  canAct={canStartConv}
+                  gateReason="start a new conversation"
                   label={t('goToConversationBtn')}
                   onError={(err) => {
                     const reason = err instanceof Error ? err.message : 'network error';
