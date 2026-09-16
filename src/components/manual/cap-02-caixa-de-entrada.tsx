@@ -1,4 +1,6 @@
 import {
+  Bell,
+  Bookmark,
   Check,
   CheckCheck,
   ChevronDown,
@@ -77,9 +79,10 @@ export function CapituloCaixaDeEntrada() {
           <li>
             <Botao icone={ChevronDown}>Todos</Botao> — o filtro. Ele abre as
             opções <Termo>Todos</Termo>, <Termo>Não lido</Termo>,{" "}
-            <Termo>Aberto</Termo>, <Termo>Pendente</Termo> e{" "}
-            <Termo>Fechado</Termo>, e também permite filtrar por{" "}
-            <Termo>Tags</Termo> e por <Termo>Empresa</Termo>.
+            <Termo>Aberto</Termo>, <Termo>Pendente</Termo>,{" "}
+            <Termo>Fechado</Termo> e <Termo>Com meus marcadores</Termo>, e
+            também permite filtrar por <Termo>Tags</Termo> e por{" "}
+            <Termo>Empresa</Termo>.
           </li>
         </Lista>
         <p>
@@ -160,6 +163,11 @@ export function CapituloCaixaDeEntrada() {
           <li>
             <Botao icone={Trash2}>Deletar</Botao> — apaga para todos no
             WhatsApp.
+          </li>
+          <li>
+            <Botao icone={Bookmark}>Marcar</Botao> — deixa uma etiqueta bem
+            naquele ponto da conversa, para não se perder depois. Veja a seção
+            seguinte.
           </li>
         </Lista>
         <p>
@@ -329,6 +337,53 @@ export function CapituloCaixaDeEntrada() {
           constar como responsável. Para desfazer, abra o mesmo menu e escolha{" "}
           <Termo>Desatribuir</Termo>.
         </p>
+      </Secao>
+
+      <Secao id="marcadores" titulo="Marcar um ponto da conversa">
+        <p>
+          Numa conversa longa, compartilhada entre várias pessoas, é fácil
+          perder de vista onde você parou de tratar um assunto — alguém
+          responde outra coisa no meio, e depois é preciso rolar tudo de novo
+          procurando. O <Termo>marcador</Termo> resolve isso: é uma etiqueta
+          presa numa mensagem específica, com o seu nome e um rótulo curto
+          (opcional).
+        </p>
+        <Passos>
+          <Passo>
+            Passe o mouse sobre a mensagem e clique em{" "}
+            <Botao icone={Bookmark}>Marcar</Botao>.
+          </Passo>
+          <Passo>
+            Escreva um rótulo curto (por exemplo, <Termo>Financeiro</Termo>) —
+            ou deixe em branco.
+          </Passo>
+          <Passo>Confirme.</Passo>
+        </Passos>
+        <p>
+          Um chip com o rótulo e o seu nome aparece embaixo da mensagem, à
+          vista de toda a equipe — assim um colega também sabe que aquele
+          assunto já está sendo tratado por você. No topo da conversa, o
+          botão com o ícone <Icone icone={Bookmark} /> mostra todos os pontos
+          marcados ali, com atalho direto para cada um.
+        </p>
+        <p>
+          Dá para marcar em nome de um colega, em vez de si mesmo: ao abrir{" "}
+          <Botao icone={Bookmark}>Marcar</Botao>, escolha o nome da pessoa em
+          vez de <Termo>Para mim</Termo>. Ela recebe um aviso em{" "}
+          <Termo>Notificações</Termo>, e o marcador já nasce em nome dela.
+        </p>
+        <p>
+          Todos os seus marcadores — de qualquer conversa — ficam reunidos em{" "}
+          <Botao icone={Bell}>Notificações → Meus marcadores</Botao>. Clicar
+          num deles leva direto para o ponto exato marcado. A lista de
+          conversas também tem o filtro <Termo>Com meus marcadores</Termo>,
+          para achar rápido só as que têm algo pendente seu.
+        </p>
+        <Aviso tipo="dica">
+          Remover um marcador (o <Icone icone={X} /> no chip) só está
+          disponível para quem marcou, quem atribuiu a outra pessoa, ou um
+          administrador.
+        </Aviso>
       </Secao>
 
       <Secao id="painel-contato" titulo="O painel do contato">

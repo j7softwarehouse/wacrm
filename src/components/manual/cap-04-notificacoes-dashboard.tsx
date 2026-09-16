@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Bell,
+  Bookmark,
   CheckCheck,
   CheckCircle2,
   Clock,
@@ -33,23 +34,30 @@ export function CapituloNotificacoesDashboard() {
           <Botao icone={Bell}>Notificações</Botao> no menu lateral.
         </Onde>
         <p>
-          Esta tela tem uma função específica:{" "}
-          <Termo>
-            avisar quando um colega passa uma conversa para você
-          </Termo>
-          . Não é um resumo de mensagens novas — mensagens novas aparecem
-          sozinhas na Caixa de entrada, com o contador de não lidas.
+          Esta tela avisa quando algo pede a sua atenção em outra conversa. Não
+          é um resumo de mensagens novas — mensagens novas aparecem sozinhas na
+          Caixa de entrada, com o contador de não lidas. A tela tem duas abas:
         </p>
-        <p>
-          Quando alguém usa <Botao icone={UserPlus}>Atribuir</Botao> e escolhe o
-          seu nome, cai um aviso aqui e o menu lateral mostra um contador ao
-          lado de Notificações.
-        </p>
+        <Lista>
+          <li>
+            <Termo>Notificações</Termo> — avisa quando um colega usa{" "}
+            <Botao icone={UserPlus}>Atribuir</Botao> e escolhe o seu nome. Cai
+            um aviso aqui, e o menu lateral mostra um contador ao lado de
+            Notificações.
+          </li>
+          <li>
+            <Termo>Meus marcadores</Termo> — reúne todo{" "}
+            <Icone icone={Bookmark} /> marcador que você deixou (ou que um
+            colega atribuiu a você) em qualquer conversa. Clicar num deles leva
+            direto para o ponto exato marcado. Veja o capítulo 2 para como
+            marcar.
+          </li>
+        </Lista>
         <Lista>
           <li>Clique no aviso para abrir a conversa correspondente.</li>
           <li>
             <Botao icone={CheckCheck}>Marcar tudo como lido</Botao> limpa a
-            lista de uma vez.
+            aba Notificações de uma vez — não afeta os marcadores.
           </li>
         </Lista>
         <Aviso tipo="dica">
