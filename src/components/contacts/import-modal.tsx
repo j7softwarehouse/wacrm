@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
+  buildContactSyncUpdate,
   dedupeByPhone,
   isUniqueViolation,
   normalizeKey,
@@ -142,6 +143,7 @@ export function ImportModal({
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{
     imported: number;
+    updated: number;
     skipped: number;
     failed: number;
     tagsAssigned: number;
@@ -255,6 +257,7 @@ export function ImportModal({
         throw new Error('Your profile is not linked to an account.');
 
       let imported = 0;
+      let updated = 0;
       let skipped = 0;
       let failed = 0;
 
@@ -262,27 +265,62 @@ export function ImportModal({
       const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
       skipped += inFileDupes;
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
+      // 2) Split into genuinely-new rows vs. numbers already in this
+      //    account. For the latter, a non-blank value that differs from
+      //    what's stored updates the contact (never blanks out a field
+      //    with an empty spreadsheet cell) — see buildContactSyncUpdate.
       const { data: existingRows } = await supabase
         .from('contacts')
-        .select('phone_normalized')
+        .select('id, phone_normalized, name, email, company')
         .eq('account_id', accountId);
-      const existing = new Set(
+      type ExistingRow = {
+        id: string;
+        phone_normalized: string | null;
+        name: string | null;
+        email: string | null;
+        company: string | null;
+      };
+      const existingByPhone = new Map<string, ExistingRow>(
         (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
+          .filter((r): r is ExistingRow => !!(r as ExistingRow).phone_normalized)
+          .map((r) => [(r as ExistingRow).phone_normalized as string, r as ExistingRow])
       );
 
-      const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
-          skipped++;
-          return false;
+      const toInsert: ParsedContactRow[] = [];
+      const toUpdate: { id: string; fields: NonNullable<ReturnType<typeof buildContactSyncUpdate>> }[] = [];
+
+      for (const row of unique) {
+        const match = existingByPhone.get(normalizeKey(row.phone));
+        if (!match) {
+          toInsert.push(row);
+          continue;
         }
-        return true;
-      });
+        const fields = buildContactSyncUpdate(
+          { name: match.name, email: match.email, company: match.company },
+          { name: row.name, email: row.email, company: row.company },
+        );
+        if (fields) {
+          toUpdate.push({ id: match.id, fields });
+        } else {
+          skipped++;
+        }
+      }
+
+      // 2b) Apply updates to existing contacts whose data actually
+      //     changed. Each row can differ by a different set of fields,
+      //     so this can't be a single batched statement — sequential,
+      //     same as the chunk-retry loop below is for inserts.
+      for (const { id, fields } of toUpdate) {
+        const { error } = await supabase
+          .from('contacts')
+          .update({ ...fields, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) {
+          failed++;
+        } else {
+          updated++;
+        }
+      }
 
       // 3) Resolve tag names → ids (admin+ may auto-create missing tags).
       //    Skip the round-trip when the import carries no tag names.
@@ -378,9 +416,14 @@ export function ImportModal({
         toast.warning(t('toastTagsWarning'));
       }
 
-      setResult({ imported, skipped, failed, tagsAssigned });
+      setResult({ imported, updated, skipped, failed, tagsAssigned });
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
+      }
+      if (updated > 0) {
+        toast.success(t('toastUpdated', { count: updated }));
+      }
+      if (imported > 0 || updated > 0) {
         onImported();
       }
       if (tagsAssigned > 0) {
@@ -609,6 +652,12 @@ export function ImportModal({
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
                     {t('resultImported', { count: result.imported })}
+                  </div>
+                )}
+                {result.updated > 0 && (
+                  <div className="text-primary flex items-center gap-1.5 text-sm">
+                    <CheckCircle className="size-4 shrink-0" />
+                    {t('resultUpdated', { count: result.updated })}
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (

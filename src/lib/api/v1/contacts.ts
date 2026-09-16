@@ -9,7 +9,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import {
+  buildContactSyncUpdate,
+  findExistingContact,
+  isUniqueViolation,
+} from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
@@ -130,7 +134,25 @@ export async function findOrCreateContact(
   }
 
   const existing = await findExistingContact(db, accountId, sanitized);
-  if (existing) return { id: existing.id, created: false };
+  if (existing) {
+    // A non-blank value in this request that differs from what's
+    // stored wins — never blanks out a field with an absent one.
+    const fields = buildContactSyncUpdate(
+      {
+        name: (existing.name as string | null) ?? null,
+        email: (existing.email as string | null) ?? null,
+        company: (existing.company as string | null) ?? null,
+      },
+      { name: input.name, email: input.email, company: input.company },
+    );
+    if (fields) {
+      await db
+        .from('contacts')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+    }
+    return { id: existing.id, created: false };
+  }
 
   const { data: created, error } = await db
     .from('contacts')

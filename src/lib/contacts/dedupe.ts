@@ -74,6 +74,38 @@ export function isUniqueViolation(error: unknown): boolean {
   return (error as { code?: string }).code === "23505";
 }
 
+/** The contact fields every find-or-create path may want to sync. */
+export interface ContactSyncFields {
+  name: string | null;
+  email: string | null;
+  company: string | null;
+}
+
+/**
+ * Decide which fields of an already-existing contact should be
+ * updated from a newly-seen source (manual import row, public API
+ * payload, broadcast CSV row). A non-blank incoming value always wins
+ * when it differs from what's stored; a blank/absent incoming value
+ * never erases existing data. Returns `null` when nothing changes, so
+ * callers can skip the UPDATE entirely.
+ */
+export function buildContactSyncUpdate(
+  existing: ContactSyncFields,
+  incoming: Partial<Record<keyof ContactSyncFields, string | null | undefined>>,
+): Partial<ContactSyncFields> | null {
+  const update: Partial<ContactSyncFields> = {};
+
+  for (const key of Object.keys(existing) as (keyof ContactSyncFields)[]) {
+    const incomingValue = incoming[key]?.trim();
+    if (!incomingValue) continue;
+    if (incomingValue !== existing[key]) {
+      update[key] = incomingValue;
+    }
+  }
+
+  return Object.keys(update).length > 0 ? update : null;
+}
+
 /**
  * De-duplicate parsed CSV rows by normalized phone, keeping the first
  * occurrence of each. Rows with an empty normalized phone are dropped
