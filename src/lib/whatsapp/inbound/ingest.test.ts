@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InboundContent } from "./ingest";
 import { buildConversationPreview, isDuplicateMessage } from "./ingest";
+import { dispatchInboundToFlows } from "@/lib/flows/engine";
+import { runAutomationsForTrigger } from "@/lib/automations/engine";
+import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 
 // Os motores de flows/automations/AI e a entrega de webhooks são
 // efeitos colaterais disparados DEPOIS que a mensagem já foi gravada —
@@ -78,8 +81,9 @@ function conversationKey(row: Row): string {
 
 class FakeQuery {
   private conds: ((row: Row) => boolean)[] = [];
-  private mode: "select" | "insert" | "update" = "select";
+  private mode: "select" | "insert" | "update" | "upsert" = "select";
   private payload: Row | null = null;
+  private onConflictCols: string[] | null = null;
   private orderCol: string | null = null;
   private orderAsc = true;
   private limitN: number | null = null;
@@ -112,6 +116,13 @@ class FakeQuery {
   update(payload: Row) {
     this.mode = "update";
     this.payload = payload;
+    return this;
+  }
+
+  upsert(payload: Row, opts?: { onConflict?: string }) {
+    this.mode = "upsert";
+    this.payload = payload;
+    this.onConflictCols = opts?.onConflict ? opts.onConflict.split(",") : null;
     return this;
   }
 
@@ -220,6 +231,20 @@ class FakeQuery {
           };
         }
       }
+      this.rows.push(created);
+      return { data: [created], error: null };
+    }
+
+    if (this.mode === "upsert") {
+      const cols = this.onConflictCols ?? [];
+      const existing = this.rows.find((r) =>
+        cols.every((c) => r[c] === this.payload![c]),
+      );
+      if (existing) {
+        Object.assign(existing, this.payload);
+        return { data: [existing], error: null };
+      }
+      const created: Row = { id: `${this.table}-${this.db.nextId++}`, ...this.payload };
       this.rows.push(created);
       return { data: [created], error: null };
     }
@@ -342,5 +367,267 @@ describe("ingestInboundMessage — conversa órfã sem channel_id", () => {
     expect(db.tables.messages).toHaveLength(1);
     expect(db.tables.messages[0].conversation_id).toBe("conv-orfa");
     expect(db.tables.messages[0].message_id).toBe("wamid.ABC");
+  });
+});
+
+describe("ingestInboundMessage — mensagem de grupo nao aciona motores", () => {
+  it("NAO chama flows, automations nem IA quando params.group esta preenchido", async () => {
+    // Regressao da trava critica da Tarefa 3: sem ela, o bot responderia
+    // dentro de grupos de WhatsApp — inclusive grupos pessoais do numero
+    // conectado. Este teste chama ingestInboundMessage de verdade (nao
+    // so a funcao pura shouldDispatchEngines) para travar qualquer
+    // mudanca futura que mova uma chamada de motor para fora do `if`.
+    const { ingestInboundMessage } = await import("./ingest");
+
+    const channel = {
+      id: "chan-1",
+      account_id: "acc-1",
+      user_id: "user-1",
+      provider: "uazapi",
+      status: "connected",
+    };
+
+    const db = new FakeDb({
+      contacts: [],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    await ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP1",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi do grupo" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+
+    expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+    expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+    expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+  });
+});
+
+describe("ingestInboundMessage — mensagem nova reabre conversa fechada", () => {
+  // Pedido do usuário (2026-09-15): fechar é uma decisão do momento. Se o
+  // cliente volta a escrever, a conversa tem que voltar para "Aberto" na
+  // hora — não esperar as 24h da varredura.
+  const channel = {
+    id: "chan-1",
+    account_id: "acc-1",
+    user_id: "user-1",
+    provider: "uazapi",
+    status: "connected",
+  };
+
+  it("1:1 — conversa FECHADA volta para aberta e limpa closed_at", async () => {
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      contacts: [
+        {
+          id: "ct-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          phone: "+5511999997777",
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: "ct-1",
+          channel_id: "chan-1",
+          status: "closed",
+          closed_at: "2026-09-15T10:00:00.000Z",
+          unread_count: 0,
+        },
+      ],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.REOPEN-1",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "voltei" },
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-1");
+    expect(conv?.status).toBe("open");
+    expect(conv?.closed_at).toBeNull();
+  });
+
+  it("1:1 — conversa PENDENTE continua pendente (estado manual)", async () => {
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      contacts: [
+        {
+          id: "ct-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          phone: "+5511999997777",
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: "ct-1",
+          channel_id: "chan-1",
+          status: "pending",
+          closed_at: null,
+          unread_count: 0,
+        },
+      ],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.REOPEN-2",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi" },
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-1");
+    expect(conv?.status).toBe("pending");
+  });
+
+  it("grupo — conversa FECHADA volta para aberta", async () => {
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      whatsapp_groups: [
+        {
+          id: "grp-1",
+          account_id: "acc-1",
+          channel_id: "chan-1",
+          group_jid: "120363000000000000@g.us",
+          enabled: true,
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-g",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: null,
+          group_id: "grp-1",
+          channel_id: "chan-1",
+          status: "closed",
+          closed_at: "2026-09-15T10:00:00.000Z",
+          unread_count: 0,
+        },
+      ],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.REOPEN-G",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "grupo voltou" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-g");
+    expect(conv?.status).toBe("open");
+    expect(conv?.closed_at).toBeNull();
+  });
+});
+
+describe("ingestInboundMessage — unread_count de mensagem de grupo", () => {
+  it("soma 1 no unread_count da conversa, igual ao caminho 1:1", async () => {
+    // Bug real (2026-09-15): ingestGroupMessage nunca escrevia
+    // unread_count no UPDATE da conversa -- a mensagem chegava e ficava
+    // com unread_count preso em 0 pra sempre, como se alguém já tivesse
+    // lido assim que ela chegou.
+    const { ingestInboundMessage } = await import("./ingest");
+
+    const channel = {
+      id: "chan-1",
+      account_id: "acc-1",
+      user_id: "user-1",
+      provider: "uazapi",
+      status: "connected",
+    };
+
+    const db = new FakeDb({
+      whatsapp_groups: [
+        {
+          id: "grp-1",
+          account_id: "acc-1",
+          channel_id: "chan-1",
+          group_jid: "120363000000000000@g.us",
+          enabled: true,
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: null,
+          group_id: "grp-1",
+          channel_id: "chan-1",
+          unread_count: 0,
+        },
+      ],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP-UNREAD-1",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi do grupo" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-1");
+    expect(conv?.unread_count).toBe(1);
+
+    // Uma segunda mensagem soma de novo, não reseta.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ingestInboundMessage(db as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      pushName: "Participante",
+      providerMessageId: "wamid.GROUP-UNREAD-2",
+      timestamp: 1_700_000_001,
+      content: { type: "text", text: "segunda mensagem" },
+      group: {
+        groupJid: "120363000000000000@g.us",
+        participantJid: "5511999997777@s.whatsapp.net",
+      },
+    });
+    expect(conv?.unread_count).toBe(2);
   });
 });

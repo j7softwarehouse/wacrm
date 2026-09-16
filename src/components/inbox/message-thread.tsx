@@ -7,17 +7,24 @@ import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
-import { channelLabel } from "@/lib/inbox/conversations";
+import { channelLabel, conversationDisplayName } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
+import {
+  CONVERSATION_STATUS_TEXT_CLASS,
+  conversationStatusPatch,
+} from "@/lib/inbox/conversation-status";
 import type {
   Conversation,
   Message,
   MessageReaction,
+  MessageMarker,
   Contact,
   ConversationStatus,
   MessageTemplate,
   Profile,
   InteractiveMessagePayload,
 } from "@/types";
+import { markerChipText } from "@/lib/inbox/message-markers";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
@@ -30,6 +37,10 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Smartphone,
+  Search,
+  ChevronUp,
+  X,
+  Bookmark,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -43,7 +54,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
+import { findMessageMatches } from "@/lib/inbox/message-search";
 import { MessageActions } from "./message-actions";
+import { ForwardDialog } from "./forward-dialog";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -126,6 +139,14 @@ interface MessageThreadProps {
    * simply hasn't loaded in yet isn't mistaken for an orphaned one.
    */
   channelsLoaded?: boolean;
+  /**
+   * Vindo do link de "Meus marcadores" em Notificações
+   * (`/inbox?c=<conv>&m=<messageId>`) — assim que as mensagens
+   * carregarem, rola até essa mensagem e a destaca por alguns
+   * segundos. `null`/ausente = comportamento normal, sem pular pra
+   * lugar nenhum.
+   */
+  deepLinkMessageId?: string | null;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -152,10 +173,10 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: { label: string; value: ConversationStatus }[] = [
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Closed", value: "closed" },
 ];
 
 /**
@@ -186,18 +207,27 @@ export function MessageThread({
   onToggleContactPanel,
   channelsById,
   channelsLoaded = false,
+  deepLinkMessageId,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
+  const tBubble = useTranslations("Inbox.bubble");
+  const tActions = useTranslations("Inbox.actions");
 
-  const { user } = useAuth();
+  const { user, canEditSettings, canSendMessages, isAdmin, isOwner } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [markers, setMarkers] = useState<MessageMarker[]>([]);
+  const [markersPanelOpen, setMarkersPanelOpen] = useState(false);
+  // Destaque temporário de quem chegou via link de "Meus marcadores"
+  // (?m=<messageId>) — mesmo visual de `highlightActive` da busca,
+  // sem misturar com o estado da busca em si.
+  const [deepLinkHighlightId, setDeepLinkHighlightId] = useState<string | null>(null);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -221,6 +251,14 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  /** Mensagem escolhida para encaminhar; abre o diálogo de destinos. */
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  // Busca dentro da conversa (estilo WhatsApp). Toda a filtragem é local:
+  // a thread já tem todas as mensagens em memória.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -245,18 +283,107 @@ export function MessageThread({
     };
   }, []);
 
+  // Group-conversation members (`group_participants`, migration
+  // 20260829000001). Scoped to the active conversation's `group_id` —
+  // refetches when the selected group changes; cleared when the thread
+  // isn't a group conversation (1:1, or nothing selected).
+  const [groupParticipants, setGroupParticipants] = useState<
+    { id: string; display_name: string | null; phone: string | null }[]
+  >([]);
+  const activeGroupId = conversation?.group_id ?? null;
+  useEffect(() => {
+    if (!activeGroupId) {
+      setGroupParticipants([]);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("group_participants")
+      .select("id, display_name, phone")
+      .eq("group_id", activeGroupId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to fetch group participants:", error);
+          return;
+        }
+        setGroupParticipants(
+          (data as { id: string; display_name: string | null; phone: string | null }[]) ?? [],
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGroupId]);
+
   /**
    * The channel this conversation came in on. Resolved here (not further
    * down, next to the render) because the session-window rule below is
    * provider-specific and lives in a hook, which must run before the
    * component's early returns.
    */
-  const threadChannel = useMemo(
+  const threadChannel = useMemo(() => {
+    if (conversation?.channel_id) return channelsById?.get(conversation.channel_id);
+    // Canal removido (FK é ON DELETE SET NULL) ou conversa sem
+    // channel_id: cai no canal mais antigo da conta — o MESMO fallback
+    // que o envio já usa no servidor (resolveDefaultChannelId), para
+    // uma conversa não ficar travada como "somente leitura" enquanto a
+    // conta ainda tem um canal funcionando. `channelsById` já chega
+    // ordenado por created_at ascendente (GET /api/whatsapp/channels),
+    // então o primeiro valor do Map é sempre o mais antigo.
+    return channelsById?.values().next().value;
+  }, [conversation?.channel_id, channelsById]);
+
+  // Telefones de todos os canais da conta, pra `channelColor` posicionar
+  // cada um numa cor fixa (ver channel-color.ts). Precisa vir ANTES de
+  // qualquer `return` condicional abaixo — regra dos hooks.
+  const allPhones = useMemo(
     () =>
-      conversation?.channel_id
-        ? channelsById?.get(conversation.channel_id)
-        : undefined,
-    [conversation?.channel_id, channelsById],
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
+  );
+
+  // ---- Busca dentro da conversa -------------------------------------
+  // Ids das mensagens que casam, em ordem. `matchIndex` é a ocorrência
+  // "atual" (o "3 de 12" da barra), navegável com as setas, igual ao
+  // WhatsApp.
+  const matchIds = useMemo(
+    () => findMessageMatches(messages, searchQuery),
+    [messages, searchQuery],
+  );
+  const activeMatchId = matchIds[matchIndex] ?? null;
+
+  // Toda busca nova recomeça na primeira ocorrência.
+  useEffect(() => {
+    setMatchIndex(0);
+  }, [searchQuery]);
+
+  // Rola até a ocorrência atual. A âncora é o `data-message-id` que
+  // MessageActions carimba na linha da mensagem.
+  useEffect(() => {
+    if (!activeMatchId) return;
+    const el = document.querySelector(`[data-message-id="${activeMatchId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeMatchId]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setMatchIndex(0);
+  }, []);
+
+  const gotoMatch = useCallback(
+    (delta: number) => {
+      setMatchIndex((prev) => {
+        if (matchIds.length === 0) return 0;
+        // Circular, como no WhatsApp: passar da última volta para a primeira.
+        return (prev + delta + matchIds.length) % matchIds.length;
+      });
+    },
+    [matchIds.length],
   );
 
   /**
@@ -458,10 +585,97 @@ export function MessageThread({
     };
   }, [conversationId]);
 
-  // Clear any in-progress reply draft when the active conversation changes —
-  // a quote pulled from conversation A shouldn't bleed into conversation B.
+  // Marcadores da conversa — mesmo padrão de fetch das reações acima.
+  useEffect(() => {
+    if (!conversationId) {
+      setMarkers([]);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("message_markers")
+        .select("*")
+        .eq("conversation_id", conversationId);
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch markers:", error);
+        return;
+      }
+      setMarkers((data as MessageMarker[]) ?? []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, resyncToken]);
+
+  // Marcadores em tempo real — mesmo padrão do canal de reações acima,
+  // canal próprio para não acoplar às reações.
+  useEffect(() => {
+    if (!conversationId) return;
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`markers:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageMarker;
+          setMarkers((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageMarker;
+          setMarkers((prev) => prev.map((m) => (m.id === row.id ? row : m)));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const old = payload.old as Partial<MessageMarker>;
+          if (!old?.id) return;
+          setMarkers((prev) => prev.filter((m) => m.id !== old.id));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
+  // Clear any in-progress reply draft or edit-in-progress state when the
+  // active conversation changes — MessageThread não é remontado ao trocar
+  // de conversa (sem `key` na página pai), então sem isso um "Editando
+  // mensagem" (ou uma citação) iniciado na conversa A continuaria visível
+  // e armado ao abrir a conversa B, enviando a edição para o `message_id`
+  // errado.
   useEffect(() => {
     setReplyTo(null);
+    setEditingMessage(null);
   }, [conversationId]);
 
   // Reset the server-side unread_count to 0 whenever an unread count
@@ -674,9 +888,11 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
+      // `conversationStatusPatch` mantém `closed_at` coerente — é ele que
+      // sustenta a reabertura automática depois de 24h fechada.
       await supabase
         .from("conversations")
-        .update({ status })
+        .update(conversationStatusPatch(status))
         .eq("id", conversation.id);
 
       onStatusChange(conversation.id, status);
@@ -766,15 +982,6 @@ export function MessageThread({
     return map;
   }, [messages]);
 
-  // Mensagem imediatamente anterior na conversa (não no grupo por data —
-  // um novo dia não define, por si só, uma troca de operador). Alimenta
-  // `shouldShowAuthor` abaixo.
-  const previousMessage = useMemo(() => {
-    const map = new Map<string, Message | null>();
-    messages.forEach((m, i) => map.set(m.id, i > 0 ? messages[i - 1] : null));
-    return map;
-  }, [messages]);
-
   // id -> nome, derivado do `profiles` já carregado (todos os membros da
   // conta, ver efeito acima) em vez de uma consulta escopada aos
   // `sender_id` do snapshot de mensagens. Uma consulta escopada ficaria
@@ -791,6 +998,21 @@ export function MessageThread({
     return map;
   }, [profiles]);
 
+  // participant_id -> nome, mesmo padrão do `authorNames` acima mas para
+  // membros de grupo (`group_participants`). Fallback em cadeia:
+  // display_name (o nome salvo pelo WhatsApp) -> phone (quando o
+  // participante usa @s.whatsapp.net) -> rótulo genérico i18n — um
+  // participante sempre resolve para algo, ao contrário do autor
+  // operador (que pode legitimamente ficar sem rótulo, ver comentário em
+  // MessageBubble).
+  const participantNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of groupParticipants) {
+      map[p.id] = p.display_name || p.phone || tBubble("participant");
+    }
+    return map;
+  }, [groupParticipants, tBubble]);
+
   // `sender_type` da mensagem inclui 'bot' (automação/Flow), que para fins
   // de agrupamento de autor conta como agente — a distinção que importa
   // aqui é "veio do contato" vs. "saiu da nossa conta".
@@ -798,6 +1020,7 @@ export function MessageThread({
     return {
       sender_type: m.sender_type === "customer" ? "customer" : "agent",
       sender_id: m.sender_id ?? null,
+      participant_id: m.participant_id ?? null,
     };
   }, []);
 
@@ -811,6 +1034,122 @@ export function MessageThread({
     }
     return map;
   }, [reactions]);
+
+  // Mesmo padrão, para os marcadores — usado tanto pelo chip no balão
+  // quanto pra decidir `myMarker` na barra de ações.
+  const markersByMessageId = useMemo(() => {
+    const map = new Map<string, MessageMarker[]>();
+    for (const m of markers) {
+      const bucket = map.get(m.message_id);
+      if (bucket) bucket.push(m);
+      else map.set(m.message_id, [m]);
+    }
+    return map;
+  }, [markers]);
+
+  // Painel "Marcadores (N)" no cabeçalho — mais recentes primeiro, cada
+  // um já com o nome de quem marcou pronto pra exibir.
+  const sortedMarkers = useMemo(
+    () =>
+      [...markers].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ),
+    [markers],
+  );
+
+  const canMark = canSendMessages;
+  const isAccountAdmin = isAdmin || isOwner;
+
+  // Colegas pra quem dá pra atribuir um marcador — todo mundo da conta,
+  // menos eu mesmo (esse caso já é o "Marcar" de sempre).
+  const markableMembers = useMemo(
+    () =>
+      profiles
+        .filter((p) => p.user_id !== user?.id)
+        .map((p) => ({ user_id: p.user_id, full_name: p.full_name })),
+    [profiles, user?.id],
+  );
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = document.querySelector(`[data-message-id="${messageId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setMarkersPanelOpen(false);
+  }, []);
+
+  // Link de "Meus marcadores": espera as mensagens carregarem (a
+  // mensagem só existe no DOM depois disso), pula até ela e destaca
+  // por alguns segundos. Roda de novo se `deepLinkMessageId` mudar
+  // (clicar em outro marcador na mesma conversa já aberta).
+  useEffect(() => {
+    if (!deepLinkMessageId) return;
+    if (!messagesById.has(deepLinkMessageId)) return;
+
+    jumpToMessage(deepLinkMessageId);
+    setDeepLinkHighlightId(deepLinkMessageId);
+    const timer = setTimeout(() => setDeepLinkHighlightId(null), 2500);
+    return () => clearTimeout(timer);
+  }, [deepLinkMessageId, messagesById, jumpToMessage]);
+
+  const handleMarkMessage = useCallback(
+    async (messageId: string, label: string, targetUserId?: string) => {
+      if (!user || !conversationId) return;
+      const supabase = createClient();
+      const trimmed = label.trim();
+      const { error } = await supabase.from("message_markers").upsert(
+        {
+          message_id: messageId,
+          conversation_id: conversationId,
+          // `targetUserId` presente = atribuindo a um colega; ausente =
+          // o caso de sempre, marcar pra mim mesmo. `assigned_by` é
+          // sempre quem está clicando — é o que a policy de INSERT
+          // exige e o que o trigger usa pra decidir se notifica.
+          created_by: targetUserId ?? user.id,
+          assigned_by: user.id,
+          label: trimmed || null,
+        },
+        { onConflict: "message_id,created_by" },
+      );
+      if (error) {
+        console.error("Failed to save marker:", error);
+        toast.error(tActions("markError"));
+      }
+    },
+    [user, conversationId, tActions],
+  );
+
+  // `targetUserId` por padrão é o próprio usuário (botão na barra de
+  // ações, que só mexe na própria marcação); admin removendo a
+  // marcação de outra pessoa (pelo chip no balão) passa o dono real —
+  // a policy `message_markers_delete` já garante que só o dono ou
+  // admin+ têm permissão de fato.
+  const handleUnmarkMessage = useCallback(
+    async (messageId: string, targetUserId?: string) => {
+      if (!user) return;
+      const removedBy = targetUserId ?? user.id;
+      // Otimista, como `postReaction` — não dá pra depender só do Realtime
+      // aqui (o DELETE só chega de volta filtrado por conversation_id
+      // quando a tabela tem REPLICA IDENTITY FULL).
+      let snapshot: MessageMarker[] = [];
+      setMarkers((prev) => {
+        snapshot = prev;
+        return prev.filter(
+          (m) => !(m.message_id === messageId && m.created_by === removedBy),
+        );
+      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("message_markers")
+        .delete()
+        .eq("message_id", messageId)
+        .eq("created_by", removedBy);
+      if (error) {
+        console.error("Failed to remove marker:", error);
+        toast.error(tActions("unmarkError"));
+        setMarkers(snapshot);
+      }
+    },
+    [user, tActions],
+  );
 
   const contactDisplayName = contact?.name || contact?.phone || "Customer";
 
@@ -827,6 +1166,13 @@ export function MessageThread({
 
   const handleStartReply = useCallback(
     (msg: Message) => {
+      // Responder e editar são mutuamente exclusivos não só na renderização
+      // (o if/else do composer), mas também no estado armado — sem isso,
+      // um clique em Responder enquanto uma edição está em andamento fica
+      // sem efeito visível (o composer continua mostrando "Editando
+      // mensagem"), mas `replyTo` fica setado silenciosamente e é
+      // descartado sem aviso quando o envio cai no branch de edição.
+      setEditingMessage(null);
       setReplyTo({
         id: msg.id,
         authorLabel: authorLabelFor(msg),
@@ -834,6 +1180,68 @@ export function MessageThread({
       });
     },
     [authorLabelFor],
+  );
+
+  const handleStartEdit = useCallback((msg: Message) => {
+    // Mesmo motivo do comentário em `handleStartReply`, na direção oposta.
+    setReplyTo(null);
+    setEditingMessage({ id: msg.id, text: msg.content_text ?? "" });
+  }, []);
+
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga `content_text`/`edited_at` pra bolha, mesmo padrão de
+  // `handleDeleteMessage` acima.
+  //
+  // Devolve um booleano de sucesso: o composer só limpa o texto digitado
+  // e sai do modo edição quando a edição realmente foi aceita. Uma falha
+  // (ex.: WhatsApp recusa por estar fora do prazo permitido — caminho
+  // esperado, não excepcional) deixa o texto no composer para o atendente
+  // tentar de novo em vez de perder o que digitou.
+  const handleSubmitEdit = useCallback(
+    async (messageId: string, text: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("editError"));
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error("Failed to edit message:", err);
+        toast.error(tActions("editError"));
+        return false;
+      }
+    },
+    [tActions],
+  );
+
+  // Sem atualização otimista local — a Realtime UPDATE em `messages` já
+  // propaga o `deleted_at` pra bolha (ver page.tsx, listener de UPDATE).
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!window.confirm(tActions("deleteConfirmBody"))) return;
+
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/delete`, {
+          method: "POST",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("deleteError"));
+          return;
+        }
+        toast.success(tActions("deleteSuccess"));
+      } catch (err) {
+        console.error("Failed to delete message:", err);
+        toast.error(tActions("deleteError"));
+      }
+    },
+    [tActions],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -924,7 +1332,12 @@ export function MessageThread({
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
-  if (!conversation || !contact) {
+  // Um grupo não tem `contact` (contact_id é null pra ele — ver
+  // `conversations_contact_xor_group`); sem esta exceção o thread inteiro
+  // caía no placeholder "selecione uma conversa" pra toda conversa de
+  // grupo, mesmo já selecionada. Achado durante a correção do Bug 2 da
+  // Tarefa 12 (a lista já mostrava "Desconhecido" pelo mesmo motivo).
+  if (!conversation || (!contact && !conversation.group_id)) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -940,17 +1353,21 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = conversationDisplayName(conversation) || "Unknown";
 
-  // Which channel this conversation came in on, and whether sending is
-  // currently possible on it. `channel_id === null` means the channel was
-  // removed from Settings (FK is `ON DELETE SET NULL`) — that's a
-  // permanent, read-only state, distinct from a channel that's merely
-  // disconnected right now. Both cases are gated on `channelsLoaded` so a
-  // conversation whose channel simply hasn't loaded in yet isn't briefly
-  // flashed as orphaned.
+  // Which channel this conversation effectively uses, and whether
+  // sending is currently possible on it. `channel_id === null` (canal
+  // removido de Configurações, FK `ON DELETE SET NULL`, ou conversa que
+  // nunca teve canal) já foi resolvido para o canal padrão da conta em
+  // `threadChannel` acima — não é mais tratado como estado permanente
+  // de somente leitura, pelo mesmo motivo que o servidor também cai no
+  // canal padrão nesse caso (`resolveDefaultChannelId`). Só sobra
+  // "indisponível" de verdade quando a conta não tem NENHUM canal
+  // (`channelMissing`) ou quando o canal resolvido está desconectado.
+  // Ambos gated em `channelsLoaded` para não piscar como indisponível
+  // enquanto a lista de canais ainda está carregando.
   const channel = threadChannel;
-  const channelOrphaned = channelsLoaded && !conversation.channel_id;
+  const channelMissing = channelsLoaded && !channel;
   // Only UAZAPI is gated on `status`. This mirrors the server-side rule in
   // `providers/resolve.ts`: a UAZAPI `connected` is a live session and
   // sending genuinely requires it, while Meta's `status` is registration
@@ -960,12 +1377,21 @@ export function MessageThread({
   // would happily accept.
   const channelDisconnected =
     channelsLoaded &&
-    !!conversation.channel_id &&
-    channel?.provider === "uazapi" &&
+    !!channel &&
+    channel.provider === "uazapi" &&
     channel.status !== "connected";
-  const channelUnavailable = channelOrphaned || channelDisconnected;
+  const channelUnavailable = channelMissing || channelDisconnected;
   const channelDisplayLabel = channel ? channelLabel(channel) : undefined;
-  const channelWarning = channelOrphaned
+  // Só colore quando há mais de um canal na conta — com um só, não há
+  // o que diferenciar visualmente (mesmo critério da lista de conversas).
+  // Posição na paleta pelo TELEFONE, não pelo id: recriar a instância
+  // UAZAPI do mesmo número não pode trocar a cor (channel-identity.ts).
+  // `allPhones` já foi calculado lá em cima, antes do return condicional.
+  const threadChannelColor =
+    channel?.phone_e164 && (channelsById?.size ?? 0) > 1
+      ? channelColor(channel.phone_e164, allPhones)
+      : undefined;
+  const channelWarning = channelMissing
     ? t("channelRemovedWarning")
     : channelDisconnected
       ? t("channelDisconnectedWarning", {
@@ -1014,7 +1440,7 @@ export function MessageThread({
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <p className="truncate text-xs text-muted-foreground">{contact?.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
@@ -1037,12 +1463,20 @@ export function MessageThread({
             <Badge
               variant="outline"
               className={cn(
-                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-                channelUnavailable ? "text-red-400" : "text-muted-foreground"
+                "ml-1 hidden gap-1 text-[10px] sm:inline-flex sm:ml-2",
+                channelUnavailable
+                  ? "border-border text-red-400"
+                  : threadChannelColor
+                    ? cn(threadChannelColor.text, threadChannelColor.border)
+                    : "border-border text-muted-foreground"
               )}
               title={channelWarning ?? undefined}
             >
-              <Smartphone className="h-3 w-3" />
+              {threadChannelColor && !channelUnavailable ? (
+                <span className={cn("h-2 w-2 rounded-full", threadChannelColor.dot)} />
+              ) : (
+                <Smartphone className="h-3 w-3" />
+              )}
               {channelDisplayLabel ?? t("channelRemovedBadge")}
             </Badge>
           )}
@@ -1076,6 +1510,66 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Busca dentro da conversa — abre a barra logo abaixo do
+              cabeçalho. Igual ao WhatsApp: lupa, contador "n de N" e
+              setas para navegar entre as ocorrências. */}
+          <button
+            type="button"
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            aria-label={t("searchInConversation")}
+            title={t("searchInConversation")}
+            aria-pressed={searchOpen}
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+              searchOpen ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
+
+          {/* Painel "Marcadores (N)" — pula direto pro ponto marcado por
+              qualquer pessoa nesta conversa, reaproveitando o mesmo
+              rolar-e-destacar da busca acima. Só aparece quando há
+              marcador — botão vazio não ajuda ninguém. */}
+          {sortedMarkers.length > 0 && (
+            <DropdownMenu open={markersPanelOpen} onOpenChange={setMarkersPanelOpen}>
+              <DropdownMenuTrigger
+                className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={t("markersPanel", { count: sortedMarkers.length })}
+                title={t("markersPanel", { count: sortedMarkers.length })}
+              >
+                <Bookmark className="h-3.5 w-3.5" />
+                {sortedMarkers.length}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  {t("markersPanelTitle")}
+                </div>
+                <DropdownMenuSeparator />
+                {sortedMarkers.map((marker) => {
+                  const authorName = authorNames[marker.created_by] || tBubble("participant");
+                  const preview = messagesById.get(marker.message_id)?.content_text ?? "";
+                  return (
+                    <DropdownMenuItem
+                      key={marker.id}
+                      onClick={() => jumpToMessage(marker.message_id)}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="text-xs font-medium">
+                        {markerChipText(marker.label, authorName)}
+                      </span>
+                      {preview && (
+                        <span className="line-clamp-1 text-[11px] text-muted-foreground">
+                          {preview}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           {/* Manual refresh — forces a refetch of the messages + the
               conversation list (the parent bumps its resyncToken). Useful
               when realtime missed an event or the agent just wants to be
@@ -1102,7 +1596,9 @@ export function MessageThread({
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
                   "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
+                  currentStatus
+                    ? CONVERSATION_STATUS_TEXT_CLASS[currentStatus.value]
+                    : "text-muted-foreground"
                 )}>
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
                 <ChevronDown className="h-3 w-3" />
@@ -1115,7 +1611,7 @@ export function MessageThread({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
+                  className={cn("text-sm", CONVERSATION_STATUS_TEXT_CLASS[opt.value])}
                 >
                   {t(`status${opt.label}`)}
                 </DropdownMenuItem>
@@ -1190,6 +1686,66 @@ export function MessageThread({
         </div>
       </div>
 
+      {/* Barra de busca dentro da conversa. Fica entre o cabeçalho e as
+          mensagens, como no WhatsApp, e some junto com a busca. */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closeSearch();
+              // Enter avança; Shift+Enter volta — mesmo atalho do
+              // "localizar" de qualquer editor.
+              if (e.key === "Enter") gotoMatch(e.shiftKey ? -1 : 1);
+            }}
+            placeholder={t("searchPlaceholder")}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {searchQuery.trim() && (
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {matchIds.length === 0
+                ? t("searchNoResults")
+                : t("searchCount", {
+                    current: matchIndex + 1,
+                    total: matchIds.length,
+                  })}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => gotoMatch(-1)}
+            disabled={matchIds.length === 0}
+            aria-label={t("searchPrevious")}
+            title={t("searchPrevious")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => gotoMatch(1)}
+            disabled={matchIds.length === 0}
+            aria-label={t("searchNext")}
+            title={t("searchNext")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={closeSearch}
+            aria-label={t("searchClose")}
+            title={t("searchClose")}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
@@ -1229,14 +1785,12 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
-                    const prevMsg = previousMessage.get(msg.id) ?? null;
-                    const showAuthor = shouldShowAuthor(
-                      toAuthorable(msg),
-                      prevMsg ? toAuthorable(prevMsg) : null,
-                    );
-                    const authorName = msg.sender_id
-                      ? authorNames[msg.sender_id]
-                      : undefined;
+                    const showAuthor = shouldShowAuthor(toAuthorable(msg));
+                    const authorName = msg.participant_id
+                      ? participantNames[msg.participant_id]
+                      : msg.sender_id
+                        ? authorNames[msg.sender_id]
+                        : undefined;
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
@@ -1248,6 +1802,45 @@ export function MessageThread({
                       const next = own?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
+                    // `!!msg.message_id` exclui mensagens otimistas/que
+                    // falharam no envio (id temporário "temp-...", sem
+                    // message_id real da uazapi) — o backend recusa editar
+                    // ou apagar algo que nunca chegou a sair pro WhatsApp,
+                    // então os botões nem devem aparecer nesse caso.
+                    const isOwnAndNotDeleted =
+                      (msg.sender_type === "agent" || msg.sender_type === "bot") &&
+                      !msg.deleted_at &&
+                      !!msg.message_id;
+                    const canDeleteMsg =
+                      isOwnAndNotDeleted &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
+                    const canEditMsg =
+                      isOwnAndNotDeleted &&
+                      msg.content_type === "text" &&
+                      threadChannel?.provider === "uazapi" &&
+                      (msg.sender_id === user?.id || canEditSettings);
+                    // Encaminhar vale para QUALQUER mensagem, recebida ou
+                    // enviada (é assim no WhatsApp) — o que impede é a
+                    // mensagem estar apagada, ser de um tipo que não se
+                    // reenvia (template/interativo/localização), ou ter a
+                    // mídia já expirada do storage (vídeo após 48h).
+                    const isForwardableType =
+                      msg.content_type === "text" ||
+                      msg.content_type === "image" ||
+                      msg.content_type === "video" ||
+                      msg.content_type === "audio" ||
+                      msg.content_type === "document";
+                    const hasContentToForward =
+                      msg.content_type === "text"
+                        ? !!msg.content_text
+                        : !!msg.media_url;
+                    const canForwardMsg =
+                      !msg.deleted_at && isForwardableType && hasContentToForward;
+                    const msgMarkers = markersByMessageId.get(msg.id);
+                    const myMarker = user
+                      ? msgMarkers?.find((m) => m.created_by === user.id) ?? null
+                      : null;
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1256,6 +1849,20 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
+                        onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
+                        onForward={
+                          canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
+                        }
+                        myMarker={myMarker}
+                        onMark={
+                          canMark
+                            ? (label, targetUserId) =>
+                                void handleMarkMessage(msg.id, label, targetUserId)
+                            : undefined
+                        }
+                        onUnmark={myMarker ? () => void handleUnmarkMessage(msg.id) : undefined}
+                        accountMembers={canMark ? markableMembers : undefined}
                       >
                         <MessageBubble
                           message={msg}
@@ -1265,6 +1872,14 @@ export function MessageThread({
                           onToggleReaction={handlePillToggle}
                           showAuthor={showAuthor}
                           authorName={authorName}
+                          highlightQuery={searchOpen ? searchQuery : ""}
+                          highlightActive={msg.id === activeMatchId || msg.id === deepLinkHighlightId}
+                          markers={msgMarkers}
+                          markerAuthorName={(userId) => authorNames[userId] || tBubble("participant")}
+                          isAccountAdmin={isAccountAdmin}
+                          onRemoveMarker={(markerUserId) =>
+                            void handleUnmarkMessage(msg.id, markerUserId)
+                          }
                         />
                       </MessageActions>
                     );
@@ -1292,25 +1907,49 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
+      {/* Composer — Fase 2 de grupos permite texto e mídia; o construtor
+          de mensagem interativa fica oculto em grupo (isGroup). */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         templatesSupported={templatesSupported}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
+        isGroup={!!conversation.group_id}
+        groupLeft={!!conversation.group?.left_at}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        editingMessage={editingMessage}
+        onSubmitEdit={handleSubmitEdit}
+        onCancelEdit={() => setEditingMessage(null)}
       />
 
       <TemplatePicker
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ForwardDialog
+        messageId={forwardMessageId}
+        open={forwardMessageId !== null}
+        onOpenChange={(next) => !next && setForwardMessageId(null)}
+        currentConversationId={conversation.id}
+        // O diálogo resolve por TELEFONE (com o mesmo fallback pro
+        // canal padrão da conta quando isto for nulo) — ver
+        // channel-identity.ts. Passar o valor bruto é o certo: recriar
+        // a instância UAZAPI do mesmo número não pode virar "conta
+        // independente" só porque o id do canal mudou.
+        channelId={conversation.channel_id}
+        // Rótulo de exibição usa o canal JÁ resolvido com fallback
+        // (`channel`/`threadChannel`, mesmo usado no badge acima) —
+        // uma conversa órfã (channel_id nulo) ainda mostra o canal que
+        // ela efetivamente vai usar, em vez de nada.
+        channelDisplayLabel={channelDisplayLabel}
       />
     </div>
   );

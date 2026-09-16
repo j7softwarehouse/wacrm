@@ -1,0 +1,22 @@
+-- ============================================================
+-- 20260914000001_message_forwarded
+--
+-- Encaminhar mensagem (igual ao WhatsApp). A mensagem encaminhada
+-- é uma mensagem NOVA na conversa de destino — não uma referência
+-- à original —, exatamente como o WhatsApp faz: o destinatário
+-- recebe uma cópia, e apagar/editar a original depois não mexe na
+-- cópia.
+--
+-- `forwarded_at` marca essa cópia para a bolha exibir a etiqueta
+-- "Encaminhada". Timestamp em vez de boolean pelo mesmo motivo de
+-- `edited_at`/`deleted_at`: além de responder "foi encaminhada?",
+-- responde "quando", sem custo nenhum a mais.
+--
+-- Deliberadamente NÃO guardamos ponteiro para a mensagem de
+-- origem: o WhatsApp não expõe essa relação para quem recebe, e
+-- guardar isso criaria uma dependência entre conversas (apagar a
+-- origem deixaria a cópia com referência quebrada) sem nenhum uso
+-- de produto hoje.
+-- ============================================================
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS forwarded_at TIMESTAMPTZ;

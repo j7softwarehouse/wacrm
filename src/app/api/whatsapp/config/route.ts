@@ -7,10 +7,11 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { canEditSettings, isAccountRole, type AccountRole } from '@/lib/auth/roles'
 
 /**
- * Resolve the caller's account_id from their profile. Inlined here
- * (rather than going through `@/lib/auth/account.getCurrentAccount`)
+ * Resolve the caller's account_id + account_role from their profile.
+ * Inlined here (rather than going through `@/lib/auth/account.getCurrentAccount`)
  * because the GET handler wants to return shaped 200s for every
  * non-auth failure mode, not throw — keeping the helper minimal lets
  * the existing response branches stay as-is.
@@ -18,17 +19,20 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
  * Returns null if the user has no profile or no account; callers
  * should treat that the same as "not connected".
  */
-async function resolveAccountId(
+async function resolveCallerProfile(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-): Promise<string | null> {
+): Promise<{ accountId: string; role: AccountRole | null } | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', userId)
     .maybeSingle()
   if (error || !data?.account_id) return null
-  return data.account_id as string
+  return {
+    accountId: data.account_id as string,
+    role: isAccountRole(data.account_role) ? data.account_role : null,
+  }
 }
 
 // Lazy-initialised service-role client. We need it to detect a
@@ -73,8 +77,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const profile = await resolveCallerProfile(supabase, user.id)
+    if (!profile) {
       return NextResponse.json(
         {
           connected: false,
@@ -84,6 +88,15 @@ export async function GET() {
         { status: 200 },
       )
     }
+
+    if (!profile.role || !canEditSettings(profile.role)) {
+      return NextResponse.json(
+        { error: 'Only account admins can view the WhatsApp configuration.' },
+        { status: 403 },
+      )
+    }
+
+    const accountId = profile.accountId
 
     // provider='meta' on EVERY query in this file: it is the pre-Part-B
     // settings-form endpoint and must never see, update, or delete a
@@ -185,13 +198,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const profile = await resolveCallerProfile(supabase, user.id)
+    if (!profile) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
         { status: 403 },
       )
     }
+    const accountId = profile.accountId
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -479,13 +493,14 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const profile = await resolveCallerProfile(supabase, user.id)
+    if (!profile) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
         { status: 403 },
       )
     }
+    const accountId = profile.accountId
 
     const { error: deleteError } = await supabase
       .from('whatsapp_channels')

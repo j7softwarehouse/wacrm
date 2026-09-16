@@ -6,9 +6,18 @@ import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
  * can filter conversations by contact tag without a second round-trip.
  * `contact_tags(tags(*))` returns the join rows; {@link normalizeConversation}
  * flattens them onto `contact.tags`.
+ *
+ * Also embeds the group (columns `id`, `name`, `avatar_url`, `left_at`
+ * from `whatsapp_groups`, migration 20260829000001) for the
+ * group-conversation path: `group_id` is set instead of `contact_id`, so
+ * without this join every group conversation showed up in the Inbox list
+ * as "Desconhecido" (no `contact` to read a name from). Found during the
+ * Task 12 end-to-end verification against a real database. `left_at`
+ * (Fase 3) lets the composer lock sending once the connected number has
+ * left the group.
  */
 export const CONVERSATION_SELECT =
-  "*, contact:contacts(*, contact_tags(tags(*)))";
+  "*, contact:contacts(*, contact_tags(tags(*))), group:whatsapp_groups(id, name, avatar_url, left_at)";
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };
@@ -51,6 +60,27 @@ export interface ContactFilters {
 }
 
 /**
+ * Best available display name for a conversation, or `null` when there's
+ * nothing to show (caller falls back to an "unknown" label). A group
+ * conversation has `group` but no `contact` (`contact_id` is null for it,
+ * per `conversations_contact_xor_group`); the 1:1 path is the mirror
+ * image. Checking `group` first costs nothing on the 1:1 path (it's
+ * always undefined there) and gives the group path priority when, in
+ * theory, both were present.
+ */
+export function conversationDisplayName(conversation: {
+  group?: Conversation["group"];
+  contact?: Contact | null;
+}): string | null {
+  return (
+    conversation.group?.name ||
+    conversation.contact?.name ||
+    conversation.contact?.phone ||
+    null
+  );
+}
+
+/**
  * Whether a conversation passes the contact-based Inbox filters (issue #272).
  * Empty `tagIds` and null `company` are no-ops, so the default (no filters)
  * always matches. Tags use OR logic, consistent with Broadcast audiences.
@@ -69,6 +99,49 @@ export function matchesContactFilters(
   }
 
   return true;
+}
+
+/**
+ * Se a conversa passa na busca de texto livre da Inbox (nome, telefone
+ * ou última mensagem). Usa {@link conversationDisplayName} — não
+ * `conversation.contact?.name` direto — para que uma conversa de grupo
+ * (sem `contact`) seja encontrada pelo nome do GRUPO. Bug real (2026-09-15):
+ * a busca antiga só olhava `contact?.name`, então nenhuma conversa de
+ * grupo aparecia numa busca por texto, dando a impressão de que a
+ * mensagem "não tinha chegado" quando na verdade só estava escondida da
+ * lista filtrada.
+ */
+export function matchesSearch(conversation: Conversation, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const name = conversationDisplayName(conversation)?.toLowerCase() ?? "";
+  const phone = conversation.contact?.phone?.toLowerCase() ?? "";
+  const lastMsg = conversation.last_message_text?.toLowerCase() ?? "";
+  return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+}
+
+/**
+ * Ordena conversas da mensagem mais recente para a mais antiga — igual
+ * ao WhatsApp, cuja lista de conversas sempre reflete a última
+ * atividade. Usa `last_message_at`, caindo para `created_at` numa
+ * conversa que nunca recebeu mensagem (criada pelo botão "Conversar",
+ * por exemplo), para que ela apareça pela recência da criação em vez
+ * de ficar com posição indefinida.
+ *
+ * Devolve uma cópia nova — nunca ordena o array recebido no lugar.
+ * Chamado toda vez que a lista é renderizada (não só na carga inicial),
+ * para que uma conversa "suba" pro topo assim que uma mensagem nova
+ * atualiza seu `last_message_at`, mesmo que o estado em memória só
+ * tenha atualizado o campo sem mexer na posição do item no array.
+ */
+export function sortConversationsByRecency(
+  conversations: Conversation[],
+): Conversation[] {
+  const recency = (c: Conversation) => c.last_message_at ?? c.created_at;
+  return [...conversations].sort(
+    (a, b) => new Date(recency(b)).getTime() - new Date(recency(a)).getTime(),
+  );
 }
 
 /**

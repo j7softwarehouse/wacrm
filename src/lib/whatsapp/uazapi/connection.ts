@@ -105,7 +105,11 @@ export function buildWebhookConfig(url: string): UazapiWebhookConfig {
     // Nomes no PLURAL — a assinatura usa vocabulário diferente do
     // envelope do evento, que chega no singular ("message").
     events: ["messages", "messages_update", "connection"],
-    excludeMessages: ["wasSentByApi", "isGroupYes"],
+    // `wasSentByApi` continua excluído para não reprocessarmos o eco
+    // dos nossos próprios envios. Grupo NÃO é mais filtrado aqui — o
+    // opt-in acontece no nosso lado (`whatsapp_groups.enabled`), o
+    // que dá controle por grupo em vez de tudo-ou-nada.
+    excludeMessages: ["wasSentByApi"],
     addUrlEvents: false,
     addUrlTypesMessages: false,
   };

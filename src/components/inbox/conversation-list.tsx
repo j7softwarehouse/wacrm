@@ -2,12 +2,21 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import {
   CONVERSATION_SELECT,
   channelLabel,
+  conversationDisplayName,
   matchesContactFilters,
+  matchesSearch,
   normalizeConversations,
+  sortConversationsByRecency,
 } from "@/lib/inbox/conversations";
+import { channelColor } from "@/lib/whatsapp/channel-color";
+import {
+  CONVERSATION_STATUS_DOT_CLASS,
+  reopenStaleClosedConversations,
+} from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
@@ -44,15 +53,7 @@ interface ConversationListProps {
   channelsById?: Map<string, PublicChannel>;
 }
 
-const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-primary",
-  pending: "bg-amber-500",
-  closed: "bg-muted-foreground",
-};
-
-
-
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "markers";
 
 export function ConversationList({
   activeConversationId,
@@ -63,17 +64,35 @@ export function ConversationList({
   channelsById,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  
+
+  // Lista de telefones da conta, pra `channelColor` posicionar cada
+  // canal numa cor fixa (ver channel-color.ts) — recalcula só quando o
+  // conjunto de canais muda, não a cada render.
+  const allPhones = useMemo(
+    () =>
+      Array.from(channelsById?.values() ?? [])
+        .map((c) => c.phone_e164)
+        .filter((p): p is string => !!p),
+    [channelsById],
+  );
+
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
+    { label: t("filterMarkers"), value: "markers" },
   ], [t]);
 
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // Conversas onde o usuário logado tem pelo menos um marcador — ver
+  // docs/superpowers/specs/2026-09-16-marcadores-de-mensagem-design.md.
+  const [markedConversationIds, setMarkedConversationIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -104,6 +123,13 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
+      // Reabre o que está fechado há mais de 24h ANTES de listar, senão a
+      // lista mostraria por um instante o status velho. Escopado à conta
+      // pela RLS; ver conversation-status.ts para por que isto roda aqui
+      // e não numa cron.
+      await reopenStaleClosedConversations(supabase);
+      if (cancelled) return;
+
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
@@ -134,6 +160,37 @@ export function ConversationList({
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
   }, [resyncToken]);
+
+  // Ids das conversas com pelo menos um marcador meu — sustenta o
+  // filtro "Com meus marcadores". Não precisa de tempo real: um
+  // marcador novo só muda esse conjunto quando o filtro já estiver
+  // ativo e a lista for reaberta, o que é uma perda aceitável (mesma
+  // decisão de não deixar "Meus marcadores" em Notificações ao vivo).
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      if (!user) {
+        if (!cancelled) setMarkedConversationIds(new Set());
+        return;
+      }
+      const { data, error } = await supabase
+        .from("message_markers")
+        .select("conversation_id")
+        .eq("created_by", user.id);
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch marked conversations:", error.message);
+        return;
+      }
+      setMarkedConversationIds(new Set((data ?? []).map((r) => r.conversation_id as string)));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, resyncToken]);
 
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.
@@ -172,6 +229,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "markers") {
+      result = result.filter((c) => markedConversationIds.has(c.id));
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -187,17 +246,15 @@ export function ConversationList({
     }
 
     if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => {
-        const name = c.contact?.name?.toLowerCase() ?? "";
-        const phone = c.contact?.phone?.toLowerCase() ?? "";
-        const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
-      });
+      result = result.filter((c) => matchesSearch(c, search));
     }
 
-    return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+    // Sempre mais recente primeiro, igual ao WhatsApp -- reordenado aqui
+    // (não só na busca inicial) para que uma conversa suba pro topo assim
+    // que chega mensagem nova, mesmo quando o estado em memória só
+    // atualiza `last_message_at` no lugar sem mexer na posição do item.
+    return sortConversationsByRecency(result);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, markedConversationIds]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -422,9 +479,20 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                // Sem canal próprio (conversa órfã — canal removido de
+                // Configurações): cai no canal mais antigo da conta,
+                // MESMO fallback que a thread já aplica pra liberar
+                // envio (ver comentário em message-thread.tsx). Sem
+                // isto, a linha ficava sem selo nenhum de canal.
                 channel={
-                  conv.channel_id ? channelsById?.get(conv.channel_id) : undefined
+                  conv.channel_id
+                    ? channelsById?.get(conv.channel_id)
+                    : channelsById?.values().next().value
                 }
+                // A cor só ajuda quando há o que diferenciar — com um
+                // canal só, seria ruído visual sem propósito.
+                multiChannel={(channelsById?.size ?? 0) > 1}
+                allPhones={allPhones}
                 t={t}
               />
             ))}
@@ -446,6 +514,11 @@ interface ConversationItemProps {
    * way there's nothing to look up, so the chip below is simply omitted.
    */
   channel?: PublicChannel;
+  /** Só true quando a conta tem 2+ canais — aí sim vale colorir. */
+  multiChannel?: boolean;
+  /** Telefones de TODOS os canais da conta, na mesma ordem usada pra
+   *  posicionar a cor de cada um (ver channel-color.ts). */
+  allPhones: string[];
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -454,12 +527,26 @@ function ConversationItem({
   isActive,
   onSelect,
   channel,
+  multiChannel,
+  allPhones,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
+  // `channel` já vem com o fallback pro canal padrão aplicado (ver
+  // comentário em `channelsById?.values().next().value` na chamada) —
+  // usar `channel.phone_e164` aqui em vez de `conversation.channel_id`
+  // bruto é o que faz uma conversa órfã (canal removido) mostrar a
+  // MESMA cor que o cabeçalho da conversa já mostra, em vez de nenhum
+  // selo. A posição na paleta vem do TELEFONE, não do id do canal:
+  // recriar a instância UAZAPI do mesmo número não pode mudar a cor
+  // (mesmo raciocínio de channel-identity.ts).
+  const color =
+    multiChannel && channel?.phone_e164
+      ? channelColor(channel.phone_e164, allPhones)
+      : undefined;
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -512,17 +599,26 @@ function ConversationItem({
             )}
             {label && (
               <span
-                className="hidden max-w-24 items-center gap-1 truncate rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                className={cn(
+                  "hidden max-w-24 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] sm:inline-flex",
+                  color
+                    ? cn("bg-transparent", color.text, color.border)
+                    : "border-transparent bg-muted text-muted-foreground",
+                )}
                 title={t("channelHint", { label })}
               >
-                <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                {color ? (
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", color.dot)} />
+                ) : (
+                  <Smartphone className="h-2.5 w-2.5 shrink-0" />
+                )}
                 <span className="truncate">{label}</span>
               </span>
             )}
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
+                CONVERSATION_STATUS_DOT_CLASS[conversation.status]
               )}
               title={conversation.status}
             />

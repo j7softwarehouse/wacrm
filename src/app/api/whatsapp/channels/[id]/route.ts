@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 import { mergeOrphanedConversations } from "@/lib/whatsapp/merge-orphaned-conversations";
+import { mergeOrphanedGroups } from "@/lib/whatsapp/merge-orphaned-groups";
 
 /**
  * Remove um canal. As conversas dele **não** são apagadas: a FK usa
@@ -21,6 +22,13 @@ export async function DELETE(
     // SET NULL zerasse o channel_id desta última — 500 visto em
     // produção ao remover o segundo canal de teste de um mesmo contato.
     await mergeOrphanedConversations(supabase, accountId, id);
+
+    // Mesmo problema, para grupos: sem isto, remover um segundo canal
+    // que já sincronizou os mesmos grupos de um canal removido antes
+    // falha com "duplicate key value violates unique constraint
+    // whatsapp_groups_account_id_channel_id_group_jid_key" — visto em
+    // homolog com dois canais UAZAPI para o mesmo número.
+    await mergeOrphanedGroups(supabase, accountId, id);
 
     // `.select()` no DELETE é o que distingue "apagou" de "a RLS
     // bloqueou". A política `admins write channels` (037) não devolve

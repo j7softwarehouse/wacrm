@@ -79,11 +79,13 @@ describe("buildWebhookConfig", () => {
     expect(config.excludeMessages).toContain("wasSentByApi");
   });
 
-  it("exclui grupos com isGroupYes, não isGroupNo", () => {
-    // Cuidado: na UAZAPI isGroupNo remove conversas INDIVIDUAIS.
-    // Trocar os dois faria o CRM descartar tudo que interessa.
-    expect(config.excludeMessages).toContain("isGroupYes");
+  it("nao exclui mais grupos, mas segue excluindo eco de envio", () => {
+    // CUIDADO: na UAZAPI `isGroupNo` remove conversas INDIVIDUAIS.
+    // Nenhum dos dois deve aparecer — grupo agora entra, e o 1:1
+    // nunca pode ser filtrado.
+    expect(config.excludeMessages).not.toContain("isGroupYes");
     expect(config.excludeMessages).not.toContain("isGroupNo");
+    expect(config.excludeMessages).toContain("wasSentByApi");
   });
 
   it("desliga os parâmetros de URL — eles quebrariam o roteamento", () => {

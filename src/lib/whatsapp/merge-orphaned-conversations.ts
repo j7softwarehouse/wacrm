@@ -39,7 +39,12 @@ export async function mergeOrphanedConversations(
 
   const orphanByContact = new Map(
     conversations
-      .filter((c) => c.channel_id === null)
+      // Conversa de grupo tem contact_id null — excluída aqui de propósito:
+      // esta função dedupe conversas 1:1 por contato; duas conversas de
+      // grupo diferentes colidiriam na mesma chave `null` e teriam seu
+      // histórico mesclado incorretamente. Dedupe de grupo órfão (por
+      // group_id) é decisão de uma tarefa futura, não desta correção.
+      .filter((c) => c.channel_id === null && c.contact_id !== null)
       .map((c) => [c.contact_id, c] as const),
   );
 

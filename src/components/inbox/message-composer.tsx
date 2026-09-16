@@ -134,12 +134,38 @@ interface MessageComposerProps {
    * nothing.
    */
   channelWarning?: string | null;
+  /**
+   * True numa conversa de grupo. Fase 2 permite texto e mídia em grupo,
+   * mas o construtor de mensagem interativa fica de fora: botão em grupo
+   * tem semântica confusa (qualquer participante pode clicar).
+   */
+  isGroup?: boolean;
+  /**
+   * True quando o número conectado já saiu deste grupo (Fase 3,
+   * `whatsapp_groups.left_at` preenchido). O backend já recusa o envio
+   * nesse caso (`send-message.ts`), mas sem este aviso o usuário só
+   * descobria depois de tentar mandar e ver um erro genérico — ver
+   * relato de retestagem da Fase 3.
+   */
+  groupLeft?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Presente → composer entra em modo edição: texto pré-preenchido,
+   *  enviar chama `onSubmitEdit` em vez de `onSend`. */
+  editingMessage?: { id: string; text: string } | null;
+  /**
+   * Devolve `true` em caso de sucesso, `false` em caso de falha (ex.:
+   * WhatsApp recusa a edição por estar fora do prazo permitido — um
+   * caminho esperado, não excepcional). `handleSend` só limpa o texto e
+   * sai do modo edição quando o retorno não é `false`, para o atendente
+   * não perder o que digitou numa falha.
+   */
+  onSubmitEdit?: (id: string, text: string) => Promise<boolean> | void;
+  onCancelEdit?: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -159,12 +185,17 @@ export function MessageComposer({
   templatesSupported = true,
   channelUnavailable,
   channelWarning,
+  isGroup = false,
+  groupLeft = false,
   onSend,
   onSendMedia,
   onSendInteractive,
   onOpenTemplates,
   replyTo,
   onClearReply,
+  editingMessage,
+  onSubmitEdit,
+  onCancelEdit,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
@@ -172,6 +203,14 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pré-preenche o texto quando o chamador entra em modo edição.
+  useEffect(() => {
+    if (editingMessage) {
+      setText(editingMessage.text);
+      textareaRef.current?.focus();
+    }
+  }, [editingMessage]);
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);
@@ -214,12 +253,13 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
+  const sendBlocked = channelUnavailable || groupLeft;
   // Media (like free-form text) is only allowed inside the 24h window.
   // `channelUnavailable` folds in the two channel-level reasons sending
   // can't happen — channel disconnected, or its channel_id was set to
   // null because the channel was removed from Settings — on top of the
   // existing role/session gates.
-  const inputsDisabled = readOnly || sessionExpired || channelUnavailable;
+  const inputsDisabled = readOnly || sessionExpired || sendBlocked;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -251,19 +291,43 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired || channelUnavailable) return;
+    if (!trimmed || sending || sessionExpired || sendBlocked) return;
 
     setSending(true);
     try {
-      onSend(trimmed, replyTo?.id);
-      setText("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
+      if (editingMessage) {
+        // Só limpa o texto e sai do modo edição se a edição realmente
+        // teve sucesso — numa falha (ex.: fora do prazo permitido pelo
+        // WhatsApp) o atendente não pode perder o que digitou.
+        const ok = await onSubmitEdit?.(editingMessage.id, trimmed);
+        if (ok !== false) {
+          onCancelEdit?.();
+          setText("");
+          if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+          }
+        }
+      } else {
+        onSend(trimmed, replyTo?.id);
+        setText("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
       }
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, channelUnavailable, onSend, replyTo?.id]);
+  }, [
+    text,
+    sending,
+    sessionExpired,
+    sendBlocked,
+    onSend,
+    replyTo?.id,
+    editingMessage,
+    onSubmitEdit,
+    onCancelEdit,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -566,14 +630,33 @@ export function MessageComposer({
 
   return (
     <div className="border-t border-border bg-card p-3">
-      {replyTo && (
-        <div className="mb-2">
-          <ReplyQuote
-            authorLabel={replyTo.authorLabel}
-            preview={replyTo.preview}
-            onDismiss={onClearReply}
-          />
+      {/* Só um dos dois aparece por vez — editar e responder ao mesmo
+          tempo não faz sentido. */}
+      {editingMessage ? (
+        <div className="mb-2 flex items-center justify-between rounded-md bg-muted px-2 py-1.5 text-xs">
+          <span className="text-muted-foreground">{t("editingMessage")}</span>
+          <button
+            type="button"
+            onClick={() => {
+              onCancelEdit?.();
+              setText("");
+            }}
+            aria-label={t("cancelEdit")}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+      ) : (
+        replyTo && (
+          <div className="mb-2">
+            <ReplyQuote
+              authorLabel={replyTo.authorLabel}
+              preview={replyTo.preview}
+              onDismiss={onClearReply}
+            />
+          </div>
+        )
       )}
       {/* Channel warning — disconnected vs. removed get different copy
           (see MessageThread) so the agent knows whether to go reconnect
@@ -586,6 +669,15 @@ export function MessageComposer({
           <p className="text-xs text-red-400">{channelWarning}</p>
         </div>
       )}
+      {/* Grupo abandonado — mesma severidade de channelWarning (envio
+          realmente bloqueado, nenhum modelo contorna isso), então usa o
+          mesmo estilo em vez do amber de sessionExpired. */}
+      {groupLeft && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          <p className="text-xs text-red-400">{t("groupLeftHint")}</p>
+        </div>
+      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -596,6 +688,7 @@ export function MessageComposer({
             <Button
               variant="ghost"
               size="sm"
+              disabled={sendBlocked}
               className="h-7 text-xs text-amber-400 hover:text-amber-300"
               onClick={onOpenTemplates}
             >
@@ -643,7 +736,7 @@ export function MessageComposer({
           draft={draft}
           busy={busy}
           readOnly={readOnly}
-          channelUnavailable={channelUnavailable}
+          channelUnavailable={sendBlocked}
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
@@ -730,10 +823,12 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
-                <MessageSquareDashed className="mr-2 h-4 w-4" />
-                {t("interactiveMessage")}
-              </DropdownMenuItem>
+              {!isGroup && (
+                <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                  <MessageSquareDashed className="mr-2 h-4 w-4" />
+                  {t("interactiveMessage")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -747,8 +842,12 @@ export function MessageComposer({
               size="sm"
               canAct={!readOnly}
               gateReason="send messages"
-              disabled={channelUnavailable}
-              title={readOnly ? undefined : channelWarning ?? t("sendTemplate")}
+              disabled={sendBlocked}
+              title={
+                readOnly
+                  ? undefined
+                  : channelWarning ?? t("sendTemplate")
+              }
               className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
               onClick={onOpenTemplates}
             >
@@ -761,8 +860,12 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={drafting || channelUnavailable}
-            title={readOnly ? undefined : channelWarning ?? t("draftWithAI")}
+            disabled={drafting || sendBlocked}
+            title={
+              readOnly
+                ? undefined
+                : channelWarning ?? t("draftWithAI")
+            }
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
           >
@@ -781,11 +884,13 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : channelUnavailable
-                  ? t("channelUnavailablePlaceholder")
-                  : sessionExpired
-                    ? t("sessionExpiredPlaceholder")
-                    : t("typeMessagePlaceholder")
+                : groupLeft
+                  ? t("groupLeftPlaceholder")
+                  : channelUnavailable
+                    ? t("channelUnavailablePlaceholder")
+                    : sessionExpired
+                      ? t("sessionExpiredPlaceholder")
+                      : t("typeMessagePlaceholder")
             }
             disabled={inputsDisabled}
             rows={1}
@@ -808,7 +913,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || channelUnavailable || sending}
+            disabled={!text.trim() || sessionExpired || sendBlocked || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
@@ -864,6 +969,7 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+        hideInteractive={isGroup}
       />
     </div>
   );

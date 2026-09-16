@@ -6,6 +6,9 @@
 // ============================================================
 
 import type {
+  CreateGroupArgs,
+  CreateGroupResult,
+  GroupParticipant,
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
   SendMediaArgs,
@@ -13,6 +16,7 @@ import type {
   SendResult,
   SendTemplateArgs,
   SendTextArgs,
+  UpdateGroupParticipantsArgs,
   WhatsAppProvider,
 } from "./types";
 
@@ -59,6 +63,37 @@ export function createFakeProvider(
     async resolveInboundMediaUrl(ref: string) {
       calls.push({ method: "resolveInboundMediaUrl", args: ref });
       return `/fake-media/${ref}`;
+    },
+    async listGroups() {
+      calls.push({ method: "listGroups", args: undefined });
+      return [{ groupJid: "1111@g.us", name: "Grupo Fake" }];
+    },
+    async createGroup(args: CreateGroupArgs): Promise<CreateGroupResult> {
+      calls.push({ method: "createGroup", args });
+      return { groupJid: "fake-group@g.us", name: args.name, invitedPhones: [] };
+    },
+    async leaveGroup(groupJid: string) {
+      calls.push({ method: "leaveGroup", args: groupJid });
+    },
+    async updateGroupParticipants(args: UpdateGroupParticipantsArgs) {
+      calls.push({ method: "updateGroupParticipants", args });
+    },
+    async updateGroupName(groupJid: string, name: string) {
+      calls.push({ method: "updateGroupName", args: { groupJid, name } });
+    },
+    async getConnectedNumber() {
+      calls.push({ method: "getConnectedNumber", args: undefined });
+      return "5511999999999";
+    },
+    async getGroupParticipants(groupJid: string): Promise<GroupParticipant[]> {
+      calls.push({ method: "getGroupParticipants", args: groupJid });
+      return [{ phoneNumber: "5511999999999", isAdmin: true }];
+    },
+    async editMessage(args: { messageId: string; text: string }) {
+      calls.push({ method: "editMessage", args });
+    },
+    async deleteMessage(args: { messageId: string }) {
+      calls.push({ method: "deleteMessage", args });
     },
   };
 }

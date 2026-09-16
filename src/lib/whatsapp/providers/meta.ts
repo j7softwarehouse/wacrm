@@ -17,15 +17,19 @@ import {
 import type { MessageTemplate } from "@/types";
 import type { SendTimeParams } from "@/lib/whatsapp/template-send-builder";
 
-import type {
-  SendInteractiveButtonsArgs,
-  SendInteractiveListArgs,
-  SendMediaArgs,
-  SendReactionArgs,
-  SendResult,
-  SendTemplateArgs,
-  SendTextArgs,
-  WhatsAppProvider,
+import {
+  ProviderUnsupportedError,
+  type CreateGroupResult,
+  type GroupParticipant,
+  type SendInteractiveButtonsArgs,
+  type SendInteractiveListArgs,
+  type SendMediaArgs,
+  type SendReactionArgs,
+  type SendResult,
+  type SendTemplateArgs,
+  type SendTextArgs,
+  type UpdateGroupParticipantsArgs,
+  type WhatsAppProvider,
 } from "./types";
 
 export interface MetaProviderConfig {
@@ -115,6 +119,42 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       // resolve sob demanda com a credencial do lado do servidor.
       if (!ref) return null;
       return `/api/whatsapp/media/${ref}`;
+    },
+
+    async listGroups() {
+      // A Cloud API da Meta não expõe grupos. A UI esconde a
+      // funcionalidade em canais Meta; isto é a rede de proteção para
+      // um caminho que não deveria ser alcançável.
+      throw new ProviderUnsupportedError("meta", "listGroups");
+    },
+
+    async createGroup(): Promise<CreateGroupResult> {
+      // A Cloud API da Meta não expõe criação de grupo. A UI só oferece
+      // este botão em Configurações → Grupos, gated por canal uazapi.
+      throw new ProviderUnsupportedError("meta", "createGroup");
+    },
+    async leaveGroup(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "leaveGroup");
+    },
+    async updateGroupParticipants(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "updateGroupParticipants");
+    },
+    async updateGroupName(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "updateGroupName");
+    },
+    async getConnectedNumber(): Promise<string> {
+      throw new ProviderUnsupportedError("meta", "getConnectedNumber");
+    },
+    async getGroupParticipants(): Promise<GroupParticipant[]> {
+      throw new ProviderUnsupportedError("meta", "getGroupParticipants");
+    },
+
+    async editMessage(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "editMessage");
+    },
+
+    async deleteMessage(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "deleteMessage");
     },
   };
 }

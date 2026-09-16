@@ -89,6 +89,9 @@ export interface SendTextArgs {
   text: string;
   /** Id (do provedor) da mensagem sendo respondida — gera a citação. */
   contextMessageId?: string;
+  /** Marca a mensagem como "Encaminhada" no WhatsApp de quem recebe.
+   *  Só a UAZAPI suporta; a Cloud API da Meta ignora (ver meta.ts). */
+  forward?: boolean;
 }
 
 export interface SendMediaArgs {
@@ -100,6 +103,8 @@ export interface SendMediaArgs {
   /** Só para documentos; é o nome exibido no chat. */
   filename?: string;
   contextMessageId?: string;
+  /** Ver `SendTextArgs.forward`. */
+  forward?: boolean;
 }
 
 export interface SendInteractiveButtonsArgs {
@@ -140,6 +145,34 @@ export interface SendTemplateArgs {
   contextMessageId?: string;
 }
 
+export interface UpdateGroupParticipantsArgs {
+  groupJid: string;
+  action: "add" | "remove" | "promote" | "demote";
+  phone: string;
+}
+
+export interface GroupParticipant {
+  /** Sem `+`, sem sufixo — mesmo formato aceito por `participants` em `updateGroupParticipants`. */
+  phoneNumber: string;
+  isAdmin: boolean;
+}
+
+export interface CreateGroupArgs {
+  name: string;
+  /** Só dígitos, sem `+`. Mínimo 1, máximo 50 — limite da própria API do WhatsApp. */
+  participantPhones: string[];
+}
+
+export interface CreateGroupResult {
+  groupJid: string;
+  name?: string;
+  /** Números que receberam um CONVITE em vez de entrar direto — a
+   *  configuração de privacidade da pessoa exige aceitar (mesmo caso
+   *  já tratado em `updateGroupParticipants`). O grupo existe e os
+   *  demais participantes entraram normalmente; isto é aviso, não erro. */
+  invitedPhones: string[];
+}
+
 export interface WhatsAppProvider {
   readonly kind: WhatsAppProviderKind;
   sendText(args: SendTextArgs): Promise<SendResult>;
@@ -153,4 +186,31 @@ export interface WhatsAppProvider {
    * Meta devolve um proxy preguiçoso; UAZAPI baixa para o Storage.
    */
   resolveInboundMediaUrl(ref: string): Promise<string | null>;
+  /** Grupos de que o número conectado participa. */
+  listGroups(): Promise<Array<{ groupJid: string; name?: string; avatarUrl?: string }>>;
+  /** Cria um grupo novo com o número conectado como dono. Requer pelo
+   *  menos 1 participante além do dono — a API do WhatsApp não permite
+   *  grupo vazio. Lança se o provedor não suportar (Meta). */
+  createGroup(args: CreateGroupArgs): Promise<CreateGroupResult>;
+  /** Remove o número conectado do grupo. A UAZAPI não confirma efeito
+   *  real (ver `leaveGroup` do provider uazapi) — o chamador reconfirma. */
+  leaveGroup(groupJid: string): Promise<void>;
+  /** Adiciona/remove/promove/rebaixa um participante. Lança se a ação
+   *  falhar, mesmo que o provider upstream responda HTTP 200. */
+  updateGroupParticipants(args: UpdateGroupParticipantsArgs): Promise<void>;
+  /** Renomeia o grupo no WhatsApp real. */
+  updateGroupName(groupJid: string, name: string): Promise<void>;
+  /** Número do WhatsApp conectado (ex.: "553183886076"), para comparar
+   *  contra `phoneNumber` de cada participante e saber se é admin. */
+  getConnectedNumber(): Promise<string>;
+  /** Participantes de UM grupo, com status de admin. */
+  getGroupParticipants(groupJid: string): Promise<GroupParticipant[]>;
+  /** Edita o texto de uma mensagem de texto já enviada por ESTA
+   *  instância. Lança se o provedor não suportar (Meta) ou se o
+   *  WhatsApp recusar (fora do prazo, mensagem não encontrada, etc). */
+  editMessage(args: { messageId: string; text: string }): Promise<void>;
+  /** Apaga uma mensagem enviada por ESTA instância, para todos os
+   *  participantes. Lança se o provedor não suportar (Meta) ou se o
+   *  WhatsApp recusar. */
+  deleteMessage(args: { messageId: string }): Promise<void>;
 }

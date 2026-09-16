@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import type { Message, MessageReaction } from "@/types";
+import { splitHighlight } from "@/lib/inbox/message-search";
+import { canRemoveMarker, markerChipText } from "@/lib/inbox/message-markers";
+import type { Message, MessageMarker, MessageReaction } from "@/types";
 import {
   Clock,
   Check,
@@ -14,6 +16,9 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  Forward,
+  Bookmark,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -34,6 +39,21 @@ interface MessageBubbleProps {
   /** Nome do autor a estampar; ausente (automação/broadcast/API) cai
    * no rótulo "Sistema". */
   authorName?: string;
+  /** Termo da busca dentro da conversa; vazio = sem destaque. */
+  highlightQuery?: string;
+  /** True na ocorrência "atual" da busca — ganha um anel para o
+   *  atendente saber em qual das ocorrências ele está. */
+  highlightActive?: boolean;
+  /** Marcadores desta mensagem (de qualquer pessoa da conta) — ver
+   *  docs/superpowers/specs/2026-09-16-marcadores-de-mensagem-design.md. */
+  markers?: MessageMarker[];
+  /** Resolve o id de quem marcou pro nome de exibição. */
+  markerAuthorName?: (userId: string) => string;
+  /** True quando o usuário logado é admin/owner — junto com
+   *  `currentUserId`, decide (via `canRemoveMarker`) em quais chips o
+   *  "×" aparece: só o dono do marcador, ou admin+. */
+  isAccountAdmin?: boolean;
+  onRemoveMarker?: (markerCreatedBy: string) => void;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -170,14 +190,108 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+/**
+ * Renderiza `content_text`/legenda distinguindo o trecho ENCAMINHADO
+ * do trecho que o atendente digitou junto (`forwarded_note`), pedido
+ * do usuário depois de ver os dois num balão só sem diferença nenhuma
+ * — "gera confusão". O WhatsApp real recebeu tudo como uma string só
+ * (não dá pra colorir texto lá), então a separação é só na nossa
+ * própria bolha: usa o MESMO estilo de bloco citado que already existe
+ * pra resposta (`reply-quote.tsx`) pro trecho encaminhado, e texto
+ * normal pra nota — a leitura fica "isto veio de outro lugar" + "isto
+ * eu escrevi agora", igual a intenção visual do WhatsApp de verdade.
+ */
+/**
+ * Texto com o trecho buscado destacado (busca dentro da conversa). Sem
+ * busca ativa, renderiza o texto puro — nenhum nó extra no caminho
+ * normal, que é a esmagadora maioria dos renders.
+ */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  return (
+    <>
+      {splitHighlight(text, query).map((chunk, i) =>
+        chunk.match ? (
+          <mark
+            key={i}
+            className="rounded-sm bg-amber-300 px-0.5 text-foreground dark:bg-amber-400/80"
+          >
+            {chunk.text}
+          </mark>
+        ) : (
+          <span key={i}>{chunk.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function ForwardableText({
+  message,
+  className,
+  highlightQuery = "",
+}: {
+  message: Message;
+  className?: string;
+  highlightQuery?: string;
+}) {
+  const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  const full = message.content_text ?? "";
+  const note = message.forwarded_note;
+  const suffix = note ? `\n\n${note}` : "";
+  const hasSplit = !!note && full.endsWith(suffix);
+
+  if (!hasSplit) {
+    return (
+      <p className={cn("whitespace-pre-wrap break-words text-sm", className)}>
+        <Highlighted text={full} query={highlightQuery} />
+      </p>
+    );
+  }
+
+  const original = full.slice(0, full.length - suffix.length);
+
+  return (
+    <div className={cn("space-y-1", className)}>
+      {original && (
+        <div
+          className={cn(
+            "rounded-md border-l-2 px-2 py-1 text-sm whitespace-pre-wrap break-words",
+            isAgent
+              ? "border-primary-foreground/50 bg-primary-foreground/15 text-primary-foreground/90"
+              : "border-primary bg-muted/60 text-foreground/90",
+          )}
+        >
+          <Highlighted text={original} query={highlightQuery} />
+        </div>
+      )}
+      <p className="text-sm whitespace-pre-wrap break-words">
+        <Highlighted text={note ?? ""} query={highlightQuery} />
+      </p>
+    </div>
+  );
+}
+
+function MessageContent({
+  message,
+  t,
+  highlightQuery = "",
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  highlightQuery?: string;
+}) {
+  if (message.deleted_at) {
+    return (
+      <p className="text-sm italic text-muted-foreground">
+        {t("deletedMessage")}
+      </p>
+    );
+  }
+
   switch (message.content_type) {
     case "text":
-      return (
-        <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
-        </p>
-      );
+      return <ForwardableText message={message} highlightQuery={highlightQuery} />;
 
     case "image":
       return (
@@ -188,9 +302,11 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("photo")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
+            <ForwardableText
+              message={message}
+              className="mt-1"
+              highlightQuery={highlightQuery}
+            />
           )}
         </div>
       );
@@ -217,9 +333,11 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("video")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
+            <ForwardableText
+              message={message}
+              className="mt-1"
+              highlightQuery={highlightQuery}
+            />
           )}
         </div>
       );
@@ -326,6 +444,12 @@ export function MessageBubble({
   onToggleReaction,
   showAuthor,
   authorName,
+  highlightQuery = "",
+  highlightActive = false,
+  markers,
+  markerAuthorName,
+  isAccountAdmin = false,
+  onRemoveMarker,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -347,6 +471,9 @@ export function MessageBubble({
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
+          // Ocorrência atual da busca: um anel marca em qual das N
+          // ocorrências o atendente está, já que todas ficam destacadas.
+          highlightActive && "ring-2 ring-amber-400 ring-offset-1 ring-offset-background",
         )}
       >
         {reply && (
@@ -361,13 +488,30 @@ export function MessageBubble({
             broadcast/API pública, que legitimamente nunca tem `sender_id` —
             não renderiza rótulo nenhum. Mostrar "Sistema" seria falso no
             caso do histórico (foi uma pessoa real que escreveu); decisão do
-            usuário: melhor nenhum rótulo do que um rótulo errado. */}
+            usuário: melhor nenhum rótulo do que um rótulo errado.
+            Mensagem de participante de grupo (Tarefa 11) não cai nesse
+            caso: `message-thread.tsx` sempre resolve `authorName` com um
+            fallback (display_name -> phone -> "Participante"), então
+            `showAuthor` nunca aparece sem nome ali. */}
         {showAuthor && authorName && (
           <span className="mb-0.5 block text-[11px] font-medium opacity-70">
             {authorName}
           </span>
         )}
-        <MessageContent message={message} t={t} />
+        {/* Etiqueta "Encaminhada" ACIMA do conteúdo, como o WhatsApp
+            posiciona — não no rodapé junto do horário. */}
+        {message.forwarded_at && !message.deleted_at && (
+          <span
+            className={cn(
+              "mb-0.5 flex items-center gap-1 text-[11px] italic",
+              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+            )}
+          >
+            <Forward className="h-3 w-3" />
+            {t("forwardedTag")}
+          </span>
+        )}
+        <MessageContent message={message} t={t} highlightQuery={highlightQuery} />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
@@ -385,6 +529,16 @@ export function MessageBubble({
             >
               <Sparkles className="h-2.5 w-2.5" />
               {t("aiBadge")}
+            </span>
+          )}
+          {message.edited_at && !message.deleted_at && (
+            <span
+              className={cn(
+                "text-[10px] italic",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {t("editedTag")}
             </span>
           )}
           <span
@@ -408,6 +562,46 @@ export function MessageBubble({
           currentUserId={currentUserId}
           onToggle={onToggleReaction}
         />
+      )}
+      {/* Chips de marcador — "onde eu parei". Visíveis a toda a conta
+          (é isso que também avisa "fulano já está tratando isso
+          daqui"); o "×" só aparece pra quem marcou ou admin+
+          (canRemoveMarker espelha a policy message_markers_delete). */}
+      {markers && markers.length > 0 && (
+        <div
+          className={cn(
+            "mt-1 flex flex-wrap gap-1",
+            isAgent ? "justify-end" : "justify-start",
+          )}
+        >
+          {markers.map((marker) => {
+            const name = markerAuthorName?.(marker.created_by) ?? "";
+            const removable =
+              !!currentUserId &&
+              !!onRemoveMarker &&
+              canRemoveMarker(marker, currentUserId, isAccountAdmin);
+            return (
+              <span
+                key={marker.id}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-popover px-2 py-0.5 text-[10px] text-popover-foreground"
+              >
+                <Bookmark className="h-2.5 w-2.5" />
+                {markerChipText(marker.label, name)}
+                {removable && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMarker?.(marker.created_by)}
+                    className="ml-0.5 rounded-full hover:text-destructive"
+                    aria-label={t("removeMarker")}
+                    title={t("removeMarker")}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
       )}
     </div>
   );

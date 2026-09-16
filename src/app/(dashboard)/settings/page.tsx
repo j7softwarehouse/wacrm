@@ -12,6 +12,7 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
+import { GroupsManager } from '@/components/settings/groups-manager';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -19,6 +20,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
+  canAccessSection,
   resolveSection,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
@@ -42,7 +44,13 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency, salesEnabled } = useAuth();
+  const {
+    defaultCurrency,
+    salesEnabled,
+    defaultChannelSupportsTemplates,
+    accountRole,
+    profileLoading,
+  } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -56,6 +64,22 @@ function SettingsPageInner() {
   // Overview), a seção não é a de Negócios e moeda — cai na Overview
   // como qualquer tab desconhecida.
   if (section === 'deals' && !salesEnabled) {
+    section = 'overview';
+  }
+  // Mesma lógica: `?tab=templates` colado direto na URL não deve abrir
+  // a seção quando o canal mais antigo da conta (o único que o disparo
+  // de Broadcasts/modelo usa) é uazapi e recusaria o envio.
+  if (section === 'templates' && !defaultChannelSupportsTemplates) {
+    section = 'overview';
+  }
+  // Controle de acesso por papel (2026-09-09-settings-role-gating).
+  // Espera `!profileLoading` antes de redirecionar: `accountRole` começa
+  // null até o perfil carregar, e sem esperar um admin/owner entrando
+  // direto em `?tab=whatsapp` (o link do menu da conta aponta pra lá)
+  // seria jogado pra Visão geral por engano antes do papel resolver —
+  // e como o redirect usa `router.replace` (em `go`, abaixo), a URL já
+  // teria mudado e o usuário não voltaria sozinho pra aba certa.
+  if (!profileLoading && !canAccessSection(section, accountRole)) {
     section = 'overview';
   }
 
@@ -82,6 +106,7 @@ function SettingsPageInner() {
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
+    groups: <GroupsManager />,
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,

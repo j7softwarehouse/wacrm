@@ -17,6 +17,15 @@ interface QuickReplyPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (qr: QuickReply) => void;
+  /**
+   * True numa conversa de grupo. Interativo (botões/listas) fica fora de
+   * escopo em grupo por decisão de produto (ver `isGroup` em
+   * `message-composer.tsx`), então uma resposta rápida desse tipo não deve
+   * nem aparecer aqui — a trava real fica no backend
+   * (`sendMessageToConversation`), isto é só para não oferecer um clique
+   * que sempre falharia.
+   */
+  hideInteractive?: boolean;
 }
 
 /**
@@ -28,6 +37,7 @@ export function QuickReplyPicker({
   open,
   onOpenChange,
   onPick,
+  hideInteractive,
 }: QuickReplyPickerProps) {
   const t = useTranslations("Inbox.composer");
   const [items, setItems] = useState<QuickReply[]>([]);
@@ -53,6 +63,10 @@ export function QuickReplyPicker({
     };
   }, [open]);
 
+  const visibleItems = hideInteractive
+    ? items.filter((qr) => qr.kind !== "interactive")
+    : items;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -64,13 +78,13 @@ export function QuickReplyPicker({
             <div className="flex justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ) : items.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {t("quickRepliesEmpty")}
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
-              {items.map((qr) => (
+              {visibleItems.map((qr) => (
                 <li key={qr.id}>
                   <button
                     type="button"

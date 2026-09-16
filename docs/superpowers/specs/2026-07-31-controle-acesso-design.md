@@ -4,6 +4,15 @@
 **Status:** aprovado, pronto para plano de implementação
 **Piloto:** Instituto Educacional Emanuel
 
+> **Atualização 2026-09-09:** a regra da seção 6 de que `agent` fica fora
+> de **todo** o espaço de trabalho foi substituída por uma regra mais
+> estreita em `2026-09-09-settings-role-gating-design.md` — `agent` perde
+> só WhatsApp e Grupos, mantendo acesso ao resto do espaço de trabalho
+> (Modelos, Respostas rápidas, Campos e tags, Negócios, Membros, Chaves de
+> API). O restante desta spec (atribuição de operador a canal via
+> `channel_members`, escopo de conversas por canal na Caixa de Entrada)
+> continua válido e não implementado.
+
 ## 1. Objetivo
 
 Ajustar a hierarquia de papéis ao funcionamento real de uma secretaria escolar e

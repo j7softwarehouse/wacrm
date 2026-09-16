@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   channelLabel,
+  conversationDisplayName,
   matchesContactFilters,
+  matchesSearch,
   normalizeConversation,
+  sortConversationsByRecency,
 } from "./conversations";
 import type { Conversation } from "@/types";
 
@@ -142,6 +145,133 @@ describe("normalizeConversation", () => {
     };
     // A contactless row passes through untouched (consumers use `?.`).
     expect(normalizeConversation(raw).contact).toBeNull();
+  });
+});
+
+describe("conversationDisplayName", () => {
+  // Bug real da verificação ponta-a-ponta (Tarefa 12): CONVERSATION_SELECT
+  // nunca juntava whatsapp_groups, então uma conversa de grupo (contact_id
+  // null) sempre caía no fallback "Desconhecido" na lista da Inbox.
+  it("usa o nome do grupo quando não há contato", () => {
+    const conv = {
+      group: { id: "g1", name: "Teste", avatar_url: null, left_at: null },
+      contact: null,
+    };
+    expect(conversationDisplayName(conv)).toBe("Teste");
+  });
+
+  it("usa o nome do contato no caminho 1:1 (sem grupo)", () => {
+    const conv = {
+      group: undefined,
+      contact: { name: "Fulano", phone: "5511999999999" } as Conversation["contact"],
+    };
+    expect(conversationDisplayName(conv)).toBe("Fulano");
+  });
+
+  it("cai para o telefone do contato quando o contato não tem nome", () => {
+    const conv = {
+      group: undefined,
+      contact: { name: undefined, phone: "5511999999999" } as unknown as Conversation["contact"],
+    };
+    expect(conversationDisplayName(conv)).toBe("5511999999999");
+  });
+
+  it("devolve null quando não há grupo nem contato (chamador decide o fallback)", () => {
+    expect(conversationDisplayName({ group: undefined, contact: undefined })).toBeNull();
+  });
+});
+
+describe("matchesSearch", () => {
+  // Bug real em produção (2026-09-15): a busca da Inbox só olhava
+  // `contact?.name`/`contact?.phone`, então NENHUMA conversa de grupo
+  // (contact_id nulo) aparecia numa busca por texto — mesma classe de
+  // bug do `conversationDisplayName` acima ("Desconhecido"), só que na
+  // caixa de busca em vez do rótulo da lista.
+  it("acha uma conversa de grupo pelo nome do grupo, sem contato", () => {
+    const conv = {
+      group: { id: "g1", name: "Pais Laura dos Santos", avatar_url: null, left_at: null },
+      contact: null,
+    } as unknown as Conversation;
+    expect(matchesSearch(conv, "laura")).toBe(true);
+    expect(matchesSearch(conv, "pai")).toBe(true);
+  });
+
+  it("nome do grupo com espaço sobrando não atrapalha a busca", () => {
+    const conv = {
+      group: { id: "g1", name: "Pais Laura dos Santos ", avatar_url: null, left_at: null },
+      contact: null,
+    } as unknown as Conversation;
+    expect(matchesSearch(conv, "santos")).toBe(true);
+  });
+
+  it("continua achando pelo nome ou telefone do contato no caminho 1:1", () => {
+    const conv = makeConversation({ name: "Fulano de Tal", phone: "5511999999999" });
+    expect(matchesSearch(conv, "fulano")).toBe(true);
+    expect(matchesSearch(conv, "5511999999999")).toBe(true);
+    expect(matchesSearch(conv, "outro")).toBe(false);
+  });
+
+  it("acha pelo texto da última mensagem", () => {
+    const conv = { ...makeConversation(null), last_message_text: "Bom dia, tudo bem?" };
+    expect(matchesSearch(conv, "tudo bem")).toBe(true);
+  });
+
+  it("string vazia (ou só espaços) não filtra nada", () => {
+    const conv = makeConversation(null);
+    expect(matchesSearch(conv, "")).toBe(true);
+    expect(matchesSearch(conv, "   ")).toBe(true);
+  });
+});
+
+describe("sortConversationsByRecency", () => {
+  // Pedido do usuário: a lista da Inbox deve sempre mostrar a mensagem
+  // mais recente primeiro, igual ao WhatsApp -- inclusive quando uma
+  // conversa recebe mensagem nova e precisa "pular" pro topo, não só
+  // na carga inicial da página.
+  function conv(id: string, lastMessageAt: string | null, createdAt: string): Conversation {
+    return {
+      id,
+      user_id: "u1",
+      contact_id: "ct1",
+      status: "open",
+      unread_count: 0,
+      created_at: createdAt,
+      updated_at: createdAt,
+      last_message_at: lastMessageAt ?? undefined,
+    };
+  }
+
+  it("ordena da mensagem mais recente para a mais antiga", () => {
+    const older = conv("c-older", "2026-09-15T09:00:00Z", "2026-09-15T08:00:00Z");
+    const newer = conv("c-newer", "2026-09-15T10:00:00Z", "2026-09-15T08:00:00Z");
+    const result = sortConversationsByRecency([older, newer]);
+    expect(result.map((c) => c.id)).toEqual(["c-newer", "c-older"]);
+  });
+
+  it("usa created_at como fallback quando a conversa nunca recebeu mensagem", () => {
+    const semMensagemAntiga = conv("c-sem-msg-antiga", null, "2026-09-15T07:00:00Z");
+    const comMensagem = conv("c-com-msg", "2026-09-15T08:00:00Z", "2026-09-15T06:00:00Z");
+    const semMensagemRecente = conv("c-sem-msg-recente", null, "2026-09-15T09:00:00Z");
+    const result = sortConversationsByRecency([
+      semMensagemAntiga,
+      comMensagem,
+      semMensagemRecente,
+    ]);
+    expect(result.map((c) => c.id)).toEqual([
+      "c-sem-msg-recente",
+      "c-com-msg",
+      "c-sem-msg-antiga",
+    ]);
+  });
+
+  it("não modifica o array original (retorna uma cópia nova)", () => {
+    const list = [
+      conv("a", "2026-09-15T08:00:00Z", "2026-09-15T07:00:00Z"),
+      conv("b", "2026-09-15T09:00:00Z", "2026-09-15T07:00:00Z"),
+    ];
+    const original = [...list];
+    sortConversationsByRecency(list);
+    expect(list).toEqual(original);
   });
 });
 

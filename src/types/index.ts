@@ -164,7 +164,13 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
-  contact_id: string;
+  /**
+   * Nullable since Task 1 (grupos WhatsApp fase 1): a group conversation
+   * carries `group_id` instead and has no `contact_id`/`contact`. Group
+   * conversations are created for real as of Tasks 5/7 — every reader
+   * must treat this, and `contact` below, as possibly absent.
+   */
+  contact_id: string | null;
   status: ConversationStatus;
   /**
    * Which WhatsApp channel this conversation belongs to (migration 037,
@@ -175,6 +181,12 @@ export interface Conversation {
    * `null` here.
    */
   channel_id?: string | null;
+  /**
+   * Set instead of `contact_id` for a group conversation (migration
+   * 20260829000001, Tarefa 1/7). `conversations_contact_xor_group`
+   * enforces exactly one of the two being non-null at the DB level.
+   */
+  group_id?: string | null;
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
@@ -182,6 +194,18 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * Presente só numa conversa de grupo (`group_id` não nulo). Mesmo
+   * padrão de `contact` para o caminho 1:1.
+   */
+  group?: {
+    id: string;
+    name: string | null;
+    avatar_url: string | null;
+    /** Preenchido quando o número conectado saiu de verdade (Fase 3) — a
+     *  conversa vira somente-leitura; ver `left_at` em `whatsapp_groups`. */
+    left_at: string | null;
+  } | null;
   /**
    * AI auto-reply state for this thread (migration 029 + 033):
    *  - `ai_autoreply_disabled` — the bot is paused here (a human took
@@ -200,7 +224,7 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'marker_assigned';
 
 export interface Notification {
   id: string;
@@ -210,6 +234,8 @@ export interface Notification {
   type: NotificationType;
   conversation_id?: string;
   contact_id?: string;
+  /** Só em `marker_assigned` — a mensagem exata pra rolar/destacar. */
+  message_id?: string;
   /** Who triggered it. Null when an automation/system assigned it. */
   actor_user_id?: string;
   title: string;
@@ -236,6 +262,12 @@ export interface Message {
   conversation_id: string;
   sender_type: SenderType;
   sender_id?: string;
+  /**
+   * Set instead of `sender_id` for an inbound group message (migration
+   * 20260829000001, Tarefa 1/7) — points at `group_participants`, the
+   * group member who wrote it. `sender_type` stays `'customer'`.
+   */
+  participant_id?: string | null;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
@@ -265,6 +297,28 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /** Preenchido quando o próprio atendente apaga a mensagem (Fase de
+   *  editar/apagar, 2026-09-10). `content_text` NUNCA é limpo — a UI é
+   *  que troca a exibição por um placeholder. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  /** Preenchido na primeira edição. `content_text` passa a ser sempre
+   *  o texto atual. */
+  edited_at?: string | null;
+  /** Texto de antes da PRIMEIRA edição — nunca sobrescrito depois,
+   *  mesmo com edições seguintes. Uso interno/auditoria, nunca
+   *  exibido na thread normal. */
+  original_content_text?: string | null;
+  /** Preenchido quando ESTA mensagem foi criada por um encaminhamento
+   *  (2026-09-14). A bolha exibe a etiqueta "Encaminhada", igual ao
+   *  WhatsApp. É uma cópia independente: não aponta para a original. */
+  forwarded_at?: string | null;
+  /** Mensagem opcional digitada junto do encaminhamento (2026-09-15).
+   *  `content_text` já contém o texto combinado de verdade (é o que foi
+   *  entregue no WhatsApp real) — este campo é só o trecho da nota,
+   *  guardado à parte pra bolha do CRM conseguir estilizar o pedaço
+   *  digitado pelo atendente diferente do pedaço encaminhado. */
+  forwarded_note?: string | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';
@@ -276,6 +330,19 @@ export interface MessageReaction {
   actor_type: ReactionActor;
   actor_id?: string;
   emoji: string;
+  created_at: string;
+}
+
+export interface MessageMarker {
+  id: string;
+  message_id: string;
+  conversation_id: string;
+  /** Dono do marcador — quem aparece no chip e vê em "Meus marcadores". */
+  created_by: string;
+  /** Quem de fato marcou. Igual a `created_by` num auto-marcador; diferente
+   *  quando alguém atribui o marcador a um colega. */
+  assigned_by: string | null;
+  label: string | null;
   created_at: string;
 }
 
