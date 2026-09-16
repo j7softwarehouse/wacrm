@@ -18,6 +18,26 @@ describe("canRemoveMarker", () => {
   it("admin pode remover marcador de qualquer pessoa", () => {
     expect(canRemoveMarker({ created_by: "user-1" }, "user-2", true)).toBe(true);
   });
+
+  it("quem atribuiu o marcador a outra pessoa tambem pode remover", () => {
+    expect(
+      canRemoveMarker(
+        { created_by: "user-1", assigned_by: "user-2" },
+        "user-2",
+        false,
+      ),
+    ).toBe(true);
+  });
+
+  it("terceiro que nao marcou, nao recebeu e nao atribuiu, nao pode remover", () => {
+    expect(
+      canRemoveMarker(
+        { created_by: "user-1", assigned_by: "user-2" },
+        "user-3",
+        false,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("markerChipText", () => {

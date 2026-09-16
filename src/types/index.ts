@@ -229,7 +229,7 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'marker_assigned';
 
 export interface Notification {
   id: string;
@@ -239,6 +239,8 @@ export interface Notification {
   type: NotificationType;
   conversation_id?: string;
   contact_id?: string;
+  /** Só em `marker_assigned` — a mensagem exata pra rolar/destacar. */
+  message_id?: string;
   /** Who triggered it. Null when an automation/system assigned it. */
   actor_user_id?: string;
   title: string;
@@ -340,7 +342,11 @@ export interface MessageMarker {
   id: string;
   message_id: string;
   conversation_id: string;
+  /** Dono do marcador — quem aparece no chip e vê em "Meus marcadores". */
   created_by: string;
+  /** Quem de fato marcou. Igual a `created_by` num auto-marcador; diferente
+   *  quando alguém atribui o marcador a um colega. */
+  assigned_by: string | null;
   label: string | null;
   created_at: string;
 }

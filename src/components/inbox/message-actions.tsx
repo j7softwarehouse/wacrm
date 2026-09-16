@@ -20,6 +20,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Message } from "@/types";
 import { useTranslations } from "next-intl";
 
@@ -46,10 +53,15 @@ interface MessageActionsProps {
   myMarker?: { label: string | null } | null;
   /** Ausente = ação "Marcar" não aparece (sem permissão de escrever
    *  na conversa — mesma regra de `message_markers_insert`). Chamado
-   *  ao confirmar o rótulo (pode ser string vazia). */
-  onMark?: (label: string) => void;
+   *  ao confirmar o rótulo (pode ser string vazia); `targetUserId`
+   *  presente = atribuindo o marcador a um colega, não a si mesmo. */
+  onMark?: (label: string, targetUserId?: string) => void;
   /** Presente só quando `myMarker` existe — remove a própria marcação. */
   onUnmark?: () => void;
+  /** Colegas de conta pra quem dá pra atribuir um marcador (exclui o
+   *  próprio usuário logado — esse caso já é o "Marcar" de sempre).
+   *  Vazio/ausente = seletor de destinatário não aparece. */
+  accountMembers?: { user_id: string; full_name: string }[];
   children: ReactNode;
 }
 
@@ -68,6 +80,7 @@ export function MessageActions({
   myMarker,
   onMark,
   onUnmark,
+  accountMembers,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -79,6 +92,10 @@ export function MessageActions({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [markerOpen, setMarkerOpen] = useState(false);
   const [markerLabel, setMarkerLabel] = useState(myMarker?.label ?? "");
+  // `null` = marcando pra mim mesmo (o caso de sempre). Só aparece pra
+  // escolher quando ainda não tenho marcador meu nesta mensagem — editar
+  // o meu já é uma ação separada de atribuir pra outra pessoa.
+  const [targetUserId, setTargetUserId] = useState<string | null>(null);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
@@ -130,7 +147,7 @@ export function MessageActions({
   };
 
   const handleMarkSubmit = () => {
-    onMark?.(markerLabel);
+    onMark?.(markerLabel, targetUserId ?? undefined);
     setMarkerOpen(false);
     setTouchOpen(false);
   };
@@ -140,6 +157,23 @@ export function MessageActions({
     setMarkerLabel("");
     setMarkerOpen(false);
     setTouchOpen(false);
+  };
+
+  const handleMarkerOpenChange = (open: boolean) => {
+    setMarkerOpen(open);
+    if (open) {
+      // Reabre sempre no estado "pra mim" — trocar de destinatário limpa
+      // o rótulo (não faz sentido herdar o texto do meu próprio marcador
+      // pro de um colega).
+      setTargetUserId(null);
+      setMarkerLabel(myMarker?.label ?? "");
+    }
+  };
+
+  const handleTargetChange = (value: string | null) => {
+    const next = value && value !== "me" ? value : null;
+    setTargetUserId(next);
+    setMarkerLabel(next === null ? (myMarker?.label ?? "") : "");
   };
 
   // Row alignment lives here (not in MessageBubble) so the `group/actions`
@@ -219,7 +253,7 @@ export function MessageActions({
           </button>
         )}
         {onMark && (
-          <Popover open={markerOpen} onOpenChange={setMarkerOpen}>
+          <Popover open={markerOpen} onOpenChange={handleMarkerOpenChange}>
             <PopoverTrigger
               className={cn(
                 "flex h-5 w-5 items-center justify-center rounded-full hover:bg-muted",
@@ -235,8 +269,33 @@ export function MessageActions({
             </PopoverTrigger>
             <PopoverContent className="w-64 space-y-2 p-3" sideOffset={6}>
               <p className="text-xs font-medium text-foreground">
-                {myMarker ? t("editMarkerTitle") : t("markTitle")}
+                {targetUserId
+                  ? t("markForTitle")
+                  : myMarker
+                    ? t("editMarkerTitle")
+                    : t("markTitle")}
               </p>
+              {/* Só oferece atribuir a outra pessoa quando ainda não
+                  tenho marcador meu aqui — editar o meu é uma ação à
+                  parte de escolher um destinatário novo. */}
+              {!myMarker && accountMembers && accountMembers.length > 0 && (
+                <Select
+                  value={targetUserId ?? "me"}
+                  onValueChange={handleTargetChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="me">{t("markForMe")}</SelectItem>
+                    {accountMembers.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Input
                 autoFocus
                 value={markerLabel}
@@ -261,7 +320,11 @@ export function MessageActions({
                   <span />
                 )}
                 <Button type="button" size="sm" onClick={handleMarkSubmit}>
-                  {myMarker ? t("saveMarker") : t("mark")}
+                  {targetUserId
+                    ? t("markFor")
+                    : myMarker
+                      ? t("saveMarker")
+                      : t("mark")}
                 </Button>
               </div>
             </PopoverContent>
