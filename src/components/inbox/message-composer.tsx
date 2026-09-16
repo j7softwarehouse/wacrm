@@ -894,6 +894,9 @@ export function MessageComposer({
             }
             disabled={inputsDisabled}
             rows={1}
+            spellCheck
+            autoCorrect="on"
+            autoCapitalize="sentences"
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only /
