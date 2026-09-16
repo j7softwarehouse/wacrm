@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { splitHighlight } from "@/lib/inbox/message-search";
-import type { Message, MessageReaction } from "@/types";
+import { canRemoveMarker, markerChipText } from "@/lib/inbox/message-markers";
+import type { Message, MessageMarker, MessageReaction } from "@/types";
 import {
   Clock,
   Check,
@@ -16,6 +17,8 @@ import {
   CornerDownLeft,
   Sparkles,
   Forward,
+  Bookmark,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -41,6 +44,16 @@ interface MessageBubbleProps {
   /** True na ocorrência "atual" da busca — ganha um anel para o
    *  atendente saber em qual das ocorrências ele está. */
   highlightActive?: boolean;
+  /** Marcadores desta mensagem (de qualquer pessoa da conta) — ver
+   *  docs/superpowers/specs/2026-09-16-marcadores-de-mensagem-design.md. */
+  markers?: MessageMarker[];
+  /** Resolve o id de quem marcou pro nome de exibição. */
+  markerAuthorName?: (userId: string) => string;
+  /** True quando o usuário logado é admin/owner — junto com
+   *  `currentUserId`, decide (via `canRemoveMarker`) em quais chips o
+   *  "×" aparece: só o dono do marcador, ou admin+. */
+  isAccountAdmin?: boolean;
+  onRemoveMarker?: (markerCreatedBy: string) => void;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -433,6 +446,10 @@ export function MessageBubble({
   authorName,
   highlightQuery = "",
   highlightActive = false,
+  markers,
+  markerAuthorName,
+  isAccountAdmin = false,
+  onRemoveMarker,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -545,6 +562,45 @@ export function MessageBubble({
           currentUserId={currentUserId}
           onToggle={onToggleReaction}
         />
+      )}
+      {/* Chips de marcador — "onde eu parei". Visíveis a toda a conta
+          (é isso que também avisa "fulano já está tratando isso
+          daqui"); o "×" só aparece pra quem marcou ou admin+
+          (canRemoveMarker espelha a policy message_markers_delete). */}
+      {markers && markers.length > 0 && (
+        <div
+          className={cn(
+            "mt-1 flex flex-wrap gap-1",
+            isAgent ? "justify-end" : "justify-start",
+          )}
+        >
+          {markers.map((marker) => {
+            const name = markerAuthorName?.(marker.created_by) ?? "";
+            const removable =
+              !!currentUserId &&
+              !!onRemoveMarker &&
+              canRemoveMarker(marker, currentUserId, isAccountAdmin);
+            return (
+              <span
+                key={marker.id}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-popover px-2 py-0.5 text-[10px] text-popover-foreground"
+              >
+                <Bookmark className="h-2.5 w-2.5" />
+                {markerChipText(marker.label, name)}
+                {removable && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMarker?.(marker.created_by)}
+                    className="ml-0.5 rounded-full hover:text-destructive"
+                    aria-label={t("removeMarker")}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
       )}
     </div>
   );

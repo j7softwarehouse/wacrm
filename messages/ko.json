@@ -142,6 +142,7 @@
       "filterOpen": "열림",
       "filterPending": "대기 중",
       "filterClosed": "닫힘",
+      "filterMarkers": "내 표시가 있는 대화",
       "tags": "태그",
       "company": "회사",
       "allCompanies": "전체 회사",
@@ -179,7 +180,9 @@
       "searchNoResults": "결과 없음",
       "searchPrevious": "이전",
       "searchNext": "다음",
-      "searchClose": "검색 닫기"
+      "searchClose": "검색 닫기",
+      "markersPanel": "표시 {count}개",
+      "markersPanelTitle": "이 대화의 표시"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -240,7 +243,8 @@
       "downloadMedia": "다운로드",
       "closeMedia": "닫기",
       "participant": "참가자",
-      "forwardedTag": "전달됨"
+      "forwardedTag": "전달됨",
+      "removeMarker": "표시 제거"
     },
     "actions": {
       "reply": "답장",
@@ -256,7 +260,16 @@
       "deleteSuccess": "메시지가 삭제되었습니다",
       "deleteError": "메시지를 삭제할 수 없습니다",
       "editError": "메시지를 수정할 수 없습니다",
-      "forward": "전달"
+      "forward": "전달",
+      "mark": "표시",
+      "editMarker": "표시 편집",
+      "markTitle": "이 메시지 표시",
+      "editMarkerTitle": "표시 편집",
+      "markLabelPlaceholder": "주제 (선택 사항)",
+      "unmark": "제거",
+      "saveMarker": "저장",
+      "markError": "표시를 저장할 수 없습니다",
+      "unmarkError": "표시를 제거할 수 없습니다"
     },
     "replyQuote": {
       "photo": "[사진]",

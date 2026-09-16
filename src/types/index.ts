@@ -336,6 +336,15 @@ export interface MessageReaction {
   created_at: string;
 }
 
+export interface MessageMarker {
+  id: string;
+  message_id: string;
+  conversation_id: string;
+  created_by: string;
+  label: string | null;
+  created_at: string;
+}
+
 export type WhatsAppProviderKind = 'meta' | 'uazapi';
 
 export interface WhatsAppChannel {

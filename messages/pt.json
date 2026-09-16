@@ -142,6 +142,7 @@
       "filterOpen": "Aberto",
       "filterPending": "Pendente",
       "filterClosed": "Fechado",
+      "filterMarkers": "Com meus marcadores",
       "tags": "Tags",
       "company": "Empresa",
       "allCompanies": "Todas as empresas",
@@ -184,7 +185,9 @@
       "searchNoResults": "Nenhum resultado",
       "searchPrevious": "Anterior",
       "searchNext": "Próxima",
-      "searchClose": "Fechar busca"
+      "searchClose": "Fechar busca",
+      "markersPanel": "{count} marcadores",
+      "markersPanelTitle": "Marcadores nesta conversa"
     },
     "sessionTimer": {
       "expired": "Expirado",
@@ -246,7 +249,8 @@
       "downloadMedia": "Baixar",
       "closeMedia": "Fechar",
       "participant": "Participante",
-      "forwardedTag": "Encaminhada"
+      "forwardedTag": "Encaminhada",
+      "removeMarker": "Remover marcação"
     },
     "actions": {
       "reply": "Responder",
@@ -262,7 +266,16 @@
       "deleteSuccess": "Mensagem apagada",
       "deleteError": "Não foi possível apagar a mensagem",
       "editError": "Não foi possível editar a mensagem",
-      "forward": "Encaminhar"
+      "forward": "Encaminhar",
+      "mark": "Marcar",
+      "editMarker": "Editar marcação",
+      "markTitle": "Marcar esta mensagem",
+      "editMarkerTitle": "Editar sua marcação",
+      "markLabelPlaceholder": "Assunto (opcional)",
+      "unmark": "Remover",
+      "saveMarker": "Salvar",
+      "markError": "Não foi possível salvar a marcação",
+      "unmarkError": "Não foi possível remover a marcação"
     },
     "replyQuote": {
       "photo": "[Foto]",
@@ -1942,6 +1955,12 @@
     "retry": "Tentar novamente",
     "unread": "Não lida",
     "markReadFailed": "Falha ao marcar notificação como lida",
-    "markAllReadFailed": "Falha ao marcar tudo como lido"
+    "markAllReadFailed": "Falha ao marcar tudo como lido",
+    "tabNotifications": "Notificações",
+    "tabMarkers": "Meus marcadores",
+    "markersEmptyTitle": "Nenhum marcador ainda",
+    "markersEmptySubtitle": "Marque uma mensagem numa conversa para retomar o ponto depois.",
+    "unknownContact": "Contato desconhecido",
+    "markersUnlabeled": "Sem assunto"
   }
 }
