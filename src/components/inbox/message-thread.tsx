@@ -17,12 +17,14 @@ import type {
   Conversation,
   Message,
   MessageReaction,
+  MessageMarker,
   Contact,
   ConversationStatus,
   MessageTemplate,
   Profile,
   InteractiveMessagePayload,
 } from "@/types";
+import { markerChipText } from "@/lib/inbox/message-markers";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
@@ -38,6 +40,7 @@ import {
   Search,
   ChevronUp,
   X,
+  Bookmark,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -136,6 +139,14 @@ interface MessageThreadProps {
    * simply hasn't loaded in yet isn't mistaken for an orphaned one.
    */
   channelsLoaded?: boolean;
+  /**
+   * Vindo do link de "Meus marcadores" em Notificações
+   * (`/inbox?c=<conv>&m=<messageId>`) — assim que as mensagens
+   * carregarem, rola até essa mensagem e a destaca por alguns
+   * segundos. `null`/ausente = comportamento normal, sem pular pra
+   * lugar nenhum.
+   */
+  deepLinkMessageId?: string | null;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -196,6 +207,7 @@ export function MessageThread({
   onToggleContactPanel,
   channelsById,
   channelsLoaded = false,
+  deepLinkMessageId,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -203,13 +215,19 @@ export function MessageThread({
   const tBubble = useTranslations("Inbox.bubble");
   const tActions = useTranslations("Inbox.actions");
 
-  const { user, canEditSettings } = useAuth();
+  const { user, canEditSettings, canSendMessages, isAdmin, isOwner } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [markers, setMarkers] = useState<MessageMarker[]>([]);
+  const [markersPanelOpen, setMarkersPanelOpen] = useState(false);
+  // Destaque temporário de quem chegou via link de "Meus marcadores"
+  // (?m=<messageId>) — mesmo visual de `highlightActive` da busca,
+  // sem misturar com o estado da busca em si.
+  const [deepLinkHighlightId, setDeepLinkHighlightId] = useState<string | null>(null);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -558,6 +576,88 @@ export function MessageThread({
           const old = payload.old as Partial<MessageReaction>;
           if (!old?.id) return;
           setReactions((prev) => prev.filter((r) => r.id !== old.id));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
+  // Marcadores da conversa — mesmo padrão de fetch das reações acima.
+  useEffect(() => {
+    if (!conversationId) {
+      setMarkers([]);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("message_markers")
+        .select("*")
+        .eq("conversation_id", conversationId);
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch markers:", error);
+        return;
+      }
+      setMarkers((data as MessageMarker[]) ?? []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, resyncToken]);
+
+  // Marcadores em tempo real — mesmo padrão do canal de reações acima,
+  // canal próprio para não acoplar às reações.
+  useEffect(() => {
+    if (!conversationId) return;
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`markers:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageMarker;
+          setMarkers((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageMarker;
+          setMarkers((prev) => prev.map((m) => (m.id === row.id ? row : m)));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "message_markers",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const old = payload.old as Partial<MessageMarker>;
+          if (!old?.id) return;
+          setMarkers((prev) => prev.filter((m) => m.id !== old.id));
         },
       )
       .subscribe();
@@ -935,6 +1035,95 @@ export function MessageThread({
     return map;
   }, [reactions]);
 
+  // Mesmo padrão, para os marcadores — usado tanto pelo chip no balão
+  // quanto pra decidir `myMarker` na barra de ações.
+  const markersByMessageId = useMemo(() => {
+    const map = new Map<string, MessageMarker[]>();
+    for (const m of markers) {
+      const bucket = map.get(m.message_id);
+      if (bucket) bucket.push(m);
+      else map.set(m.message_id, [m]);
+    }
+    return map;
+  }, [markers]);
+
+  // Painel "Marcadores (N)" no cabeçalho — mais recentes primeiro, cada
+  // um já com o nome de quem marcou pronto pra exibir.
+  const sortedMarkers = useMemo(
+    () =>
+      [...markers].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ),
+    [markers],
+  );
+
+  const canMark = canSendMessages;
+  const isAccountAdmin = isAdmin || isOwner;
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = document.querySelector(`[data-message-id="${messageId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setMarkersPanelOpen(false);
+  }, []);
+
+  // Link de "Meus marcadores": espera as mensagens carregarem (a
+  // mensagem só existe no DOM depois disso), pula até ela e destaca
+  // por alguns segundos. Roda de novo se `deepLinkMessageId` mudar
+  // (clicar em outro marcador na mesma conversa já aberta).
+  useEffect(() => {
+    if (!deepLinkMessageId) return;
+    if (!messagesById.has(deepLinkMessageId)) return;
+
+    jumpToMessage(deepLinkMessageId);
+    setDeepLinkHighlightId(deepLinkMessageId);
+    const timer = setTimeout(() => setDeepLinkHighlightId(null), 2500);
+    return () => clearTimeout(timer);
+  }, [deepLinkMessageId, messagesById, jumpToMessage]);
+
+  const handleMarkMessage = useCallback(
+    async (messageId: string, label: string) => {
+      if (!user || !conversationId) return;
+      const supabase = createClient();
+      const trimmed = label.trim();
+      const { error } = await supabase.from("message_markers").upsert(
+        {
+          message_id: messageId,
+          conversation_id: conversationId,
+          created_by: user.id,
+          label: trimmed || null,
+        },
+        { onConflict: "message_id,created_by" },
+      );
+      if (error) {
+        console.error("Failed to save marker:", error);
+        toast.error(tActions("markError"));
+      }
+    },
+    [user, conversationId, tActions],
+  );
+
+  // `targetUserId` por padrão é o próprio usuário (botão na barra de
+  // ações, que só mexe na própria marcação); admin removendo a
+  // marcação de outra pessoa (pelo chip no balão) passa o dono real —
+  // a policy `message_markers_delete` já garante que só o dono ou
+  // admin+ têm permissão de fato.
+  const handleUnmarkMessage = useCallback(
+    async (messageId: string, targetUserId?: string) => {
+      if (!user) return;
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("message_markers")
+        .delete()
+        .eq("message_id", messageId)
+        .eq("created_by", targetUserId ?? user.id);
+      if (error) {
+        console.error("Failed to remove marker:", error);
+        toast.error(tActions("unmarkError"));
+      }
+    },
+    [user, tActions],
+  );
+
   const contactDisplayName = contact?.name || contact?.phone || "Customer";
 
   // Author label for a quoted message: "You" when we sent the parent,
@@ -1311,6 +1500,49 @@ export function MessageThread({
             <Search className="h-3.5 w-3.5" />
           </button>
 
+          {/* Painel "Marcadores (N)" — pula direto pro ponto marcado por
+              qualquer pessoa nesta conversa, reaproveitando o mesmo
+              rolar-e-destacar da busca acima. Só aparece quando há
+              marcador — botão vazio não ajuda ninguém. */}
+          {sortedMarkers.length > 0 && (
+            <DropdownMenu open={markersPanelOpen} onOpenChange={setMarkersPanelOpen}>
+              <DropdownMenuTrigger
+                className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={t("markersPanel", { count: sortedMarkers.length })}
+                title={t("markersPanel", { count: sortedMarkers.length })}
+              >
+                <Bookmark className="h-3.5 w-3.5" />
+                {sortedMarkers.length}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  {t("markersPanelTitle")}
+                </div>
+                <DropdownMenuSeparator />
+                {sortedMarkers.map((marker) => {
+                  const authorName = authorNames[marker.created_by] || tBubble("participant");
+                  const preview = messagesById.get(marker.message_id)?.content_text ?? "";
+                  return (
+                    <DropdownMenuItem
+                      key={marker.id}
+                      onClick={() => jumpToMessage(marker.message_id)}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="text-xs font-medium">
+                        {markerChipText(marker.label, authorName)}
+                      </span>
+                      {preview && (
+                        <span className="line-clamp-1 text-[11px] text-muted-foreground">
+                          {preview}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           {/* Manual refresh — forces a refetch of the messages + the
               conversation list (the parent bumps its resyncToken). Useful
               when realtime missed an event or the agent just wants to be
@@ -1578,6 +1810,10 @@ export function MessageThread({
                         : !!msg.media_url;
                     const canForwardMsg =
                       !msg.deleted_at && isForwardableType && hasContentToForward;
+                    const msgMarkers = markersByMessageId.get(msg.id);
+                    const myMarker = user
+                      ? msgMarkers?.find((m) => m.created_by === user.id) ?? null
+                      : null;
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1591,6 +1827,9 @@ export function MessageThread({
                         onForward={
                           canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
                         }
+                        myMarker={myMarker}
+                        onMark={canMark ? (label) => void handleMarkMessage(msg.id, label) : undefined}
+                        onUnmark={myMarker ? () => void handleUnmarkMessage(msg.id) : undefined}
                       >
                         <MessageBubble
                           message={msg}
@@ -1601,7 +1840,13 @@ export function MessageThread({
                           showAuthor={showAuthor}
                           authorName={authorName}
                           highlightQuery={searchOpen ? searchQuery : ""}
-                          highlightActive={msg.id === activeMatchId}
+                          highlightActive={msg.id === activeMatchId || msg.id === deepLinkHighlightId}
+                          markers={msgMarkers}
+                          markerAuthorName={(userId) => authorNames[userId] || tBubble("participant")}
+                          isAccountAdmin={isAccountAdmin}
+                          onRemoveMarker={(markerUserId) =>
+                            void handleUnmarkMessage(msg.id, markerUserId)
+                          }
                         />
                       </MessageActions>
                     );

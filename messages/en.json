@@ -142,6 +142,7 @@
       "filterOpen": "Open",
       "filterPending": "Pending",
       "filterClosed": "Closed",
+      "filterMarkers": "With my markers",
       "tags": "Tags",
       "company": "Company",
       "allCompanies": "All companies",
@@ -184,7 +185,9 @@
       "searchNoResults": "No results",
       "searchPrevious": "Previous",
       "searchNext": "Next",
-      "searchClose": "Close search"
+      "searchClose": "Close search",
+      "markersPanel": "{count} markers",
+      "markersPanelTitle": "Markers in this conversation"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -246,7 +249,8 @@
       "downloadMedia": "Download",
       "closeMedia": "Close",
       "participant": "Participant",
-      "forwardedTag": "Forwarded"
+      "forwardedTag": "Forwarded",
+      "removeMarker": "Remove marker"
     },
     "actions": {
       "reply": "Reply",
@@ -262,7 +266,16 @@
       "deleteSuccess": "Message deleted",
       "deleteError": "Could not delete the message",
       "editError": "Could not edit the message",
-      "forward": "Forward"
+      "forward": "Forward",
+      "mark": "Mark",
+      "editMarker": "Edit marker",
+      "markTitle": "Mark this message",
+      "editMarkerTitle": "Edit your marker",
+      "markLabelPlaceholder": "Subject (optional)",
+      "unmark": "Remove",
+      "saveMarker": "Save",
+      "markError": "Could not save the marker",
+      "unmarkError": "Could not remove the marker"
     },
     "replyQuote": {
       "photo": "[Photo]",
@@ -1937,6 +1950,12 @@
     "retry": "Retry",
     "unread": "Unread",
     "markReadFailed": "Failed to mark notification as read",
-    "markAllReadFailed": "Failed to mark all as read"
+    "markAllReadFailed": "Failed to mark all as read",
+    "tabNotifications": "Notifications",
+    "tabMarkers": "My markers",
+    "markersEmptyTitle": "No markers yet",
+    "markersEmptySubtitle": "Mark a message in a conversation to pick up where you left off later.",
+    "unknownContact": "Unknown contact",
+    "markersUnlabeled": "No subject"
   }
 }

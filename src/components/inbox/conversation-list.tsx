@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import {
   CONVERSATION_SELECT,
   channelLabel,
@@ -52,7 +53,7 @@ interface ConversationListProps {
   channelsById?: Map<string, PublicChannel>;
 }
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "markers";
 
 export function ConversationList({
   activeConversationId,
@@ -81,10 +82,17 @@ export function ConversationList({
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
+    { label: t("filterMarkers"), value: "markers" },
   ], [t]);
 
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // Conversas onde o usuário logado tem pelo menos um marcador — ver
+  // docs/superpowers/specs/2026-09-16-marcadores-de-mensagem-design.md.
+  const [markedConversationIds, setMarkedConversationIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -153,6 +161,37 @@ export function ConversationList({
     // up on any events sent while the WS was disconnected or throttled.
   }, [resyncToken]);
 
+  // Ids das conversas com pelo menos um marcador meu — sustenta o
+  // filtro "Com meus marcadores". Não precisa de tempo real: um
+  // marcador novo só muda esse conjunto quando o filtro já estiver
+  // ativo e a lista for reaberta, o que é uma perda aceitável (mesma
+  // decisão de não deixar "Meus marcadores" em Notificações ao vivo).
+  useEffect(() => {
+    if (!user) {
+      setMarkedConversationIds(new Set());
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("message_markers")
+        .select("conversation_id")
+        .eq("created_by", user.id);
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch marked conversations:", error.message);
+        return;
+      }
+      setMarkedConversationIds(new Set((data ?? []).map((r) => r.conversation_id as string)));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, resyncToken]);
+
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.
   useEffect(() => {
@@ -190,6 +229,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "markers") {
+      result = result.filter((c) => markedConversationIds.has(c.id));
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -213,7 +254,7 @@ export function ConversationList({
     // que chega mensagem nova, mesmo quando o estado em memória só
     // atualiza `last_message_at` no lugar sem mexer na posição do item.
     return sortConversationsByRecency(result);
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, markedConversationIds]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>

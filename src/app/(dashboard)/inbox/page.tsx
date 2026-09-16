@@ -44,6 +44,11 @@ function InboxPageInner() {
    * automatically instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get("c");
+  // Link de "Meus marcadores" (Notificações) — pula direto pra mensagem
+  // marcada, sem entrar no sistema de deep-link de conversa acima
+  // (que já é intrincado o bastante). MessageThread cuida sozinho de
+  // esperar as mensagens carregarem antes de rolar até ela.
+  const deepLinkMessageId = searchParams.get("m");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
@@ -705,6 +710,7 @@ function InboxPageInner() {
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
             channelsById={channelsById}
+            deepLinkMessageId={deepLinkMessageId}
             channelsLoaded={channelsLoaded}
           />
         </div>

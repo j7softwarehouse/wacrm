@@ -1,9 +1,20 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, Forward, Pencil, SmilePlus, Trash2 } from "lucide-react";
+import {
+  Bookmark,
+  BookmarkX,
+  CornerUpLeft,
+  Copy,
+  Forward,
+  Pencil,
+  SmilePlus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -29,6 +40,16 @@ interface MessageActionsProps {
   /** Ausente = botão de encaminhar não aparece (mensagem apagada, tipo
    *  não encaminhável, ou mídia que já expirou do storage). */
   onForward?: () => void;
+  /** O PRÓPRIO marcador do usuário logado nesta mensagem, se houver —
+   *  distinto do de outras pessoas, que aparecem como chip no balão
+   *  mas não dão a ele controle de editar/remover por aqui. */
+  myMarker?: { label: string | null } | null;
+  /** Ausente = ação "Marcar" não aparece (sem permissão de escrever
+   *  na conversa — mesma regra de `message_markers_insert`). Chamado
+   *  ao confirmar o rótulo (pode ser string vazia). */
+  onMark?: (label: string) => void;
+  /** Presente só quando `myMarker` existe — remove a própria marcação. */
+  onUnmark?: () => void;
   children: ReactNode;
 }
 
@@ -44,6 +65,9 @@ export function MessageActions({
   onDelete,
   onEdit,
   onForward,
+  myMarker,
+  onMark,
+  onUnmark,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -53,6 +77,8 @@ export function MessageActions({
   // interacts elsewhere.
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [markerOpen, setMarkerOpen] = useState(false);
+  const [markerLabel, setMarkerLabel] = useState(myMarker?.label ?? "");
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
@@ -100,6 +126,19 @@ export function MessageActions({
 
   const handleForward = () => {
     onForward?.();
+    setTouchOpen(false);
+  };
+
+  const handleMarkSubmit = () => {
+    onMark?.(markerLabel);
+    setMarkerOpen(false);
+    setTouchOpen(false);
+  };
+
+  const handleUnmark = () => {
+    onUnmark?.();
+    setMarkerLabel("");
+    setMarkerOpen(false);
     setTouchOpen(false);
   };
 
@@ -175,6 +214,54 @@ export function MessageActions({
           >
             <Forward className="h-3.5 w-3.5" />
           </button>
+        )}
+        {onMark && (
+          <Popover open={markerOpen} onOpenChange={setMarkerOpen}>
+            <PopoverTrigger
+              className={cn(
+                "flex h-5 w-5 items-center justify-center rounded-full hover:bg-muted",
+                myMarker ? "text-primary" : "text-popover-foreground hover:text-foreground",
+              )}
+              aria-label={myMarker ? t("editMarker") : t("mark")}
+            >
+              <Bookmark
+                className="h-3.5 w-3.5"
+                fill={myMarker ? "currentColor" : "none"}
+              />
+            </PopoverTrigger>
+            <PopoverContent className="w-64 space-y-2 p-3" sideOffset={6}>
+              <p className="text-xs font-medium text-foreground">
+                {myMarker ? t("editMarkerTitle") : t("markTitle")}
+              </p>
+              <Input
+                autoFocus
+                value={markerLabel}
+                onChange={(e) => setMarkerLabel(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleMarkSubmit()}
+                placeholder={t("markLabelPlaceholder")}
+                maxLength={60}
+              />
+              <div className="flex items-center justify-between gap-2">
+                {myMarker ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleUnmark}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <BookmarkX className="h-3.5 w-3.5" />
+                    {t("unmark")}
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <Button type="button" size="sm" onClick={handleMarkSubmit}>
+                  {myMarker ? t("saveMarker") : t("mark")}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
         <button
           type="button"
