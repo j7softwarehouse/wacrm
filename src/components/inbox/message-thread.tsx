@@ -1060,6 +1060,16 @@ export function MessageThread({
   const canMark = canSendMessages;
   const isAccountAdmin = isAdmin || isOwner;
 
+  // Colegas pra quem dá pra atribuir um marcador — todo mundo da conta,
+  // menos eu mesmo (esse caso já é o "Marcar" de sempre).
+  const markableMembers = useMemo(
+    () =>
+      profiles
+        .filter((p) => p.user_id !== user?.id)
+        .map((p) => ({ user_id: p.user_id, full_name: p.full_name })),
+    [profiles, user?.id],
+  );
+
   const jumpToMessage = useCallback((messageId: string) => {
     const el = document.querySelector(`[data-message-id="${messageId}"]`);
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1081,7 +1091,7 @@ export function MessageThread({
   }, [deepLinkMessageId, messagesById, jumpToMessage]);
 
   const handleMarkMessage = useCallback(
-    async (messageId: string, label: string) => {
+    async (messageId: string, label: string, targetUserId?: string) => {
       if (!user || !conversationId) return;
       const supabase = createClient();
       const trimmed = label.trim();
@@ -1089,7 +1099,12 @@ export function MessageThread({
         {
           message_id: messageId,
           conversation_id: conversationId,
-          created_by: user.id,
+          // `targetUserId` presente = atribuindo a um colega; ausente =
+          // o caso de sempre, marcar pra mim mesmo. `assigned_by` é
+          // sempre quem está clicando — é o que a policy de INSERT
+          // exige e o que o trigger usa pra decidir se notifica.
+          created_by: targetUserId ?? user.id,
+          assigned_by: user.id,
           label: trimmed || null,
         },
         { onConflict: "message_id,created_by" },
@@ -1840,8 +1855,14 @@ export function MessageThread({
                           canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
                         }
                         myMarker={myMarker}
-                        onMark={canMark ? (label) => void handleMarkMessage(msg.id, label) : undefined}
+                        onMark={
+                          canMark
+                            ? (label, targetUserId) =>
+                                void handleMarkMessage(msg.id, label, targetUserId)
+                            : undefined
+                        }
                         onUnmark={myMarker ? () => void handleUnmarkMessage(msg.id) : undefined}
+                        accountMembers={canMark ? markableMembers : undefined}
                       >
                         <MessageBubble
                           message={msg}

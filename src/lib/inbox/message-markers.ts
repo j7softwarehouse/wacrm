@@ -7,14 +7,19 @@
 // Notificações) chamam estas funções sobre dados já buscados.
 // ============================================================
 
-/** Quem pode remover um marcador: só quem marcou, ou admin+. Mesma
- *  regra da política `message_markers_delete`. */
+/** Quem pode remover um marcador: quem marcou (o dono), quem atribuiu
+ *  (se foi atribuído a outra pessoa), ou admin+. Mesma regra da
+ *  política `message_markers_delete`. */
 export function canRemoveMarker(
-  marker: { created_by: string },
+  marker: { created_by: string; assigned_by?: string | null },
   currentUserId: string,
   isAdmin: boolean,
 ): boolean {
-  return marker.created_by === currentUserId || isAdmin;
+  return (
+    marker.created_by === currentUserId ||
+    marker.assigned_by === currentUserId ||
+    isAdmin
+  );
 }
 
 /** Texto do chip no balão: "Financeiro · Paulo", ou só "Paulo" quando

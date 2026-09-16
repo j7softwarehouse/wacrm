@@ -28,10 +28,10 @@ import {
 // date-fns' own default.
 const DATE_FNS_LOCALES = { pt: ptBR, ko };
 
-// Icon per notification type. Only one type exists today
-// (conversation_assigned) but this keeps future types a one-line add.
+// Icon per notification type.
 const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
   conversation_assigned: UserPlus,
+  marker_assigned: Bookmark,
 };
 
 export default function NotificationsPage() {
@@ -216,7 +216,10 @@ export default function NotificationsPage() {
     (n: Notification) => {
       if (!n.read_at) markRead(n.id);
       if (n.conversation_id) {
-        router.push(`/inbox?c=${n.conversation_id}`);
+        const target = n.message_id
+          ? `/inbox?c=${n.conversation_id}&m=${n.message_id}`
+          : `/inbox?c=${n.conversation_id}`;
+        router.push(target);
       }
     },
     [markRead, router],
