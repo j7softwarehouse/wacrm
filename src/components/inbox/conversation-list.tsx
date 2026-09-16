@@ -167,14 +167,14 @@ export function ConversationList({
   // ativo e a lista for reaberta, o que é uma perda aceitável (mesma
   // decisão de não deixar "Meus marcadores" em Notificações ao vivo).
   useEffect(() => {
-    if (!user) {
-      setMarkedConversationIds(new Set());
-      return;
-    }
     const supabase = createClient();
     let cancelled = false;
 
     (async () => {
+      if (!user) {
+        if (!cancelled) setMarkedConversationIds(new Set());
+        return;
+      }
       const { data, error } = await supabase
         .from("message_markers")
         .select("conversation_id")
