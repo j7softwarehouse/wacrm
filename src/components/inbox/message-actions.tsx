@@ -177,6 +177,7 @@ export function MessageActions({
           <PopoverTrigger
             className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("react")}
+            title={t("react")}
           >
             <SmilePlus className="h-3.5 w-3.5" />
           </PopoverTrigger>
@@ -202,6 +203,7 @@ export function MessageActions({
           onClick={handleReply}
           className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
           aria-label={t("reply")}
+          title={t("reply")}
         >
           <CornerUpLeft className="h-3.5 w-3.5" />
         </button>
@@ -211,6 +213,7 @@ export function MessageActions({
             onClick={handleForward}
             className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("forward")}
+            title={t("forward")}
           >
             <Forward className="h-3.5 w-3.5" />
           </button>
@@ -223,6 +226,7 @@ export function MessageActions({
                 myMarker ? "text-primary" : "text-popover-foreground hover:text-foreground",
               )}
               aria-label={myMarker ? t("editMarker") : t("mark")}
+              title={myMarker ? t("editMarker") : t("mark")}
             >
               <Bookmark
                 className="h-3.5 w-3.5"
@@ -268,6 +272,7 @@ export function MessageActions({
           onClick={handleCopy}
           className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
           aria-label={t("copyText")}
+          title={t("copyText")}
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
@@ -277,6 +282,7 @@ export function MessageActions({
             onClick={handleEdit}
             className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("edit")}
+            title={t("edit")}
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
@@ -287,6 +293,7 @@ export function MessageActions({
             onClick={handleDelete}
             className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-destructive"
             aria-label={t("delete")}
+            title={t("delete")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

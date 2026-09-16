@@ -593,6 +593,7 @@ export function MessageBubble({
                     onClick={() => onRemoveMarker?.(marker.created_by)}
                     className="ml-0.5 rounded-full hover:text-destructive"
                     aria-label={t("removeMarker")}
+                    title={t("removeMarker")}
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>
