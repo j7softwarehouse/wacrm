@@ -1110,15 +1110,27 @@ export function MessageThread({
   const handleUnmarkMessage = useCallback(
     async (messageId: string, targetUserId?: string) => {
       if (!user) return;
+      const removedBy = targetUserId ?? user.id;
+      // Otimista, como `postReaction` — não dá pra depender só do Realtime
+      // aqui (o DELETE só chega de volta filtrado por conversation_id
+      // quando a tabela tem REPLICA IDENTITY FULL).
+      let snapshot: MessageMarker[] = [];
+      setMarkers((prev) => {
+        snapshot = prev;
+        return prev.filter(
+          (m) => !(m.message_id === messageId && m.created_by === removedBy),
+        );
+      });
       const supabase = createClient();
       const { error } = await supabase
         .from("message_markers")
         .delete()
         .eq("message_id", messageId)
-        .eq("created_by", targetUserId ?? user.id);
+        .eq("created_by", removedBy);
       if (error) {
         console.error("Failed to remove marker:", error);
         toast.error(tActions("unmarkError"));
+        setMarkers(snapshot);
       }
     },
     [user, tActions],
