@@ -5,6 +5,7 @@ import {
   Settings,
   Tags,
   Users,
+  UserPlus,
   UsersRound,
   Zap,
 } from "lucide-react";
@@ -40,10 +41,12 @@ export function CapituloConfiguracoes() {
           inteira, e parte dele só aparece para administradores.
         </p>
         <Aviso tipo="admin">
-          As seções <Termo>WhatsApp</Termo> e <Termo>Grupos</Termo> só aparecem
-          para Administrador e Proprietário. Elas expõem credenciais e controlam
-          por onde as mensagens entram e saem — por isso não ficam visíveis para
-          o atendente comum.
+          As seções <Termo>WhatsApp</Termo>, <Termo>Grupos</Termo>,{" "}
+          <Termo>Membros da equipe</Termo> e <Termo>Chaves de API</Termo> só
+          aparecem para Administrador e Proprietário — para um Agente ou
+          Visualizador, elas nem constam na lista. <Termo>Respostas rápidas</Termo>{" "}
+          e <Termo>Campos e tags</Termo> continuam abertas para qualquer
+          atendente.
         </Aviso>
       </Secao>
 
@@ -192,14 +195,10 @@ export function CapituloConfiguracoes() {
           <Botao icone={UsersRound}>Configurações → Membros da equipe</Botao>
         </Onde>
         <p>
-          Lista quem tem acesso, com o papel de cada um e se está online.
+          Lista quem tem acesso, com o papel de cada um e se está online. Esta
+          tela é exclusiva de Administrador e Proprietário — um Agente ou
+          Visualizador não a vê no menu.
         </p>
-        <Aviso tipo="admin">
-          Qualquer atendente pode abrir esta tela e ver a lista. Só
-          administradores conseguem usar <Termo>Convidar membro</Termo>,
-          remover alguém ou trocar o papel de um colega — para um atendente
-          comum, esses botões simplesmente não aparecem.
-        </Aviso>
         <p>
           Para incluir alguém, um administrador usa{" "}
           <Termo>Convidar membro</Termo>: o sistema gera um link de convite.
@@ -234,6 +233,46 @@ export function CapituloConfiguracoes() {
         </Aviso>
       </Secao>
 
+      <Secao id="config-escopo" titulo="Restringir um agente só ao que é dele">
+        <p>
+          Por padrão, um <Termo>Agente</Termo> vê a Caixa de entrada inteira.
+          Quando alguém deve responder <em>só</em> as conversas atribuídas a
+          ela — por exemplo, quem cuida de um assunto específico e não deve se
+          misturar no restante do atendimento — dá para restringir isso sem
+          criar um papel novo.
+        </p>
+        <p>
+          Na linha da pessoa (papel <Termo>Agente</Termo> ou{" "}
+          <Termo>Visualizador</Termo>), ao lado do papel aparece um segundo
+          seletor com duas opções:
+        </p>
+        <Lista>
+          <li>
+            <Termo>Todas as conversas</Termo> — o comportamento de sempre
+            (padrão).
+          </li>
+          <li>
+            <Termo>Só as atribuídas</Termo> — a pessoa passa a ver, responder e
+            aparecer no menu <em>somente</em> o que estiver atribuído a ela.
+            Ela não inicia conversa nova com um contato, não se desatribui e
+            não repassa a conversa para outra pessoa. O menu lateral também
+            encolhe: sobram só Notificações e Contatos.
+          </li>
+        </Lista>
+        <p>
+          A troca aplica na hora, sem precisar salvar. Depois de restringir,
+          use <Botao icone={UserPlus}>Atribuir</Botao> dentro de cada conversa
+          para dar acesso — sem isso, a pessoa fica restrita e sem nenhuma
+          conversa visível.
+        </p>
+        <Aviso tipo="dica">
+          Pense nesse seletor como um segundo eixo, independente do papel: o
+          papel decide <em>o que</em> a pessoa pode fazer (responder,
+          configurar); o escopo decide <em>quanto</em> da Caixa de entrada ela
+          enxerga.
+        </Aviso>
+      </Secao>
+
       <Secao id="config-api" titulo="Chaves de API">
         <Onde>
           <Botao icone={KeyRound}>Configurações → Chaves de API</Botao>
@@ -244,8 +283,8 @@ export function CapituloConfiguracoes() {
           houver uma integração sendo construída.
         </p>
         <Aviso tipo="admin">
-          Criar ou revogar uma chave é só para administradores. Um atendente
-          comum não vê os controles desta tela.
+          Esta seção é exclusiva de Administrador e Proprietário — um
+          atendente comum nem a vê no menu de Configurações.
         </Aviso>
         <Aviso tipo="atencao">
           Uma chave de API dá acesso programático aos dados da instituição.
