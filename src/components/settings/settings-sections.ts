@@ -66,12 +66,17 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account', minRole: 'viewer' },
   whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace', minRole: 'admin' },
   groups: { id: 'groups', label: 'Groups', icon: Users, group: 'workspace', minRole: 'admin' },
-  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace', minRole: 'agent' },
+  // Modelos, Negócios/moeda, Membros e Chaves de API subiram de `agent`
+  // para `admin` em 2026-09-15 (docs/superpowers/specs/2026-09-15-escopo-de-conversas-design.md,
+  // seção 7) — são administração da conta, não ferramenta de
+  // atendimento do dia a dia. Respostas rápidas e Campos e tags
+  // continuam com `agent`, por serem usadas no atendimento.
+  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace', minRole: 'admin' },
   'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace', minRole: 'agent' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace', minRole: 'agent' },
-  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace', minRole: 'agent' },
-  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace', minRole: 'agent' },
-  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace', minRole: 'agent' },
+  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace', minRole: 'admin' },
+  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace', minRole: 'admin' },
+  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace', minRole: 'admin' },
 };
 
 /**

@@ -9,6 +9,7 @@ import {
   canTransferOwnership,
   canViewOnly,
 } from "@/lib/auth/roles";
+import { canStartConversation } from "@/lib/auth/conversation-scope";
 
 /**
  * Typed action keys for `useCan`. Adding a capability = one new
@@ -22,7 +23,8 @@ export type CanAction =
   | "send-messages"
   | "view-only"
   | "delete-account"
-  | "transfer-ownership";
+  | "transfer-ownership"
+  | "start-conversation";
 
 /**
  * Inline alternative to `<RequireRole>` for places that need a
@@ -38,7 +40,7 @@ export type CanAction =
  *   <Button disabled={!canEdit} title={canEdit ? "Save" : "Read-only"} />
  */
 export function useCan(action: CanAction): boolean {
-  const { profileLoading, accountRole } = useAuth();
+  const { profileLoading, accountRole, conversationScope } = useAuth();
   if (profileLoading || !accountRole) return false;
 
   switch (action) {
@@ -54,6 +56,12 @@ export function useCan(action: CanAction): boolean {
       return canDeleteAccount(accountRole);
     case "transfer-ownership":
       return canTransferOwnership(accountRole);
+    case "start-conversation":
+      // Distinto de "send-messages": quem tem escopo restrito é
+      // agent+ (manda mensagem na conversa dele), mas nunca pode
+      // INICIAR uma conversa nova — é o que fecha o botão "Conversar"
+      // de Contatos pelo lado da tela (a RLS já fecha pelo banco).
+      return canStartConversation(accountRole, conversationScope ?? "all");
     default: {
       // Exhaustiveness check — adding a new `CanAction` without a
       // case here fails the typecheck because TS narrows `action`

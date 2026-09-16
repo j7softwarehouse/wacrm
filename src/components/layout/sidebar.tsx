@@ -96,18 +96,25 @@ interface NavItem {
    * anyone who types the URL directly.
    */
   module?: ModuleName;
+  /**
+   * Hidden for a user with restricted conversation scope (2026-09-15) —
+   * they work exclusively through Notifications, never navigating the
+   * inbox/pipeline/broadcast/automation surfaces freely. Cosmetic only;
+   * the pages themselves also guard (see `RequireScope`).
+   */
+  restrictedHidden?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
-  { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
+  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard, restrictedHidden: true },
+  { href: "/inbox", labelKey: "inbox", icon: MessageSquare, restrictedHidden: true },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
-  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch, module: MODULES.SALES },
-  { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-  { href: "/automations", labelKey: "automations", icon: Zap },
-  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-  { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch, module: MODULES.SALES, restrictedHidden: true },
+  { href: "/broadcasts", labelKey: "broadcasts", icon: Radio, restrictedHidden: true },
+  { href: "/automations", labelKey: "automations", icon: Zap, restrictedHidden: true },
+  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true, restrictedHidden: true },
+  { href: "/agents", labelKey: "aiAgents", icon: Bot, restrictedHidden: true },
 ];
 
 const bottomNavItems = [
@@ -137,6 +144,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     signOut,
     salesEnabled,
     defaultChannelSupportsTemplates,
+    hasRestrictedScope,
   } = useAuth();
   // Filter first so `.map` below never sees an item whose module the
   // account turned off. Hiding the entry is cosmetic — the route guard
@@ -149,6 +157,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     if (item.href === "/broadcasts" && !defaultChannelSupportsTemplates) {
       return false;
     }
+    if (item.restrictedHidden && hasRestrictedScope) return false;
     return true;
   });
   const totalUnread = useTotalUnread();

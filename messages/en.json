@@ -1388,7 +1388,8 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "scopeUpdatedToast": "Updated {name}'s scope to {scope}"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -1942,6 +1943,10 @@
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
+    },
+    "conversationScopes": {
+      "all": "All conversations",
+      "assigned": "Only assigned"
     }
   },
   "Notifications": {

@@ -29,6 +29,7 @@ import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
+import { useBlockRestrictedScope } from "@/hooks/use-block-restricted-scope";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
 
@@ -53,6 +54,8 @@ export default function PipelinesPage() {
   const canCreateDeals = useCan("send-messages");
   const router = useRouter();
   const { accountId, salesEnabled, profileLoading } = useAuth();
+
+  useBlockRestrictedScope();
 
   // Bloqueio de rota de verdade (Task 10) — esconder o item do menu
   // não impede alguém de digitar /pipelines direto na barra de
