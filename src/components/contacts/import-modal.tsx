@@ -269,10 +269,14 @@ export function ImportModal({
       //    account. For the latter, a non-blank value that differs from
       //    what's stored updates the contact (never blanks out a field
       //    with an empty spreadsheet cell) — see buildContactSyncUpdate.
-      const { data: existingRows } = await supabase
-        .from('contacts')
-        .select('id, phone_normalized, name, email, company')
-        .eq('account_id', accountId);
+      //
+      //    PostgREST caps an unbounded select at 1000 rows by default.
+      //    An account with more contacts than that (this one has 8600+)
+      //    would silently only "know about" the first page — every
+      //    contact past it looks new, the INSERT then hits the unique
+      //    phone index and 409s, and the whole reimport looks like it
+      //    did nothing. Page through every row explicitly instead of
+      //    trusting a single unbounded select.
       type ExistingRow = {
         id: string;
         phone_normalized: string | null;
@@ -280,10 +284,34 @@ export function ImportModal({
         email: string | null;
         company: string | null;
       };
+      const existingRows: ExistingRow[] = [];
+      const FETCH_PAGE = 1000;
+      // Advance by however many rows actually came back, and stop only
+      // on a truly empty page — never on "got fewer than I asked for".
+      // PostgREST's own max-rows config can silently cap a response
+      // below what `.range()` requested, and treating that as "last
+      // page" would drop every contact past the cap.
+      let offset = 0;
+      for (;;) {
+        const { data: page, error: fetchErr } = await supabase
+          .from('contacts')
+          .select('id, phone_normalized, name, email, company')
+          .eq('account_id', accountId)
+          .range(offset, offset + FETCH_PAGE - 1);
+        if (fetchErr) {
+          toast.error('Failed to load existing contacts for comparison');
+          setImporting(false);
+          return;
+        }
+        const rows = (page ?? []) as ExistingRow[];
+        if (rows.length === 0) break;
+        existingRows.push(...rows);
+        offset += rows.length;
+      }
       const existingByPhone = new Map<string, ExistingRow>(
-        (existingRows ?? [])
-          .filter((r): r is ExistingRow => !!(r as ExistingRow).phone_normalized)
-          .map((r) => [(r as ExistingRow).phone_normalized as string, r as ExistingRow])
+        existingRows
+          .filter((r) => !!r.phone_normalized)
+          .map((r) => [r.phone_normalized as string, r])
       );
 
       const toInsert: ParsedContactRow[] = [];
