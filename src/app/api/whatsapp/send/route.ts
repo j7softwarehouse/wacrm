@@ -11,6 +11,9 @@ import {
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
 import { findOrCreateConversationForContact } from '@/lib/whatsapp/find-or-create-conversation'
+import { resolveRestrictedFallbackChannelId } from '@/lib/whatsapp/providers/resolve'
+import { isConversationScope } from '@/lib/auth/conversation-scope'
+import { isAccountRole } from '@/lib/auth/roles'
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
     // returned nothing for teammates who didn't author the row.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role, channel_scope')
       .eq('user_id', user.id)
       .maybeSingle()
     const accountId = profile?.account_id as string | undefined
@@ -146,11 +149,38 @@ export async function POST(request: Request) {
         )
       }
 
+      // Este caminho não recebe channel_id do chamador. Se o chamador
+      // é realmente restrito por canal, resolve pro canal mais antigo
+      // DENTRE os que ele atende — nunca o mais antigo DA CONTA, que a
+      // política de INSERT recusaria se não for um canal que ele
+      // atende. Quem NÃO é restrito continua sem canal explícito de
+      // propósito: deixa `findOrCreateConversationForContact` resolver
+      // e curar conversa órfã internamente, como sempre fez. Ver
+      // docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6.
+      let restrictedChannelId: string | undefined
+      const role = isAccountRole(profile?.account_role) ? profile.account_role : 'viewer'
+      const channelScope = isConversationScope(profile?.channel_scope)
+        ? profile.channel_scope
+        : 'all'
+      if (role !== 'admin' && role !== 'owner' && channelScope === 'assigned') {
+        const fallbackChannelId = await resolveRestrictedFallbackChannelId(supabase, {
+          userId: user.id,
+        })
+        if (!fallbackChannelId) {
+          return NextResponse.json(
+            { error: 'You have not been assigned to any channel yet.' },
+            { status: 403 },
+          )
+        }
+        restrictedChannelId = fallbackChannelId
+      }
+
       const resolved = await findOrCreateConversationForContact(
         supabase,
         accountId,
         user.id,
-        contact_id
+        contact_id,
+        restrictedChannelId,
       )
       if (!resolved) {
         return NextResponse.json(

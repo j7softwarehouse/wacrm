@@ -18,6 +18,11 @@ let contactRow: Record<string, unknown> | null = null
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
 let createdConversation: Record<string, unknown> | null = null
+// Perfil do chamador e canais que ele atende -- configuráveis por teste
+// pra exercitar o fallback de canal restrito (ver
+// docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6).
+let callerProfile: Record<string, unknown> = { account_id: 'acct-1' }
+let memberChannelIds: string[] = []
 
 const CONTACT = {
   id: 'contact-1',
@@ -31,18 +36,38 @@ const CONTACT = {
 function makeSupabaseMock() {
   function builder(table: string) {
     let didInsert = false
+    const inCalls: Array<[string, unknown[]]> = []
 
     const selectResult = () => {
       switch (table) {
         case 'profiles':
-          return { data: { account_id: 'acct-1' }, error: null }
+          return { data: callerProfile, error: null }
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':
           // Once created this request, a by-id reload returns it (with
           // its contact); otherwise fall back to the canned existing row.
           return { data: createdConversation ?? existingConversation, error: null }
-        case 'whatsapp_channels':
+        case 'channel_members':
+          return {
+            data: memberChannelIds.map((id) => ({ channel_id: id })),
+            error: null,
+          }
+        case 'whatsapp_channels': {
+          // `.in('id', allowedIds)` is the restricted-fallback lookup
+          // (resolveRestrictedFallbackChannelId) -- minimal rows, no
+          // token. Anything else is the full-channel lookup the rest
+          // of the send pipeline needs.
+          const inFilter = inCalls.find(([col]) => col === 'id')
+          if (inFilter) {
+            const [, ids] = inFilter
+            return {
+              data: memberChannelIds
+                .filter((id) => ids.includes(id))
+                .map((id) => ({ id, created_at: '2026-01-01T00:00:00Z' })),
+              error: null,
+            }
+          }
           return {
             data: {
               id: 'chan-1',
@@ -54,6 +79,7 @@ function makeSupabaseMock() {
             },
             error: null,
           }
+        }
         case 'message_templates':
           return { data: null, error: null }
         default:
@@ -95,7 +121,6 @@ function makeSupabaseMock() {
     for (const m of [
       'select',
       'eq',
-      'in',
       'or',
       'is',
       'order',
@@ -105,6 +130,10 @@ function makeSupabaseMock() {
     ]) {
       b[m] = vi.fn(chain)
     }
+    b.in = vi.fn((col: string, vals: unknown[]) => {
+      inCalls.push([col, vals])
+      return b
+    })
     b.insert = vi.fn((payload: Record<string, unknown>) => {
       didInsert = true
       if (table === 'conversations') {
@@ -202,6 +231,8 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     existingConversation = null
     createdConversation = null
     contactRow = CONTACT
+    callerProfile = { account_id: 'acct-1' }
+    memberChannelIds = []
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })
@@ -284,5 +315,37 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+
+  // ---------------------------------------------------------------------
+  // Escopo de canal (2026-09-16) -- este caminho não recebe channel_id do
+  // chamador nunca, então um restrito SEMPRE dependia do fallback de
+  // conta inteira antes desta correção. Mesmo bug do botão "Conversar"
+  // (route.test.ts de .../conversations/open), aqui pelo caminho de
+  // template.
+  // ---------------------------------------------------------------------
+
+  it('restrito por canal: cria a conversa no canal que atende, não no mais antigo da conta', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'assigned' }
+    memberChannelIds = ['chan-9']
+
+    const res = await postContactTemplate()
+
+    expect(res.status).toBe(200)
+    expect(conversationInserts).toHaveLength(1)
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-9' })
+  })
+
+  it('restrito por canal sem nenhum canal atribuído: 403, nunca chega a enviar nada', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'assigned' }
+    memberChannelIds = []
+
+    const res = await postContactTemplate()
+    const json = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(json.error).toMatch(/channel/i)
+    expect(conversationInserts).toHaveLength(0)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 })

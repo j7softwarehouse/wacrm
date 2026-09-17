@@ -6,6 +6,9 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { findOrCreateConversationForContact } from '@/lib/whatsapp/find-or-create-conversation'
+import { resolveRestrictedFallbackChannelId } from '@/lib/whatsapp/providers/resolve'
+import { isConversationScope } from '@/lib/auth/conversation-scope'
+import { isAccountRole } from '@/lib/auth/roles'
 
 // Backs the Contacts "Conversar" button: find-or-create the contact's
 // conversation and hand back its id so the UI can jump straight to
@@ -35,7 +38,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role, channel_scope')
       .eq('user_id', user.id)
       .maybeSingle()
     const accountId = profile?.account_id as string | undefined
@@ -77,6 +80,35 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid channel_id' }, { status: 400 })
       }
       explicitChannelId = channel_id
+    }
+
+    // Sem canal explícito E o chamador é realmente restrito por canal:
+    // resolve pro canal mais antigo DENTRE os que ele atende, nunca o
+    // mais antigo DA CONTA (a política de INSERT recusaria a linha se
+    // não for um canal que ele atende) — isso também cobre o caso
+    // comum de o restrito enxergar só 1 canal (o dele) e o seletor da
+    // tela nem aparecer pra escolher explicitamente. Quem NÃO é
+    // restrito continua sem canal explícito aqui de propósito: deixa
+    // `findOrCreateConversationForContact` resolver e curar conversa
+    // órfã internamente, como sempre fez. Ver
+    // docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6.
+    if (!explicitChannelId) {
+      const role = isAccountRole(profile?.account_role) ? profile.account_role : 'viewer'
+      const channelScope = isConversationScope(profile?.channel_scope)
+        ? profile.channel_scope
+        : 'all'
+      if (role !== 'admin' && role !== 'owner' && channelScope === 'assigned') {
+        const fallbackChannelId = await resolveRestrictedFallbackChannelId(supabase, {
+          userId: user.id,
+        })
+        if (!fallbackChannelId) {
+          return NextResponse.json(
+            { error: 'You have not been assigned to any channel yet.' },
+            { status: 403 },
+          )
+        }
+        explicitChannelId = fallbackChannelId
+      }
     }
 
     const conversationId = await findOrCreateConversationForContact(
