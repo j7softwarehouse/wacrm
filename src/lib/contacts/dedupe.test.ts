@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildContactSyncUpdate,
   dedupeByPhone,
   findExistingContact,
   isExactMatch,
@@ -63,6 +64,60 @@ describe("dedupeByPhone", () => {
     ]);
     expect(unique).toHaveLength(1);
     expect(duplicates).toBe(1);
+  });
+});
+
+describe("buildContactSyncUpdate", () => {
+  it("updates a field when the incoming value differs from what's stored", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana Antiga", email: null, company: null },
+      { name: "Ana Nova" },
+    );
+    expect(update).toEqual({ name: "Ana Nova" });
+  });
+
+  it("updates multiple fields at once", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana Antiga", email: null, company: "Empresa A" },
+      { name: "Ana Nova", email: "ana@ex.com", company: "Empresa B" },
+    );
+    expect(update).toEqual({
+      name: "Ana Nova",
+      email: "ana@ex.com",
+      company: "Empresa B",
+    });
+  });
+
+  it("returns null when the incoming value is identical to what's stored", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana", email: null, company: null },
+      { name: "Ana" },
+    );
+    expect(update).toBeNull();
+  });
+
+  it("never blanks out a stored field with an empty incoming value", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana", email: "ana@ex.com", company: null },
+      { name: "", email: undefined, company: "" },
+    );
+    expect(update).toBeNull();
+  });
+
+  it("trims the incoming value before comparing and writing", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana", email: null, company: null },
+      { name: "  Ana Nova  " },
+    );
+    expect(update).toEqual({ name: "Ana Nova" });
+  });
+
+  it("returns null when nothing in the incoming payload differs", () => {
+    const update = buildContactSyncUpdate(
+      { name: "Ana", email: "ana@ex.com", company: "Empresa" },
+      {},
+    );
+    expect(update).toBeNull();
   });
 });
 

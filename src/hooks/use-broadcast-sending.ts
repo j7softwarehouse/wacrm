@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { buildContactSyncUpdate } from '@/lib/contacts/dedupe';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { Contact, MessageTemplate } from '@/types';
 
@@ -254,6 +255,26 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const byPhone = new Map<string, Contact>();
     for (const c of (existing ?? []) as Contact[]) {
       if (c.phone) byPhone.set(c.phone, c);
+    }
+
+    // Sync the name of contacts that already exist — a non-blank CSV
+    // name that differs from what's stored wins, same rule as the
+    // manual import modal. Sequential: each row can differ by a
+    // different value, so this can't be one batched statement.
+    for (const [phone, contact] of byPhone) {
+      const csvName = uniqueByPhone.get(phone)?.name;
+      const fields = buildContactSyncUpdate(
+        { name: contact.name ?? null, email: null, company: null },
+        { name: csvName },
+      );
+      if (!fields) continue;
+      const { error: updateErr } = await supabase
+        .from('contacts')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', contact.id);
+      if (!updateErr) {
+        byPhone.set(phone, { ...contact, name: fields.name ?? contact.name });
+      }
     }
 
     // Insert only missing contacts, in one batch per 200 rows (PostgREST
