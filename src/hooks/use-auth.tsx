@@ -46,6 +46,9 @@ interface Profile {
    *  `null` só deveria acontecer num perfil pré-migração; tratado como
    *  `'all'` (o padrão da coluna) por quem consome. */
   conversation_scope: ConversationScope | null;
+  /** Alcance de canais — ver docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md.
+   *  Eixo independente de `conversation_scope`; mesma regra de `null`. */
+  channel_scope: ConversationScope | null;
 }
 
 interface AccountSummary {
@@ -132,6 +135,16 @@ interface AuthContextValue {
    *  ele mesmo (agent ou viewer com conversationScope === 'assigned'). */
   hasRestrictedScope: boolean;
   /**
+   * Alcance de canais do usuário — ver
+   * docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md.
+   * Eixo independente de `conversationScope`: um usuário pode estar
+   * restrito por canal, por conversa atribuída, pelos dois, ou por
+   * nenhum. Ao contrário de `hasRestrictedScope`, isto NÃO colapsa o
+   * menu lateral pra "só Notificações" — a pessoa continua navegando a
+   * Caixa de entrada normalmente, só que filtrada aos canais dela.
+   */
+  channelScope: ConversationScope | null;
+  /**
    * True unless the account explicitly disabled the sales module
    * (`disabled_modules` contains `'sales'`). Opt-out, so it's true
    * while loading and for every account that never touched the
@@ -190,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, conversation_scope",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, conversation_scope, channel_scope",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -279,6 +292,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const conversationScope = isConversationScope(data.conversation_scope)
           ? data.conversation_scope
           : "all";
+        const channelScope = isConversationScope(data.channel_scope)
+          ? data.channel_scope
+          : "all";
 
         setProfile({
           id: data.id,
@@ -294,6 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           account_id: data.account_id ?? null,
           account_role: accountRole,
           conversation_scope: conversationScope,
+          channel_scope: channelScope,
         });
         setAccount(accountRow);
       } else {
@@ -420,8 +437,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role !== "admin" &&
         role !== "owner" &&
         profile?.conversation_scope === "assigned",
+      channelScope: profile?.channel_scope ?? null,
     };
-  }, [profile?.account_role, profile?.account_id, profile?.conversation_scope]);
+  }, [
+    profile?.account_role,
+    profile?.account_id,
+    profile?.conversation_scope,
+    profile?.channel_scope,
+  ]);
 
   // Opt-out module gate (Task 10). Computed from `account`, not
   // `profile`, and defaults to enabled while `account` is still null
@@ -490,6 +513,7 @@ export function useAuth(): AuthContextValue {
       canSendMessages: false,
       conversationScope: null,
       hasRestrictedScope: false,
+      channelScope: null,
       // Opt-out: fail OPEN like every other account with no
       // configuration, not closed like the role gates above.
       salesEnabled: true,

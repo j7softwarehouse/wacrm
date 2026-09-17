@@ -148,6 +148,7 @@
       "allCompanies": "Todas as empresas",
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
+      "noChannelAssigned": "Você ainda não foi atribuído a nenhum canal. Peça a um administrador.",
       "noMessagesYet": "Nenhuma mensagem ainda",
       "unknown": "Desconhecido",
       "channelHint": "Recebida pelo canal {label}"
@@ -1393,7 +1394,11 @@
       "cancel": "Cancelar",
       "removing": "Removendo...",
       "removeBtn": "Remover membro",
-      "scopeUpdatedToast": "Escopo de {name} atualizado para {scope}"
+      "scopeUpdatedToast": "Escopo de {name} atualizado para {scope}",
+      "channelScopeUpdatedToast": "Escopo de canal de {name} atualizado para {scope}",
+      "channelsUpdatedToast": "Canais de {name} atualizados",
+      "selectChannels": "Escolher canais",
+      "channelsSelected": "{count} {count, plural, =1 {canal} other {canais}}"
     },
     "invite": {
       "inviteCreated": "Convite criado",
@@ -1951,6 +1956,10 @@
     "conversationScopes": {
       "all": "Todas as conversas",
       "assigned": "Só as atribuídas"
+    },
+    "channelScopes": {
+      "all": "Todos os canais",
+      "assigned": "Só alguns"
     }
   },
   "Notifications": {

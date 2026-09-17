@@ -148,6 +148,7 @@
       "allCompanies": "All companies",
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
+      "noChannelAssigned": "You haven't been assigned to any channel yet. Ask an admin.",
       "noMessagesYet": "No messages yet",
       "unknown": "Unknown",
       "channelHint": "Received on channel {label}"
@@ -1393,7 +1394,11 @@
       "cancel": "Cancel",
       "removing": "Removing...",
       "removeBtn": "Remove member",
-      "scopeUpdatedToast": "Updated {name}'s scope to {scope}"
+      "scopeUpdatedToast": "Updated {name}'s scope to {scope}",
+      "channelScopeUpdatedToast": "Updated {name}'s channel scope to {scope}",
+      "channelsUpdatedToast": "Updated {name}'s channels",
+      "selectChannels": "Select channels",
+      "channelsSelected": "{count} {count, plural, =1 {channel} other {channels}}"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -1951,6 +1956,10 @@
     "conversationScopes": {
       "all": "All conversations",
       "assigned": "Only assigned"
+    },
+    "channelScopes": {
+      "all": "All channels",
+      "assigned": "Only some"
     }
   },
   "Notifications": {
