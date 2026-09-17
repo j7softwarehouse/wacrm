@@ -16,6 +16,14 @@ let createdConversation: Record<string, unknown> | null = null
 // `channel_id` explícito na rota. `null` simula um id que não pertence a
 // esta conta (forjado ou de outra conta).
 let ownedChannel: Record<string, unknown> | null = { id: 'chan-2' }
+// Perfil do chamador -- configurável por teste pra exercitar o fallback
+// de canal restrito (ver docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6).
+let callerProfile: Record<string, unknown> = { account_id: 'acct-1' }
+// Canais que o chamador atende, quando `channel_scope` é 'assigned'.
+let memberChannelIds: string[] = []
+// Metadados (id + created_at) dos canais consultados pelo fallback
+// restrito, pra decidir qual é "o mais antigo dentre os permitidos".
+let channelsMeta: Record<string, unknown>[] = []
 
 const CONTACT = {
   id: 'contact-1',
@@ -27,20 +35,38 @@ function makeSupabaseMock() {
   function builder(table: string) {
     let didInsert = false
     const eqCalls: Array<[string, unknown]> = []
+    const inCalls: Array<[string, unknown[]]> = []
 
     const selectResult = () => {
       switch (table) {
         case 'profiles':
-          return { data: { account_id: 'acct-1' }, error: null }
+          return { data: callerProfile, error: null }
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':
           return { data: createdConversation ?? existingConversation, error: null }
+        case 'channel_members':
+          return {
+            data: memberChannelIds.map((id) => ({ channel_id: id })),
+            error: null,
+          }
         case 'whatsapp_channels': {
           const idFilter = eqCalls.find(([col]) => col === 'id')
           if (idFilter) {
             const [, id] = idFilter
             return { data: ownedChannel && ownedChannel.id === id ? ownedChannel : null, error: null }
+          }
+          const inFilter = inCalls.find(([col]) => col === 'id')
+          if (inFilter) {
+            const [, ids] = inFilter
+            const matched = channelsMeta
+              .filter((c) => ids.includes(c.id as string))
+              .sort(
+                (a, b) =>
+                  new Date(a.created_at as string).getTime() -
+                  new Date(b.created_at as string).getTime(),
+              )
+            return { data: matched, error: null }
           }
           return { data: { id: 'chan-1' }, error: null }
         }
@@ -70,11 +96,15 @@ function makeSupabaseMock() {
 
     const b: Record<string, unknown> = {}
     const chain = () => b
-    for (const m of ['select', 'in', 'or', 'is', 'order', 'limit', 'update']) {
+    for (const m of ['select', 'or', 'is', 'order', 'limit', 'update']) {
       b[m] = vi.fn(chain)
     }
     b.eq = vi.fn((col: string, val: unknown) => {
       eqCalls.push([col, val])
+      return b
+    })
+    b.in = vi.fn((col: string, vals: unknown[]) => {
+      inCalls.push([col, vals])
       return b
     })
     b.insert = vi.fn((payload: Record<string, unknown>) => {
@@ -131,6 +161,9 @@ describe('POST /api/whatsapp/conversations/open', () => {
     createdConversation = null
     contactRow = CONTACT
     ownedChannel = { id: 'chan-2' }
+    callerProfile = { account_id: 'acct-1' }
+    memberChannelIds = []
+    channelsMeta = []
     supabaseMock = makeSupabaseMock()
   })
 
@@ -222,5 +255,73 @@ describe('POST /api/whatsapp/conversations/open', () => {
     expect(res.status).toBe(200)
     expect(json.conversation_id).toBe('conv-new')
     expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-1' })
+  })
+
+  // ---------------------------------------------------------------------
+  // Escopo de canal (2026-09-16) -- sem channel_id explícito, um chamador
+  // restrito por canal NÃO pode cair no canal mais antigo DA CONTA
+  // (resolveDefaultChannelId): se não for um dos canais que ele atende, a
+  // política de INSERT recusa a linha e o botão "Conversar" falhava com
+  // 500. Isso também é o caminho comum de quem só enxerga 1 canal (o
+  // dele) e nunca vê o seletor pra escolher explicitamente.
+  // ---------------------------------------------------------------------
+
+  it('restrito por canal: usa o mais antigo DENTRE os canais que atende, não o mais antigo da conta', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'assigned' }
+    memberChannelIds = ['chan-9']
+    channelsMeta = [
+      { id: 'chan-1', created_at: '2026-01-01T00:00:00Z' }, // o mais antigo DA CONTA
+      { id: 'chan-9', created_at: '2026-06-01T00:00:00Z' }, // o único que ele atende
+    ]
+
+    const res = await postOpen()
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.conversation_id).toBe('conv-new')
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-9' })
+  })
+
+  it('restrito por canal sem nenhum canal atribuído: 403, não tenta criar nada', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'assigned' }
+    memberChannelIds = []
+
+    const res = await postOpen()
+    const json = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(json.error).toMatch(/channel/i)
+    expect(conversationInserts).toHaveLength(0)
+  })
+
+  it('admin com channel_scope marcado "assigned" ainda assim usa o canal mais antigo da conta (ignora o escopo)', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'admin', channel_scope: 'assigned' }
+    memberChannelIds = ['chan-9']
+    channelsMeta = [{ id: 'chan-9', created_at: '2026-06-01T00:00:00Z' }]
+
+    const res = await postOpen()
+
+    expect(res.status).toBe(200)
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-1' })
+  })
+
+  it('channel_scope "all": usa o canal mais antigo da conta normalmente, sem consultar channel_members', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'all' }
+
+    const res = await postOpen()
+
+    expect(res.status).toBe(200)
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-1' })
+  })
+
+  it('channel_id explícito continua tendo prioridade mesmo pra quem é restrito por canal', async () => {
+    callerProfile = { account_id: 'acct-1', account_role: 'agent', channel_scope: 'assigned' }
+    memberChannelIds = ['chan-2']
+    ownedChannel = { id: 'chan-2' }
+
+    const res = await postOpen({ channel_id: 'chan-2' })
+
+    expect(res.status).toBe(200)
+    expect(conversationInserts[0]).toMatchObject({ channel_id: 'chan-2' })
   })
 })
