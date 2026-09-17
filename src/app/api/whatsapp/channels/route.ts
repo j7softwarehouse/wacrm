@@ -49,7 +49,7 @@ export function toPublicChannel(row: WhatsAppChannel): PublicChannel {
 
 export async function GET() {
   try {
-    const { supabase, accountId } = await getCurrentAccount();
+    const { supabase, userId, accountId, role } = await getCurrentAccount();
 
     const { data, error } = await supabase
       .from("whatsapp_channels")
@@ -67,9 +67,35 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({
-      channels: (data ?? []).map((row) => toPublicChannel(row as WhatsAppChannel)),
-    });
+    let channels = (data ?? []).map((row) => toPublicChannel(row as WhatsAppChannel));
+
+    // admin/owner sempre veem todos; agent/viewer com channel_scope
+    // 'assigned' só veem os canais que atendem. Sem este filtro, o
+    // seletor de canal do botão "Conversar" (e o badge de canal na
+    // Inbox) vazaria nome/número dos canais fora do escopo do usuário
+    // — a política de INSERT já bloqueia gravar por eles, mas a lista
+    // errada já teria sido exposta antes disso. Ver
+    // docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6.
+    if (role !== "admin" && role !== "owner") {
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("channel_scope")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (profileRow?.channel_scope === "assigned") {
+        const { data: memberRows } = await supabase
+          .from("channel_members")
+          .select("channel_id")
+          .eq("user_id", userId);
+        const allowedIds = new Set(
+          (memberRows ?? []).map((r) => r.channel_id as string),
+        );
+        channels = channels.filter((c) => allowedIds.has(c.id));
+      }
+    }
+
+    return NextResponse.json({ channels });
   } catch (err) {
     return toErrorResponse(err);
   }

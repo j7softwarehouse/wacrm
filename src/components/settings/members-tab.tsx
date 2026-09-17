@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  ChevronDown,
   Loader2,
   Mail,
   MailX,
@@ -62,12 +63,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useTranslations } from 'next-intl';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import { usePresence } from '@/hooks/use-presence';
 import type { AccountRole } from '@/lib/auth/roles';
 import type { ConversationScope } from '@/lib/auth/conversation-scope';
+import type { PublicChannel } from '@/app/api/whatsapp/channels/route';
 import { presenceLabel, summarize } from '@/lib/presence';
 import {
   PRESENCE_DOT_CLASS,
@@ -84,6 +92,8 @@ interface Member {
   avatar_url: string | null;
   role: AccountRole;
   conversation_scope: ConversationScope;
+  channel_scope: ConversationScope;
+  channel_ids: string[];
   joined_at: string;
 }
 
@@ -105,6 +115,13 @@ const EDITABLE_ROLES: { value: AccountRole }[] = [
 // Escopo só faz sentido pra agent/viewer -- admin/owner sempre
 // enxergam tudo (a RPC recusa tentar mudar o deles).
 const EDITABLE_SCOPES: { value: ConversationScope }[] = [
+  { value: 'all' },
+  { value: 'assigned' },
+];
+
+// Mesma lista, eixo diferente (canal em vez de conversa atribuída) --
+// ver docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md.
+const EDITABLE_CHANNEL_SCOPES: { value: ConversationScope }[] = [
   { value: 'all' },
   { value: 'assigned' },
 ];
@@ -137,11 +154,13 @@ export function MembersTab() {
   const t = useTranslations('Settings.members');
   const tRoles = useTranslations('Settings.roles');
   const tScopes = useTranslations('Settings.conversationScopes');
+  const tChannelScopes = useTranslations('Settings.channelScopes');
   const { user, canManageMembers } = useAuth();
   const { getPresence, getRow, now } = usePresence();
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [channels, setChannels] = useState<PublicChannel[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -152,10 +171,15 @@ export function MembersTab() {
 
   const loadEverything = useCallback(async () => {
     try {
-      const [mres, ires] = await Promise.all([
+      const [mres, ires, cres] = await Promise.all([
         fetch('/api/account/members', { cache: 'no-store' }),
         canManageMembers
           ? fetch('/api/account/invitations', { cache: 'no-store' })
+          : Promise.resolve(null),
+        // Só precisa da lista de canais pra montar o seletor de
+        // atribuição, que só admin+ usa.
+        canManageMembers
+          ? fetch('/api/whatsapp/channels', { cache: 'no-store' })
           : Promise.resolve(null),
       ]);
 
@@ -177,6 +201,15 @@ export function MembersTab() {
         setInvitations(idata.invitations);
       } else {
         setInvitations([]);
+      }
+
+      if (cres) {
+        if (cres.ok) {
+          const cdata = (await cres.json()) as { channels: PublicChannel[] };
+          setChannels(cdata.channels);
+        }
+      } else {
+        setChannels([]);
       }
     } catch (err) {
       console.error('[MembersTab] load error:', err);
@@ -282,6 +315,92 @@ export function MembersTab() {
       toast.error('Could not reach the server');
     } finally {
       setPendingMemberAction(null);
+    }
+  }
+
+  // Escopo de canal -- ver docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md.
+  // Mesmo padrão otimista de handleScopeChange.
+  async function handleChannelScopeChange(member: Member, nextScope: ConversationScope) {
+    if (member.channel_scope === nextScope) return;
+    const previousScope = member.channel_scope;
+    setPendingMemberAction(member.user_id);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id ? { ...m, channel_scope: nextScope } : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}/channel-scope`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: nextScope }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id ? { ...m, channel_scope: previousScope } : m,
+          ),
+        );
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update channel scope');
+        return;
+      }
+      toast.success(
+        t('channelScopeUpdatedToast', {
+          name: member.full_name || t('unnamed'),
+          scope: tChannelScopes(nextScope),
+        }),
+      );
+    } catch (err) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id ? { ...m, channel_scope: previousScope } : m,
+        ),
+      );
+      console.error('[MembersTab] channel scope change error:', err);
+      toast.error('Could not reach the server');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  }
+
+  // Substitui a lista inteira de canais do membro (a RPC também
+  // substitui tudo de uma vez — ver 20260916000007). Otimista, mesmo
+  // padrão dos outros dois handlers acima. Sem toast de sucesso aqui
+  // de propósito — cada clique de checkbox dispara uma chamada, e um
+  // toast por clique enquanto a pessoa marca vários canais seguidos
+  // seria ruído; o checkbox já muda na hora, isso já é o feedback.
+  async function handleChannelsChange(member: Member, nextChannelIds: string[]) {
+    const previousChannelIds = member.channel_ids;
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id ? { ...m, channel_ids: nextChannelIds } : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}/channels`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel_ids: nextChannelIds }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id ? { ...m, channel_ids: previousChannelIds } : m,
+          ),
+        );
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update channels');
+        return;
+      }
+    } catch (err) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id ? { ...m, channel_ids: previousChannelIds } : m,
+        ),
+      );
+      console.error('[MembersTab] channels change error:', err);
+      toast.error('Could not reach the server');
     }
   }
 
@@ -539,6 +658,89 @@ export function MembersTab() {
                         </span>
                       )
                     )}
+
+                    {/* Escopo de canal -- eixo independente do escopo de
+                        conversa acima (ver
+                        docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md).
+                        Mesma visibilidade condicional. */}
+                    {canManageMembers &&
+                    !isOwnerRow &&
+                    !isSelf &&
+                    (member.role === 'agent' || member.role === 'viewer') ? (
+                      <Select
+                        value={member.channel_scope}
+                        onValueChange={(v) =>
+                          v && handleChannelScopeChange(member, v as ConversationScope)
+                        }
+                      >
+                        <SelectTrigger
+                          className="w-32 bg-muted border-border text-foreground"
+                          disabled={isBusy}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EDITABLE_CHANNEL_SCOPES.map((sc) => (
+                            <SelectItem key={sc.value} value={sc.value}>
+                              {tChannelScopes(sc.value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      (member.role === 'agent' || member.role === 'viewer') && (
+                        <span className="text-xs text-muted-foreground">
+                          {tChannelScopes(member.channel_scope)}
+                        </span>
+                      )
+                    )}
+
+                    {/* Checkboxes de canal -- só aparece quando o escopo
+                        de canal está em 'assigned'. Sem DropdownMenuLabel
+                        de propósito (crasha se não vier dentro de um
+                        DropdownMenuGroup) -- um <div> simples basta. */}
+                    {canManageMembers &&
+                      !isOwnerRow &&
+                      !isSelf &&
+                      (member.role === 'agent' || member.role === 'viewer') &&
+                      member.channel_scope === 'assigned' &&
+                      channels.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-muted px-2.5 text-xs text-foreground hover:bg-muted/70"
+                            disabled={isBusy}
+                          >
+                            {member.channel_ids.length > 0
+                              ? t('channelsSelected', { count: member.channel_ids.length })
+                              : t('selectChannels')}
+                            <ChevronDown className="size-3" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="max-h-64 w-56 border-border bg-popover"
+                          >
+                            {channels.map((c) => (
+                              <DropdownMenuCheckboxItem
+                                key={c.id}
+                                checked={member.channel_ids.includes(c.id)}
+                                onCheckedChange={(checked) =>
+                                  handleChannelsChange(
+                                    member,
+                                    checked
+                                      ? [...member.channel_ids, c.id]
+                                      : member.channel_ids.filter((id) => id !== c.id),
+                                  )
+                                }
+                                className="text-sm text-popover-foreground"
+                              >
+                                <span className="truncate">
+                                  {c.label || c.phone_e164 || c.id}
+                                </span>
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
 
                     {/* Remove. Admin+ only; never on the owner row;
                         never on yourself. Pre-polish styling was

@@ -40,7 +40,7 @@ export type CanAction =
  *   <Button disabled={!canEdit} title={canEdit ? "Save" : "Read-only"} />
  */
 export function useCan(action: CanAction): boolean {
-  const { profileLoading, accountRole, conversationScope } = useAuth();
+  const { profileLoading, accountRole, conversationScope, channelScope } = useAuth();
   if (profileLoading || !accountRole) return false;
 
   switch (action) {
@@ -61,7 +61,14 @@ export function useCan(action: CanAction): boolean {
       // agent+ (manda mensagem na conversa dele), mas nunca pode
       // INICIAR uma conversa nova — é o que fecha o botão "Conversar"
       // de Contatos pelo lado da tela (a RLS já fecha pelo banco).
-      return canStartConversation(accountRole, conversationScope ?? "all");
+      //
+      // `hasAnyAllowedChannel` fixo em `true`: este é o gate GROSSO de
+      // "mostrar o botão", que não sabe ainda por qual canal a pessoa
+      // vai iniciar. A restrição de canal de verdade acontece em dois
+      // lugares que SABEM qual canal está em jogo — a lista de canais
+      // do seletor (já filtrada) e a política de INSERT no banco — não
+      // aqui. Ver docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §6.
+      return canStartConversation(accountRole, conversationScope ?? "all", channelScope ?? "all", true);
     default: {
       // Exhaustiveness check — adding a new `CanAction` without a
       // case here fails the typecheck because TS narrows `action`

@@ -85,7 +85,7 @@ export function ConversationList({
     { label: t("filterMarkers"), value: "markers" },
   ], [t]);
 
-  const { user } = useAuth();
+  const { user, channelScope } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   // Conversas onde o usuário logado tem pelo menos um marcador — ver
@@ -469,7 +469,19 @@ export function ConversationList({
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+            <p className="text-sm text-muted-foreground">
+              {/* Distinto do vazio genérico: usuário com escopo de canal
+                  restrito e zero conversas carregadas (a RLS já filtrou
+                  tudo fora antes de chegar aqui) fica sem entender por
+                  quê, a menos que a conta realmente tenha canais — sem
+                  isso pareceria bug, não configuração pendente. Ver
+                  docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §10. */}
+              {channelScope === "assigned" &&
+              conversations.length === 0 &&
+              (channelsById?.size ?? 0) > 0
+                ? t("noChannelAssigned")
+                : t("noConversations")}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col">

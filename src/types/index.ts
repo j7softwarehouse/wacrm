@@ -79,6 +79,13 @@ export interface AccountMember {
    *  explicitamente restrito a responder só o que lhe foi atribuído.
    *  Ver docs/superpowers/specs/2026-09-15-escopo-de-conversas-design.md. */
   conversation_scope: ConversationScope;
+  /** Alcance de canais — eixo independente de conversation_scope. Ver
+   *  docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md. */
+  channel_scope: ConversationScope;
+  /** Ids dos canais que este membro atende — só relevante quando
+   *  channel_scope === 'assigned'; vazio quando 'all' ou sem nenhum
+   *  canal atribuído ainda. */
+  channel_ids: string[];
   joined_at: string;
 }
 

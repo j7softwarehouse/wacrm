@@ -26,6 +26,7 @@ interface ProfileRow {
   avatar_url: string | null;
   account_role: string;
   conversation_scope: string | null;
+  channel_scope: string | null;
   created_at: string;
 }
 
@@ -38,7 +39,7 @@ export async function GET() {
     const { data, error } = await ctx.supabase
       .from("profiles")
       .select(
-        "user_id, full_name, email, avatar_url, account_role, conversation_scope, created_at",
+        "user_id, full_name, email, avatar_url, account_role, conversation_scope, channel_scope, created_at",
       )
       .eq("account_id", ctx.accountId)
       .order("created_at", { ascending: true });
@@ -49,6 +50,23 @@ export async function GET() {
         { error: "Failed to load members" },
         { status: 500 },
       );
+    }
+
+    // Um round-trip só, agrupado em memória — evita N+1 quando a conta
+    // tem muitos membros. RLS de channel_members já garante que só
+    // vêm linhas de canais desta conta (join implícito via
+    // whatsapp_channels.account_id).
+    const { data: memberRows, error: memberErr } = await ctx.supabase
+      .from("channel_members")
+      .select("user_id, channel_id");
+    if (memberErr) {
+      console.error("[GET /api/account/members] channel_members fetch error:", memberErr);
+    }
+    const channelIdsByUser = new Map<string, string[]>();
+    for (const row of memberRows ?? []) {
+      const list = channelIdsByUser.get(row.user_id);
+      if (list) list.push(row.channel_id);
+      else channelIdsByUser.set(row.user_id, [row.channel_id]);
     }
 
     const canSeeEmails = canManageMembers(ctx.role);
@@ -68,6 +86,10 @@ export async function GET() {
           conversation_scope: isConversationScope(row.conversation_scope)
             ? row.conversation_scope
             : "all",
+          channel_scope: isConversationScope(row.channel_scope)
+            ? row.channel_scope
+            : "all",
+          channel_ids: channelIdsByUser.get(row.user_id) ?? [],
           joined_at: row.created_at,
         },
       ];
