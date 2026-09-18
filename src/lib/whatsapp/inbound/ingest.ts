@@ -28,6 +28,7 @@ import {
   type ResolvedGroupConversation,
 } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { dispatchWebhookEvent } from "@/lib/webhooks/deliver";
+import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 import type { WhatsAppChannel } from "@/types";
 
 export interface InboundContent {
@@ -283,6 +284,19 @@ interface ContactOutcome {
   wasCreated: boolean;
 }
 
+/** Nome vazio ou igual ao próprio telefone — o que o ingest grava
+ *  quando cria o contato sem pushName. Só nesse caso o pushName pode
+ *  preencher. */
+function isPlaceholderName(
+  current: string | null | undefined,
+  phone: string,
+): boolean {
+  const trimmed = (current ?? "").trim();
+  if (!trimmed) return true;
+  const digits = normalizePhone(trimmed);
+  return digits.length > 0 && digits === normalizePhone(phone);
+}
+
 /**
  * Contatos são compartilhados entre canais dentro de uma conta — o
  * mesmo número que fala com a recepção e com o financeiro é uma
@@ -304,8 +318,12 @@ async function findOrCreateContact(
   const existingContact = await findExistingContact(db, accountId, phone);
 
   if (existingContact) {
-    // Atualiza o nome se mudou
-    if (name && name !== existingContact.name) {
+    // O nome de perfil do WhatsApp só PREENCHE, nunca SUBSTITUI: o nome
+    // cadastrado (import, formulário, correção manual) é o que a conta
+    // escolheu e vence o apelido que a pessoa pôs no próprio perfil.
+    // Sobrescrever a cada mensagem apagava nomes curados em produção
+    // ("Stephany Mãe Benjamim" virava "Ste" horas depois do import).
+    if (name && isPlaceholderName(existingContact.name, phone)) {
       await db
         .from("contacts")
         .update({ name, updated_at: new Date().toISOString() })

@@ -631,3 +631,86 @@ describe("ingestInboundMessage — unread_count de mensagem de grupo", () => {
     expect(conv?.unread_count).toBe(2);
   });
 });
+
+// ============================================================
+// Nome do contato × pushName do WhatsApp (2026-09-18).
+//
+// Bug real de produção: a cada mensagem recebida, o ingest sobrescrevia
+// `contacts.name` com o nome de perfil do remetente. O nome curado pelo
+// instituto ("Stephany Mãe Benjamim") virava o apelido do WhatsApp
+// ("Ste", "Dani💗") horas depois de qualquer importação — 73 contatos
+// revertidos em 24h. O nome do perfil só pode PREENCHER, nunca
+// SUBSTITUIR.
+// ============================================================
+
+describe("ingestInboundMessage — pushName nunca sobrescreve nome existente", () => {
+  const channel = {
+    id: "chan-1",
+    account_id: "acc-1",
+    user_id: "user-1",
+    provider: "uazapi",
+    status: "connected",
+  };
+
+  function dbWithContact(name: string) {
+    return new FakeDb({
+      contacts: [
+        {
+          id: "contact-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          phone: "553182667060",
+          name,
+        },
+      ],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+  }
+
+  async function ingest(db: FakeDb, pushName: string | undefined) {
+    const { ingestInboundMessage } = await import("./ingest");
+    return ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "553182667060",
+      pushName,
+      providerMessageId: "wamid.NOME",
+      timestamp: 1_700_000_000,
+      content: { type: "text", text: "oi" },
+    });
+  }
+
+  it("mantém o nome cadastrado quando o perfil do WhatsApp diz outra coisa", async () => {
+    const db = dbWithContact("Stephany Mãe Benjamim Benjamim Freitas");
+    await ingest(db, "Ste");
+    expect(db.tables.contacts[0].name).toBe(
+      "Stephany Mãe Benjamim Benjamim Freitas",
+    );
+  });
+
+  it("preenche o nome quando o cadastrado é só o telefone (placeholder)", async () => {
+    const db = dbWithContact("553182667060");
+    await ingest(db, "Ste");
+    expect(db.tables.contacts[0].name).toBe("Ste");
+  });
+
+  it("preenche o nome quando o cadastrado está vazio", async () => {
+    const db = dbWithContact("");
+    await ingest(db, "Ste");
+    expect(db.tables.contacts[0].name).toBe("Ste");
+  });
+
+  it("cria contato novo com o pushName", async () => {
+    const db = new FakeDb({
+      contacts: [],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+    await ingest(db, "Ste");
+    expect(db.tables.contacts).toHaveLength(1);
+    expect(db.tables.contacts[0].name).toBe("Ste");
+  });
+});
