@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildContactImportPatch,
   buildContactSyncUpdate,
   dedupeByPhone,
   findExistingContact,
@@ -118,6 +119,60 @@ describe("buildContactSyncUpdate", () => {
       {},
     );
     expect(update).toBeNull();
+  });
+});
+
+describe("buildContactImportPatch", () => {
+  // Reimportar a planilha oficial é, na prática, o mesmo ato que abrir
+  // o contato e salvar: alguém confirmou que aquele telefone é aquela
+  // pessoa. Um contato criado por mensagem recebida (source
+  // 'whatsapp'/nulo) que aparece na planilha deve sair da fila de
+  // "Novo" mesmo quando o nome já bate e não há nada mais a atualizar.
+  it("promove um contato 'whatsapp' para 'import' mesmo sem diferença de nome", () => {
+    const patch = buildContactImportPatch(
+      { name: "Sara Escola", email: null, company: null, source: "whatsapp" },
+      { name: "Sara Escola" },
+    );
+    expect(patch).toEqual({ source: "import" });
+  });
+
+  it("promove e sincroniza o nome ao mesmo tempo quando os dois diferem", () => {
+    const patch = buildContactImportPatch(
+      { name: "Ste", email: null, company: null, source: "whatsapp" },
+      { name: "Stephany Mãe Benjamim" },
+    );
+    expect(patch).toEqual({ name: "Stephany Mãe Benjamim", source: "import" });
+  });
+
+  it("trata ausência de origem (legado) como não identificado", () => {
+    const patch = buildContactImportPatch(
+      { name: "Sara Escola", email: null, company: null, source: null },
+      { name: "Sara Escola" },
+    );
+    expect(patch).toEqual({ source: "import" });
+  });
+
+  it("nunca reabre um contato já identificado (import ou manual)", () => {
+    expect(
+      buildContactImportPatch(
+        { name: "Ana", email: null, company: null, source: "manual" },
+        { name: "Ana" },
+      ),
+    ).toBeNull();
+    expect(
+      buildContactImportPatch(
+        { name: "Ana", email: null, company: null, source: "import" },
+        { name: "Ana" },
+      ),
+    ).toBeNull();
+  });
+
+  it("sincroniza campos sem mexer na origem quando já identificado", () => {
+    const patch = buildContactImportPatch(
+      { name: "Ana Velha", email: null, company: null, source: "manual" },
+      { name: "Ana Nova" },
+    );
+    expect(patch).toEqual({ name: "Ana Nova" });
   });
 });
 

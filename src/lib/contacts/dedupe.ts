@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
+import { CONTACT_SOURCE, isUnidentified } from "@/lib/contacts/source";
 
 /**
  * Contact de-duplication helpers, shared by the WhatsApp webhook, the
@@ -104,6 +105,33 @@ export function buildContactSyncUpdate(
   }
 
   return Object.keys(update).length > 0 ? update : null;
+}
+
+/**
+ * Full patch for a contact matched during import: syncs
+ * name/email/company via `buildContactSyncUpdate` AND promotes an
+ * unidentified contact (created by an inbound WhatsApp message, source
+ * `whatsapp`/null) to `import`.
+ *
+ * Reimporting the official spreadsheet is, in effect, the same act as
+ * a human opening the contact and saving it (see `contact-form.tsx`
+ * and `contact-detail-view.tsx`, which promote source the same way on
+ * manual save) — so a contact whose phone appears in the spreadsheet
+ * must leave the "Novo" queue even when its name already matches and
+ * there's nothing else to sync. Never touches a contact that's already
+ * `import` or `manual` — reimporting never reopens an identified
+ * contact.
+ */
+export function buildContactImportPatch(
+  existing: ContactSyncFields & { source?: string | null },
+  incoming: Partial<Record<keyof ContactSyncFields, string | null | undefined>>,
+): Record<string, unknown> | null {
+  const fields = buildContactSyncUpdate(existing, incoming);
+  const patch: Record<string, unknown> = { ...(fields ?? {}) };
+  if (isUnidentified(existing.source)) {
+    patch.source = CONTACT_SOURCE.IMPORT;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 /**
