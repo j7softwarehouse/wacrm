@@ -18,6 +18,7 @@ import {
   reopenStaleClosedConversations,
 } from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
+import { isUnidentified } from "@/lib/contacts/source";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { Search, ChevronDown, Smartphone, X } from "lucide-react";
@@ -543,10 +544,15 @@ function ConversationItem({
   allPhones,
   t,
 }: ConversationItemProps) {
+  const tContacts = useTranslations("Contacts");
   const contact = conversation.contact;
   const displayName = conversationDisplayName(conversation) || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const label = channel ? channelLabel(channel) : undefined;
+  // Mesmo badge da lista de Contatos e do painel lateral: contato que
+  // ninguém identificou ainda (chegou por mensagem recebida). Grupo não
+  // tem contato, então nunca marca.
+  const isNewContact = !conversation.group && !!contact && isUnidentified(contact.source);
   // `channel` já vem com o fallback pro canal padrão aplicado (ver
   // comentário em `channelsById?.values().next().value` na chamada) —
   // usar `channel.phone_e164` aqui em vez de `conversation.channel_id`
@@ -594,8 +600,18 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {isNewContact && (
+              <span
+                title={tContacts("newBadgeTooltip")}
+                className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
+              >
+                {tContacts("newBadge")}
+              </span>
+            )}
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>
