@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
-  buildContactSyncUpdate,
+  buildContactImportPatch,
   dedupeByPhone,
   isUniqueViolation,
   normalizeKey,
@@ -283,6 +283,7 @@ export function ImportModal({
         name: string | null;
         email: string | null;
         company: string | null;
+        source: string | null;
       };
       const existingRows: ExistingRow[] = [];
       const FETCH_PAGE = 1000;
@@ -295,7 +296,7 @@ export function ImportModal({
       for (;;) {
         const { data: page, error: fetchErr } = await supabase
           .from('contacts')
-          .select('id, phone_normalized, name, email, company')
+          .select('id, phone_normalized, name, email, company, source')
           .eq('account_id', accountId)
           .range(offset, offset + FETCH_PAGE - 1);
         if (fetchErr) {
@@ -315,7 +316,7 @@ export function ImportModal({
       );
 
       const toInsert: ParsedContactRow[] = [];
-      const toUpdate: { id: string; fields: NonNullable<ReturnType<typeof buildContactSyncUpdate>> }[] = [];
+      const toUpdate: { id: string; fields: NonNullable<ReturnType<typeof buildContactImportPatch>> }[] = [];
 
       for (const row of unique) {
         const match = existingByPhone.get(normalizeKey(row.phone));
@@ -323,8 +324,13 @@ export function ImportModal({
           toInsert.push(row);
           continue;
         }
-        const fields = buildContactSyncUpdate(
-          { name: match.name, email: match.email, company: match.company },
+        const fields = buildContactImportPatch(
+          {
+            name: match.name,
+            email: match.email,
+            company: match.company,
+            source: match.source,
+          },
           { name: row.name, email: row.email, company: row.company },
         );
         if (fields) {
