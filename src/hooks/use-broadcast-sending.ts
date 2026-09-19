@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import { buildContactSyncUpdate } from '@/lib/contacts/dedupe';
+import { buildContactImportPatch } from '@/lib/contacts/dedupe';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { Contact, MessageTemplate } from '@/types';
 
@@ -263,17 +263,28 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     // different value, so this can't be one batched statement.
     for (const [phone, contact] of byPhone) {
       const csvName = uniqueByPhone.get(phone)?.name;
-      const fields = buildContactSyncUpdate(
-        { name: contact.name ?? null, email: null, company: null },
+      // buildContactImportPatch (não só buildContactSyncUpdate): além
+      // de sincronizar o nome, promove um contato criado por mensagem
+      // recebida (source 'whatsapp'/nulo) para 'import' quando ele
+      // aparece nesta lista trazida de fora — mesma regra do modal de
+      // Contatos (import-modal.tsx). Sem isso, um contato que já
+      // atende pelo WhatsApp mas cujo nome já bate na planilha nunca
+      // saía da fila "Novo" ao ser enviado numa campanha.
+      const patch = buildContactImportPatch(
+        { name: contact.name ?? null, email: null, company: null, source: contact.source },
         { name: csvName },
       );
-      if (!fields) continue;
+      if (!patch) continue;
       const { error: updateErr } = await supabase
         .from('contacts')
-        .update({ ...fields, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', contact.id);
       if (!updateErr) {
-        byPhone.set(phone, { ...contact, name: fields.name ?? contact.name });
+        byPhone.set(phone, {
+          ...contact,
+          name: (patch.name as string | undefined) ?? contact.name,
+          source: (patch.source as string | undefined) ?? contact.source,
+        });
       }
     }
 
