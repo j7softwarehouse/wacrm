@@ -72,6 +72,7 @@ describe('findOrCreateContact', () => {
     name: string | null;
     email: string | null;
     company: string | null;
+    source?: string;
   }) {
     const updateCalls: Record<string, unknown>[] = [];
     const builder = {
@@ -96,6 +97,7 @@ describe('findOrCreateContact', () => {
       name: 'Old Name',
       email: null,
       company: null,
+      source: 'manual',
     });
     const result = await findOrCreateContact(db, 'acc', 'user', {
       phone: '+14155550123',
@@ -110,13 +112,14 @@ describe('findOrCreateContact', () => {
     });
   });
 
-  it('does not call update when nothing in the payload differs from what is stored', async () => {
+  it('does not call update when nothing in the payload differs from what is stored and the contact is already identified', async () => {
     const { db, updateCalls } = stubDbWithExisting({
       id: 'c1',
       phone: '+14155550123',
       name: 'Same Name',
       email: null,
       company: null,
+      source: 'manual',
     });
     const result = await findOrCreateContact(db, 'acc', 'user', {
       phone: '+14155550123',
@@ -124,5 +127,48 @@ describe('findOrCreateContact', () => {
     });
     expect(result).toEqual({ id: 'c1', created: false });
     expect(updateCalls).toHaveLength(0);
+  });
+
+  // 2026-09-19: mesmo defeito achado no modal de importação de Contatos
+  // e no upload de CSV em Broadcasts — um contato criado por mensagem
+  // recebida (source 'whatsapp'/ausente) nunca saía da fila "Novo"
+  // quando um caller externo confirmava o mesmo nome, porque nada
+  // diferia e o UPDATE nunca rodava. A API pública upsertando por
+  // telefone é a mesma categoria de "alguém de fora confirmou este
+  // contato" — deve promover a origem igual às outras duas.
+  it('promove um contato não identificado para "manual" mesmo quando o nome já bate', async () => {
+    const { db, updateCalls } = stubDbWithExisting({
+      id: 'c1',
+      phone: '+14155550123',
+      name: 'Same Name',
+      email: null,
+      company: null,
+      source: 'whatsapp',
+    });
+    const result = await findOrCreateContact(db, 'acc', 'user', {
+      phone: '+14155550123',
+      name: 'Same Name',
+    });
+    expect(result).toEqual({ id: 'c1', created: false });
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toMatchObject({ source: 'manual' });
+  });
+
+  it('promove e sincroniza o nome ao mesmo tempo quando os dois diferem', async () => {
+    const { db, updateCalls } = stubDbWithExisting({
+      id: 'c1',
+      phone: '+14155550123',
+      name: 'Old Name',
+      email: null,
+      company: null,
+      source: 'whatsapp',
+    });
+    const result = await findOrCreateContact(db, 'acc', 'user', {
+      phone: '+14155550123',
+      name: 'New Name',
+    });
+    expect(result).toEqual({ id: 'c1', created: false });
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toMatchObject({ name: 'New Name', source: 'manual' });
   });
 });
