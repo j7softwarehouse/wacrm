@@ -151,7 +151,10 @@
       "noChannelAssigned": "You haven't been assigned to any channel yet. Ask an admin.",
       "noMessagesYet": "No messages yet",
       "unknown": "Unknown",
-      "channelHint": "Received on channel {label}"
+      "channelHint": "Received on channel {label}",
+      "groupResultsHeading": "Groups",
+      "startGroupConversation": "Start conversation",
+      "openGroupError": "Could not open this group's conversation."
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
