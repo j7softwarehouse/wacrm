@@ -7,7 +7,7 @@ import {
   mondayIndex,
   startOfLocalDay,
 } from './date-utils'
-import { businessMinutesBetween, isWithinBusinessHours } from './business-hours'
+import { isAwaitingReply, isWithinBusinessHours } from './business-hours'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -141,26 +141,10 @@ export async function loadAwaitingReply(
     last_sender_type: string | null
   }[]
 
-  // Corte barato ANTES de chamar businessMinutesBetween: conversas nunca
-  // fecham sozinhas (só uma ação de automação fecha), então uma conversa
-  // parada há meses/anos ainda cairia no loop dia-a-dia de
-  // businessMinutesBetween, iterando um dia civil por vez desde o último
-  // fechamento até hoje — medido em 1,4s de trava para 200 conversas com
-  // 1 ano de inatividade. 7 dias CORRIDOS (não de expediente) já é folga
-  // enorme sobre os 30 minutos de expediente do limiar: mesmo contando só
-  // dias úteis, 7 dias corridos garantem bem mais que 30 minutos úteis.
-  // Só vale a pena rodar a aritmética fina quando o intervalo corrido for
-  // pequeno o bastante para o resultado não ser óbvio de antemão.
-  const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000
-
-  const count = rows.filter((r) => {
-    if (r.last_sender_type !== 'customer') return false
-    if (!r.last_message_at) return false
-    const lastMessageAt = new Date(r.last_message_at)
-    const elapsedMs = now.getTime() - lastMessageAt.getTime()
-    if (elapsedMs > STALE_THRESHOLD_MS) return true
-    return businessMinutesBetween(lastMessageAt, now) > 30
-  }).length
+  // Regra extraída para src/lib/dashboard/business-hours.ts — o filtro
+  // "sem resposta +30min" da Inbox usa a MESMA função, então os dois
+  // nunca podem discordar sobre quantas conversas estão pendentes.
+  const count = rows.filter((r) => isAwaitingReply(r, now)).length
 
   return { count, withinHours: true }
 }

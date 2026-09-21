@@ -142,3 +142,39 @@ export function businessMinutesBetween(from: Date, to: Date): number {
   // Converter milissegundos para minutos (arredonda para baixo).
   return Math.floor(totalMillis / 60000);
 }
+
+/** Última mensagem de uma conversa, no formato devolvido pela RPC
+ *  `conversations_awaiting_reply` (ver 20260731000002_awaiting_reply_rpc.sql). */
+export interface AwaitingReplyRow {
+  last_message_at: string | null;
+  last_sender_type: string | null;
+}
+
+// Corte barato ANTES de businessMinutesBetween: uma conversa nunca fecha
+// sozinha (só automação fecha), então uma parada há meses/anos ainda
+// cairia no loop dia-a-dia, iterando um dia civil por vez desde a última
+// mensagem até agora -- medido em 1,4s de trava para 200 conversas com 1
+// ano de inatividade. 7 dias CORRIDOS (não de expediente) já é folga
+// enorme sobre os 30 minutos de expediente do limiar: mesmo contando só
+// dias úteis, 7 dias corridos garantem bem mais que 30 minutos úteis.
+const AWAITING_REPLY_STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Verdadeiro quando a ÚLTIMA mensagem da conversa é do cliente e já
+ * passou de 30 minutos de EXPEDIENTE sem resposta.
+ *
+ * Extraído de `loadAwaitingReply` (src/lib/dashboard/queries.ts) para
+ * ser reutilizado pelo filtro "sem resposta +30min" da Inbox — as duas
+ * superfícies chamam a MESMA função, então nunca podem discordar sobre
+ * quantas conversas estão pendentes.
+ */
+export function isAwaitingReply(row: AwaitingReplyRow, now: Date): boolean {
+  if (row.last_sender_type !== 'customer') return false;
+  if (!row.last_message_at) return false;
+
+  const lastMessageAt = new Date(row.last_message_at);
+  const elapsedMs = now.getTime() - lastMessageAt.getTime();
+  if (elapsedMs > AWAITING_REPLY_STALE_THRESHOLD_MS) return true;
+
+  return businessMinutesBetween(lastMessageAt, now) > 30;
+}

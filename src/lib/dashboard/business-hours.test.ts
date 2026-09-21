@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   businessMinutesBetween,
+  isAwaitingReply,
   isWithinBusinessHours,
 } from './business-hours';
 
@@ -105,5 +106,70 @@ describe('businessMinutesBetween', () => {
         utc('2026-08-04T12:00:30Z'),
       ),
     ).toBe(0);
+  });
+});
+
+// isAwaitingReply extrai a mesma regra de src/lib/dashboard/queries.ts
+// (loadAwaitingReply) pra um predicado puro reutilizável — o filtro
+// "sem resposta +30min" da Inbox usa a MESMA função, garantindo que
+// nunca discorde do cartão do Dashboard.
+describe('isAwaitingReply', () => {
+  it('conta uma conversa do cliente com 31 minutos de expediente', () => {
+    // Terça 12:00 São Paulo = 15:00 UTC. Última msg às 11:29 SP = 14:29 UTC.
+    const now = utc('2026-08-04T15:00:00Z');
+    expect(
+      isAwaitingReply(
+        { last_message_at: '2026-08-04T14:29:00Z', last_sender_type: 'customer' },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it('nao conta com exatamente 29 minutos de expediente', () => {
+    const now = utc('2026-08-04T15:00:00Z');
+    expect(
+      isAwaitingReply(
+        { last_message_at: '2026-08-04T14:31:00Z', last_sender_type: 'customer' },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it('nao conta quando a ultima mensagem foi do agente', () => {
+    const now = utc('2026-08-04T15:00:00Z');
+    expect(
+      isAwaitingReply(
+        { last_message_at: '2026-08-04T14:00:00Z', last_sender_type: 'agent' },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it('nao conta quando a ultima mensagem foi do bot', () => {
+    const now = utc('2026-08-04T15:00:00Z');
+    expect(
+      isAwaitingReply(
+        { last_message_at: '2026-08-04T14:00:00Z', last_sender_type: 'bot' },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it('nao conta sem last_message_at', () => {
+    const now = utc('2026-08-04T15:00:00Z');
+    expect(isAwaitingReply({ last_message_at: null, last_sender_type: 'customer' }, now)).toBe(
+      false,
+    );
+  });
+
+  it('conta pelo atalho de 7 dias corridos sem rodar aritmetica fina', () => {
+    // 1 ano atrás -- teria que passar por centenas de iteracoes de dia
+    // em businessMinutesBetween sem o atalho. Testa o RESULTADO; ver
+    // queries.test.ts para o raciocinio completo de performance.
+    const now = utc('2026-08-04T15:00:00Z');
+    const umAnoAtras = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      isAwaitingReply({ last_message_at: umAnoAtras, last_sender_type: 'customer' }, now),
+    ).toBe(true);
   });
 });

@@ -143,6 +143,8 @@
       "filterPending": "대기 중",
       "filterClosed": "닫힘",
       "filterMarkers": "내 표시가 있는 대화",
+      "filterUnanswered": "30분 이상 미응답",
+      "awaitingReplyHint": "고객이 업무 시간 기준 30분 넘게 답변을 기다리고 있습니다",
       "tags": "태그",
       "company": "회사",
       "allCompanies": "전체 회사",

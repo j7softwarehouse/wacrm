@@ -143,6 +143,8 @@
       "filterPending": "Pendente",
       "filterClosed": "Fechado",
       "filterMarkers": "Com meus marcadores",
+      "filterUnanswered": "Sem resposta há +30min",
+      "awaitingReplyHint": "Cliente aguardando resposta há mais de 30 minutos de expediente",
       "tags": "Tags",
       "company": "Empresa",
       "allCompanies": "Todas as empresas",

@@ -143,6 +143,8 @@
       "filterPending": "Pending",
       "filterClosed": "Closed",
       "filterMarkers": "With my markers",
+      "filterUnanswered": "Unanswered for +30min",
+      "awaitingReplyHint": "Customer has been waiting for a reply for more than 30 business minutes",
       "tags": "Tags",
       "company": "Company",
       "allCompanies": "All companies",
