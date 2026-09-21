@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { canEditSettings, isAccountRole, type AccountRole } from "@/lib/auth/roles";
+import { isConversationScope } from "@/lib/auth/conversation-scope";
 import { sanitizePhoneForMeta } from "@/lib/whatsapp/phone-utils";
 import {
   ChannelNotFoundError,
@@ -18,18 +19,25 @@ import {
 // GET /api/whatsapp/groups — lista os grupos da conta do chamador.
 // PATCH /api/whatsapp/groups — liga/desliga um grupo (`{ id, enabled }`).
 //
-// Ponto de atenção: a policy de escrita em `whatsapp_groups`
-// (migração 20260829000001, "admins write groups") exige
-// `is_account_member(account_id, 'admin')`. Como esta rota usa o
-// cliente RLS-scoped da sessão do usuário (não o service role), um
-// membro `viewer`/`agent` que tentasse o PATCH veria o `update` do
-// Postgres negado pela RLS SEM lançar exceção — a query roda,
-// `error` vem null, e nenhuma linha é afetada. Sem a checagem
-// explícita de papel abaixo, esse caso devolveria 200 (ou 404, pelo
-// `data` vazio do `.select().maybeSingle()`) e o usuário concluiria
-// que "não fez nada" sem entender por quê. Por isso verificamos
-// `canEditSettings(role)` nós mesmos e devolvemos 403 com mensagem
-// clara antes de sequer tentar a escrita.
+// Leitura não exige papel nenhum além de pertencer à conta — mesma
+// regra da RLS por trás (migração 20260829000001, "members read
+// groups": `is_account_member(account_id)`, sem exigir 'admin'). Até
+// 2026-09-21 esta rota era mais restritiva que o próprio banco
+// (exigia canEditSettings), o que bloqueava um agente de sequer listar
+// grupos para abrir a primeira conversa — o botão "Conversar"
+// (`/groups/[id]/open`) já não exige isso.
+//
+// Escrita (POST/PATCH) continua exigindo admin+: a policy de escrita
+// ("admins write groups") exige `is_account_member(account_id,
+// 'admin')`. Como esta rota usa o cliente RLS-scoped da sessão do
+// usuário (não o service role), um membro `viewer`/`agent` que
+// tentasse escrever veria o `update`/`insert` do Postgres negado pela
+// RLS SEM lançar exceção — a query roda, `error` vem null, e nenhuma
+// linha é afetada. Sem a checagem explícita de papel nesses handlers,
+// esse caso devolveria 200 (ou 404, pelo `data` vazio) e o usuário
+// concluiria que "não fez nada" sem entender por quê. Por isso POST e
+// PATCH verificam `canEditSettings(role)` eles mesmos e devolvem 403
+// com mensagem clara antes de sequer tentar a escrita.
 // ============================================================
 
 type GroupsSupabase = Awaited<ReturnType<typeof createClient>>;
@@ -37,11 +45,14 @@ type GroupsSupabase = Awaited<ReturnType<typeof createClient>>;
 interface CallerProfile {
   accountId: string;
   role: AccountRole | null;
+  /** 'all' quando ausente/inválido — mesmo fallback de
+   *  `/api/whatsapp/channels` e das rotas de envio. */
+  channelScope: string;
 }
 
 /**
- * Resolve `account_id` + `account_role` do perfil do usuário
- * autenticado. Mesmo padrão de `/api/whatsapp/send` e
+ * Resolve `account_id` + `account_role` + `channel_scope` do perfil do
+ * usuário autenticado. Mesmo padrão de `/api/whatsapp/send` e
  * `/api/whatsapp/config` (resolução inline em vez de
  * `getCurrentAccount`), para manter o formato de resposta desta
  * rota sob controle total do handler.
@@ -52,7 +63,7 @@ async function resolveCallerProfile(
 ): Promise<CallerProfile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("account_id, account_role")
+    .select("account_id, account_role, channel_scope")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -61,6 +72,7 @@ async function resolveCallerProfile(
   return {
     accountId: data.account_id as string,
     role: isAccountRole(data.account_role) ? data.account_role : null,
+    channelScope: isConversationScope(data.channel_scope) ? data.channel_scope : "all",
   };
 }
 
@@ -85,16 +97,9 @@ export async function GET(_request: Request) {
       );
     }
 
-    if (!profile.role || !canEditSettings(profile.role)) {
-      return NextResponse.json(
-        { error: "Only account admins can view groups." },
-        { status: 403 },
-      );
-    }
-
     const { data, error } = await supabase
       .from("whatsapp_groups")
-      .select("id, group_jid, name, avatar_url, enabled, left_at")
+      .select("id, group_jid, name, avatar_url, enabled, left_at, channel_id")
       .eq("account_id", profile.accountId)
       .order("name", { ascending: true });
 
@@ -106,7 +111,35 @@ export async function GET(_request: Request) {
       );
     }
 
-    return NextResponse.json({ groups: data ?? [] });
+    let rows = (data ?? []) as Array<Record<string, unknown>>;
+
+    // admin/owner sempre veem todos; agent/viewer com channel_scope
+    // 'assigned' só veem grupos do canal que atendem — mesmo filtro de
+    // `/api/whatsapp/channels`. Um grupo com `channel_id` nulo (canal
+    // removido) nunca bate contra nenhuma membership, então some para
+    // quem está restrito, sem precisar de caso especial (mesma regra
+    // de conversa órfã de docs/superpowers/specs/2026-09-16-restricao-por-canal-design.md §5).
+    if (profile.role !== "admin" && profile.role !== "owner" && profile.channelScope === "assigned") {
+      const { data: memberRows } = await supabase
+        .from("channel_members")
+        .select("channel_id")
+        .eq("user_id", user.id);
+      const allowedIds = new Set(
+        (memberRows ?? []).map((r) => r.channel_id as string),
+      );
+      rows = rows.filter((g) => allowedIds.has(g.channel_id as string));
+    }
+
+    const groups = rows.map(({ id, group_jid, name, avatar_url, enabled, left_at }) => ({
+      id,
+      group_jid,
+      name,
+      avatar_url,
+      enabled,
+      left_at,
+    }));
+
+    return NextResponse.json({ groups });
   } catch (err) {
     console.error("Error in GET /api/whatsapp/groups:", err);
     return NextResponse.json(

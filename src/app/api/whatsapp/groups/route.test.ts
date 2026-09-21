@@ -141,7 +141,11 @@ describe('GET /api/whatsapp/groups', () => {
     expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('left_at'));
   });
 
-  it('recusa agent com 403 (role check)', async () => {
+  // 2026-09-21: a leitura NÃO exige mais admin — a RLS embaixo
+  // ("members read groups") já liberava qualquer membro da conta, e a
+  // rota estava mais restritiva que o próprio banco. Só POST/PATCH
+  // (escrever) continuam admin+ (ver "admins write groups").
+  it('agent consegue listar os grupos (nao e mais so admin)', async () => {
     mocks.createClient.mockResolvedValue(
       comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'agent'),
     );
@@ -149,21 +153,21 @@ describe('GET /api/whatsapp/groups', () => {
     const res = await GET(new Request('https://x/api/whatsapp/groups'));
     const json = await res.json();
 
-    expect(res.status).toBe(403);
-    expect(json.error).toMatch(/admin/i);
+    expect(res.status).toBe(200);
+    expect(json.groups).toHaveLength(1);
   });
 
-  it('recusa viewer com 403 (role check)', async () => {
+  it('viewer tambem consegue listar — mesma regra da RLS, sem checagem de papel', async () => {
     mocks.createClient.mockResolvedValue(
       comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'viewer'),
     );
 
     const res = await GET(new Request('https://x/api/whatsapp/groups'));
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
-  it('deixa admin passar e devolver a lista (role check)', async () => {
+  it('admin continua vendo a lista normalmente', async () => {
     mocks.createClient.mockResolvedValue(
       comSessao([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }], 'admin'),
     );
@@ -173,6 +177,108 @@ describe('GET /api/whatsapp/groups', () => {
 
     expect(res.status).toBe(200);
     expect(json.groups).toEqual([{ id: 'g-1', group_jid: '1@g.us', name: 'Turma', enabled: false }]);
+  });
+});
+
+describe('GET /api/whatsapp/groups — filtro por channel_scope', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const GROUP_ROWS = [
+    { id: 'g-1', group_jid: '1@g.us', name: 'Grupo A', enabled: true, left_at: null, channel_id: 'chan-a' },
+    { id: 'g-2', group_jid: '2@g.us', name: 'Grupo B', enabled: true, left_at: null, channel_id: 'chan-b' },
+  ];
+
+  // Mesmo padrão de channels/route.get.test.ts: dispatch por tabela,
+  // já que agora a rota consulta profiles E (às vezes) channel_members.
+  function stubComEscopo(opts: {
+    role: string;
+    channelScope?: string;
+    memberChannelIds?: string[];
+  }) {
+    return {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: {
+                    account_id: 'acct-1',
+                    account_role: opts.role,
+                    channel_scope: opts.channelScope ?? 'all',
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'whatsapp_groups') {
+          return {
+            select: () => ({
+              eq: () => ({
+                order: async () => ({ data: GROUP_ROWS, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'channel_members') {
+          return {
+            select: () => ({
+              eq: () =>
+                Promise.resolve({
+                  data: (opts.memberChannelIds ?? []).map((channel_id) => ({ channel_id })),
+                  error: null,
+                }),
+            }),
+          };
+        }
+        throw new Error(`unexpected table: ${table}`);
+      },
+    };
+  }
+
+  it('admin ve todos os grupos, mesmo sem checar channel_scope', async () => {
+    mocks.createClient.mockResolvedValue(stubComEscopo({ role: 'admin' }));
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(json.groups.map((g: { id: string }) => g.id)).toEqual(['g-1', 'g-2']);
+  });
+
+  it("agent com channel_scope 'all' ve todos os grupos", async () => {
+    mocks.createClient.mockResolvedValue(
+      stubComEscopo({ role: 'agent', channelScope: 'all' }),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(json.groups.map((g: { id: string }) => g.id)).toEqual(['g-1', 'g-2']);
+  });
+
+  it("agent com channel_scope 'assigned' ve so os grupos do canal que atende", async () => {
+    mocks.createClient.mockResolvedValue(
+      stubComEscopo({ role: 'agent', channelScope: 'assigned', memberChannelIds: ['chan-a'] }),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(json.groups.map((g: { id: string }) => g.id)).toEqual(['g-1']);
+  });
+
+  it('agent restrito sem nenhum canal atribuido nao ve grupo nenhum', async () => {
+    mocks.createClient.mockResolvedValue(
+      stubComEscopo({ role: 'agent', channelScope: 'assigned', memberChannelIds: [] }),
+    );
+
+    const res = await GET(new Request('https://x/api/whatsapp/groups'));
+    const json = await res.json();
+
+    expect(json.groups).toEqual([]);
   });
 });
 
