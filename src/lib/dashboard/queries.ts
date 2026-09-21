@@ -12,6 +12,8 @@ import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
+  PendingConversationRow,
+  PendingSummary,
   PipelineDonutData,
   PipelineStageSlice,
   ResponseTimeBucket,
@@ -147,6 +149,108 @@ export async function loadAwaitingReply(
   const count = rows.filter((r) => isAwaitingReply(r, now)).length
 
   return { count, withinHours: true }
+}
+
+// --- 1c. Pendências --------------------------------------------------
+
+/**
+ * Conversas com status "pendente" da conta, cada uma já com o dono
+ * resolvido em cascata: o marcador MAIS RECENTE nela (se houver algum)
+ * ganha de `assigned_agent_id`. Duas consultas + junção em JS em vez de
+ * uma RPC — a escala atual (dezenas/centenas de pendentes) não paga o
+ * custo de escrever/manter mais uma função no banco; migrar pra RPC é
+ * trivial se um dia a paginação virar necessária.
+ *
+ * A RLS de `conversations` já escopa o resultado ao que o CHAMADOR pode
+ * ver — um agente com `conversation_scope: 'assigned'` só recebe as
+ * dele, então "admin vê tudo / demais veem só as suas" não precisa de
+ * lógica extra aqui: para esse papel, "tudo que a RLS devolve" JÁ é
+ * "só as suas". `summarizePending` decide o resto client-side.
+ */
+export async function loadPendingConversations(
+  db: DB,
+  accountId: string,
+): Promise<PendingConversationRow[]> {
+  const { data: convRows, error } = await db
+    .from('conversations')
+    .select('id, pending_since, assigned_agent_id')
+    .eq('account_id', accountId)
+    .eq('status', 'pending')
+
+  if (error || !convRows || convRows.length === 0) {
+    if (error) {
+      console.error('[dashboard] loadPendingConversations conversations failed:', {
+        accountId,
+        message: error.message,
+      })
+    }
+    return []
+  }
+
+  const rows = convRows as { id: string; pending_since: string | null; assigned_agent_id: string | null }[]
+  const ids = rows.map((r) => r.id)
+
+  const { data: markerRows, error: markerError } = await db
+    .from('message_markers')
+    .select('conversation_id, created_by, label, created_at')
+    .in('conversation_id', ids)
+    .order('created_at', { ascending: false })
+
+  if (markerError) {
+    console.error('[dashboard] loadPendingConversations markers failed:', {
+      accountId,
+      message: markerError.message,
+    })
+  }
+
+  // Ordenado DESC por created_at acima — a PRIMEIRA ocorrência de cada
+  // conversation_id já é o marcador mais recente dela.
+  const latestMarkerByConversation = new Map<
+    string,
+    { created_by: string; label: string | null }
+  >()
+  for (const m of (markerRows ?? []) as {
+    conversation_id: string
+    created_by: string
+    label: string | null
+  }[]) {
+    if (!latestMarkerByConversation.has(m.conversation_id)) {
+      latestMarkerByConversation.set(m.conversation_id, { created_by: m.created_by, label: m.label })
+    }
+  }
+
+  return rows.map((r) => {
+    const marker = latestMarkerByConversation.get(r.id)
+    return {
+      conversation_id: r.id,
+      pending_since: r.pending_since,
+      assigned_agent_id: r.assigned_agent_id,
+      marker_owner_id: marker?.created_by ?? null,
+      marker_label: marker?.label ?? null,
+    }
+  })
+}
+
+/**
+ * Reduz as linhas de `loadPendingConversations` a três números: total,
+ * quantas estão ÓRFÃS (nem marcador, nem responsável — o caso que
+ * motivou este card) e quantas o USUÁRIO ATUAL possui (dono resolvido
+ * pela mesma cascata: marcador > atribuição).
+ */
+export function summarizePending(
+  rows: PendingConversationRow[],
+  userId: string,
+): PendingSummary {
+  let unowned = 0
+  let mine = 0
+
+  for (const r of rows) {
+    const ownerId = r.marker_owner_id ?? r.assigned_agent_id
+    if (!ownerId) unowned += 1
+    else if (ownerId === userId) mine += 1
+  }
+
+  return { total: rows.length, unowned, mine }
 }
 
 // --- 2. Conversations over time ---------------------------------------

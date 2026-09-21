@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { loadAwaitingReply } from './queries'
+import { loadAwaitingReply, summarizePending } from './queries'
+import type { PendingConversationRow } from './types'
 
 // --------------------------------------------------------------
 // loadAwaitingReply combina três fontes de risco: o gate de
@@ -147,5 +148,72 @@ describe('loadAwaitingReply', () => {
     const [msg, ctx] = errSpy.mock.calls[0]
     expect(String(msg)).toContain('conversations_awaiting_reply')
     expect(ctx).toMatchObject({ accountId: 'acct-1' })
+  })
+})
+
+
+// --------------------------------------------------------------
+// summarizePending -- pura, sem I/O. A cascata de "dono" é:
+// marcador > responsavel atribuido > ninguem (orfa). O card do
+// Dashboard usa `total`/`unowned` para admin e `mine` para os demais.
+// --------------------------------------------------------------
+
+function pendingRow(overrides: Partial<PendingConversationRow> = {}): PendingConversationRow {
+  return {
+    conversation_id: 'c-1',
+    pending_since: '2026-08-04T14:00:00Z',
+    assigned_agent_id: null,
+    marker_owner_id: null,
+    marker_label: null,
+    ...overrides,
+  }
+}
+
+describe('summarizePending', () => {
+  it('conta como orfa quando nao ha marcador nem responsavel', () => {
+    const out = summarizePending([pendingRow()], 'user-1')
+    expect(out).toEqual({ total: 1, unowned: 1, mine: 0 })
+  })
+
+  it('o responsavel atribuido resolve o dono quando nao ha marcador', () => {
+    const out = summarizePending(
+      [pendingRow({ assigned_agent_id: 'user-1' })],
+      'user-1',
+    )
+    expect(out).toEqual({ total: 1, unowned: 0, mine: 1 })
+  })
+
+  it('o marcador tem prioridade sobre o responsavel atribuido', () => {
+    // Atribuida ao user-2, mas marcada pelo user-1 -- o dono pro card e
+    // quem marcou, nao quem esta em assigned_agent_id.
+    const out = summarizePending(
+      [pendingRow({ assigned_agent_id: 'user-2', marker_owner_id: 'user-1' })],
+      'user-1',
+    )
+    expect(out).toEqual({ total: 1, unowned: 0, mine: 1 })
+  })
+
+  it('nao conta como minha quando o dono resolvido e outra pessoa', () => {
+    const out = summarizePending(
+      [pendingRow({ assigned_agent_id: 'user-2' })],
+      'user-1',
+    )
+    expect(out).toEqual({ total: 1, unowned: 0, mine: 0 })
+  })
+
+  it('soma varias linhas com donos diferentes', () => {
+    const out = summarizePending(
+      [
+        pendingRow({ conversation_id: 'c-1', assigned_agent_id: 'user-1' }),
+        pendingRow({ conversation_id: 'c-2' }), // orfa
+        pendingRow({ conversation_id: 'c-3', marker_owner_id: 'user-2' }),
+      ],
+      'user-1',
+    )
+    expect(out).toEqual({ total: 3, unowned: 1, mine: 1 })
+  })
+
+  it('lista vazia devolve tudo zerado', () => {
+    expect(summarizePending([], 'user-1')).toEqual({ total: 0, unowned: 0, mine: 0 })
   })
 })
