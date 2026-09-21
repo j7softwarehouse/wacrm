@@ -174,6 +174,15 @@ describe("buildContactImportPatch", () => {
     );
     expect(patch).toEqual({ name: "Ana Nova" });
   });
+
+  it("promove para a origem informada, não sempre 'import' (API pública usa 'manual')", () => {
+    const patch = buildContactImportPatch(
+      { name: "Sara Escola", email: null, company: null, source: "whatsapp" },
+      { name: "Sara Escola" },
+      "manual",
+    );
+    expect(patch).toEqual({ source: "manual" });
+  });
 });
 
 describe("findExistingContact", () => {

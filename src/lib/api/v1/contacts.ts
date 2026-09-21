@@ -10,7 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  buildContactSyncUpdate,
+  buildContactImportPatch,
   findExistingContact,
   isUniqueViolation,
 } from '@/lib/contacts/dedupe';
@@ -136,19 +136,28 @@ export async function findOrCreateContact(
   const existing = await findExistingContact(db, accountId, sanitized);
   if (existing) {
     // A non-blank value in this request that differs from what's
-    // stored wins — never blanks out a field with an absent one.
-    const fields = buildContactSyncUpdate(
+    // stored wins — never blanks out a field with an absent one. Also
+    // promotes an unidentified contact (source 'whatsapp'/absent) to
+    // 'manual' — same source a brand-new contact gets from this same
+    // endpoint below — because an external caller upserting by phone
+    // is, in effect, confirming who this contact is, same as a human
+    // opening and saving it. Mirrors import-modal.tsx and
+    // use-broadcast-sending.ts, which do the same for their own
+    // sources of truth.
+    const patch = buildContactImportPatch(
       {
         name: (existing.name as string | null) ?? null,
         email: (existing.email as string | null) ?? null,
         company: (existing.company as string | null) ?? null,
+        source: (existing as { source?: string | null }).source,
       },
       { name: input.name, email: input.email, company: input.company },
+      CONTACT_SOURCE.MANUAL,
     );
-    if (fields) {
+    if (patch) {
       await db
         .from('contacts')
-        .update({ ...fields, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', existing.id);
     }
     return { id: existing.id, created: false };
