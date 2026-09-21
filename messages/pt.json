@@ -151,7 +151,10 @@
       "noChannelAssigned": "Você ainda não foi atribuído a nenhum canal. Peça a um administrador.",
       "noMessagesYet": "Nenhuma mensagem ainda",
       "unknown": "Desconhecido",
-      "channelHint": "Recebida pelo canal {label}"
+      "channelHint": "Recebida pelo canal {label}",
+      "groupResultsHeading": "Grupos",
+      "startGroupConversation": "Iniciar conversa",
+      "openGroupError": "Não foi possível abrir a conversa deste grupo."
     },
     "messageThread": {
       "backToConversations": "Voltar para conversas",

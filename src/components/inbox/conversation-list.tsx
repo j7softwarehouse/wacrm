@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -19,6 +21,11 @@ import {
 } from "@/lib/inbox/conversation-status";
 import { cn } from "@/lib/utils";
 import { isUnidentified } from "@/lib/contacts/source";
+import {
+  findGroupsWithoutConversation,
+  type SearchableGroup,
+} from "@/lib/inbox/group-search";
+import { openConversationForGroup } from "@/lib/whatsapp/groups/open-conversation";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { Search, ChevronDown, Smartphone, X } from "lucide-react";
@@ -101,6 +108,12 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  // Grupos da conta, carregados uma vez (mesmo padrão de `tags` acima) —
+  // alimenta a seção "Grupos" da busca, para achar/iniciar a primeira
+  // conversa de um grupo sem precisar passar por Configurações > Grupos.
+  const [groups, setGroups] = useState<SearchableGroup[]>([]);
+  const [openingGroupId, setOpeningGroupId] = useState<string | null>(null);
+  const router = useRouter();
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -207,6 +220,30 @@ export function ConversationList({
     };
   }, []);
 
+  // Lista de grupos, carregada uma vez (mesma rota que Configurações >
+  // Grupos e o botão "Conversar" de lá usam — já filtrada por
+  // channel_scope no servidor, então um agente restrito por canal nunca
+  // vê aqui um grupo que não atende). Falha silenciosa: sem grupo
+  // carregado, a seção de busca simplesmente não aparece, em vez de
+  // quebrar a lista de conversas por causa de uma request secundária.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/whatsapp/groups", { cache: "no-store" });
+        const payload = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && Array.isArray(payload.groups)) {
+          setGroups(payload.groups as SearchableGroup[]);
+        }
+      } catch {
+        // silencioso de propósito — ver comentário acima.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
   // are worth offering as an inbox filter.
@@ -256,6 +293,32 @@ export function ConversationList({
     // atualiza `last_message_at` no lugar sem mexer na posição do item.
     return sortConversationsByRecency(result);
   }, [conversations, filter, search, selectedTagIds, selectedCompany, markedConversationIds]);
+
+  // Só computado (e só mostrado) quando a busca normal não achou
+  // nenhuma conversa — ver group-search.ts. Não recalcula à toa: sem
+  // busca digitada, `findGroupsWithoutConversation` já devolve vazio.
+  const groupMatches = useMemo(
+    () =>
+      filtered.length === 0
+        ? findGroupsWithoutConversation(groups, conversations, search)
+        : [],
+    [filtered.length, groups, conversations, search],
+  );
+
+  const handleOpenGroup = useCallback(
+    async (groupId: string) => {
+      setOpeningGroupId(groupId);
+      try {
+        const conversationId = await openConversationForGroup(groupId);
+        router.push(`/inbox?c=${conversationId}`);
+      } catch {
+        toast.error(t("openGroupError"));
+      } finally {
+        setOpeningGroupId(null);
+      }
+    },
+    [router, t],
+  );
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -467,6 +530,49 @@ export function ConversationList({
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          </div>
+        ) : filtered.length === 0 && groupMatches.length > 0 ? (
+          // Busca sem nenhuma conversa correspondente, mas achou grupo(s)
+          // sem conversa ainda — deixa achar/iniciar a primeira conversa
+          // de um grupo direto por aqui, sem passar por Configurações.
+          // Ver src/lib/inbox/group-search.ts.
+          <div className="px-2 pt-3">
+            <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("groupResultsHeading")}
+            </p>
+            <div className="flex flex-col">
+              {groupMatches.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => handleOpenGroup(g.id)}
+                  disabled={openingGroupId === g.id}
+                  className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+                    {g.avatar_url ? (
+                      <img
+                        src={g.avatar_url}
+                        alt={g.name ?? ""}
+                        className="h-10 w-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      (g.name ?? "?").charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                    {g.name}
+                  </span>
+                  {openingGroupId === g.id ? (
+                    <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  ) : (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t("startGroupConversation")}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
