@@ -232,7 +232,21 @@
       "quickReplySaved": "Saved as a quick reply.",
       "quickReplySaveError": "Couldn't save the quick reply.",
       "editingMessage": "Editing message",
-      "cancelEdit": "Cancel edit"
+      "cancelEdit": "Cancel edit",
+      "event": "Event",
+      "eventDialogTitle": "New event",
+      "eventTitleLabel": "Title",
+      "eventTitlePlaceholder": "E.g.: Parent meeting",
+      "eventDateLabel": "Date",
+      "eventStartTimeLabel": "Start time",
+      "eventEndTimeLabel": "End time (optional)",
+      "eventLocationLabel": "Location (optional)",
+      "eventLocationPlaceholder": "E.g.: Instituto Emanuel",
+      "eventNotifyContact": "Notify the contact on WhatsApp",
+      "eventCreate": "Create event",
+      "eventMissingFields": "Fill in the title, date, and start time.",
+      "eventCreated": "Event opened in Google Calendar.",
+      "eventNotifySent": "Event opened and contact notified on WhatsApp."
     },
     "bubble": {
       "photo": "Photo",

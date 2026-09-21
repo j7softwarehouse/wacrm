@@ -226,7 +226,21 @@
       "quickReplySaved": "빠른 답장으로 저장되었습니다.",
       "quickReplySaveError": "빠른 답장을 저장하지 못했습니다.",
       "editingMessage": "메시지 수정 중",
-      "cancelEdit": "수정 취소"
+      "cancelEdit": "수정 취소",
+      "event": "이벤트",
+      "eventDialogTitle": "새 이벤트",
+      "eventTitleLabel": "제목",
+      "eventTitlePlaceholder": "예: 학부모 상담",
+      "eventDateLabel": "날짜",
+      "eventStartTimeLabel": "시작 시간",
+      "eventEndTimeLabel": "종료 시간 (선택)",
+      "eventLocationLabel": "장소 (선택)",
+      "eventLocationPlaceholder": "예: Instituto Emanuel",
+      "eventNotifyContact": "WhatsApp으로 연락처에 알리기",
+      "eventCreate": "이벤트 만들기",
+      "eventMissingFields": "제목, 날짜, 시작 시간을 입력하세요.",
+      "eventCreated": "Google 캘린더에서 이벤트가 열렸습니다.",
+      "eventNotifySent": "이벤트가 열리고 WhatsApp으로 연락처에 알렸습니다."
     },
     "bubble": {
       "photo": "사진",
