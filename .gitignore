@@ -45,3 +45,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# `public/` é servida publicamente pelo Next.js — planilha de contatos
+# (nome/telefone reais) já apareceu solta aqui por engano mais de uma
+# vez. Nunca deve ir pra lá; a importação lê o arquivo pelo seletor do
+# navegador, não precisa dele dentro do projeto.
+public/*.xlsx
+public/*.xls
+public/*.csv
+public/~$*
