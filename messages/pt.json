@@ -77,7 +77,11 @@
       "awaitingReplyEmpty": "Tudo respondido",
       "awaitingReplyClosed": "Fora do horário de atendimento",
       "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente",
-      "awaitingReplyErrorHint": "Não foi possível carregar agora"
+      "awaitingReplyErrorHint": "Não foi possível carregar agora",
+      "pendingConversations": "Pendências",
+      "pendingUnownedHint": "{count} sem responsável",
+      "pendingAccountHint": "No total da conta",
+      "pendingMineHint": "Atribuídas a você"
     },
     "quickActions": {
       "newContact": "Novo Contato",
