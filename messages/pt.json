@@ -232,7 +232,21 @@
       "quickReplySaved": "Salvo como resposta rápida.",
       "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
       "editingMessage": "Editando mensagem",
-      "cancelEdit": "Cancelar edição"
+      "cancelEdit": "Cancelar edição",
+      "event": "Evento",
+      "eventDialogTitle": "Novo evento",
+      "eventTitleLabel": "Título",
+      "eventTitlePlaceholder": "Ex.: Reunião de pais",
+      "eventDateLabel": "Data",
+      "eventStartTimeLabel": "Hora de início",
+      "eventEndTimeLabel": "Hora de término (opcional)",
+      "eventLocationLabel": "Local (opcional)",
+      "eventLocationPlaceholder": "Ex.: Instituto Emanuel",
+      "eventNotifyContact": "Avisar o contato pelo WhatsApp",
+      "eventCreate": "Criar evento",
+      "eventMissingFields": "Preencha o título, a data e a hora de início.",
+      "eventCreated": "Evento aberto no Google Agenda.",
+      "eventNotifySent": "Evento aberto e contato avisado pelo WhatsApp."
     },
     "bubble": {
       "photo": "Foto",

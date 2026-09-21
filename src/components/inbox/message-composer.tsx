@@ -23,9 +23,13 @@ import {
   MessageSquareDashed,
   Zap,
   AlertTriangle,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +58,7 @@ import {
   blankButtonsPayload,
 } from "@/components/interactive/interactive-builder";
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
+import { buildEventWhatsAppMessage, buildGoogleCalendarLink } from "@/lib/inbox/event-link";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
 
@@ -218,6 +223,52 @@ export function MessageComposer({
     useState<InteractiveMessagePayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+
+  // Evento -- link do Google Agenda (sem OAuth, ver event-link.ts) +
+  // aviso opcional pelo WhatsApp. Estado do formulário fica todo aqui,
+  // resetado a cada abertura do diálogo (openEventDialog).
+  const [eventOpen, setEventOpen] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [eventStartTime, setEventStartTime] = useState("");
+  const [eventEndTime, setEventEndTime] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventNotify, setEventNotify] = useState(true);
+
+  const openEventDialog = useCallback(() => {
+    setEventTitle("");
+    setEventDate("");
+    setEventStartTime("");
+    setEventEndTime("");
+    setEventLocation("");
+    setEventNotify(true);
+    setEventOpen(true);
+  }, []);
+
+  const handleCreateEvent = useCallback(() => {
+    if (!eventTitle.trim() || !eventDate || !eventStartTime) {
+      toast.error(t("eventMissingFields"));
+      return;
+    }
+
+    const details = {
+      title: eventTitle.trim(),
+      startLocal: `${eventDate}T${eventStartTime}`,
+      endLocal: eventEndTime ? `${eventDate}T${eventEndTime}` : undefined,
+      location: eventLocation.trim() || undefined,
+    };
+
+    window.open(buildGoogleCalendarLink(details), "_blank", "noopener,noreferrer");
+
+    if (eventNotify) {
+      onSend(buildEventWhatsAppMessage(details));
+      toast.success(t("eventNotifySent"));
+    } else {
+      toast.success(t("eventCreated"));
+    }
+
+    setEventOpen(false);
+  }, [eventTitle, eventDate, eventStartTime, eventEndTime, eventLocation, eventNotify, onSend, t]);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -833,6 +884,10 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={openEventDialog}>
+                <CalendarDays className="mr-2 h-4 w-4" />
+                {t("event")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -962,6 +1017,77 @@ export function MessageComposer({
             <Button onClick={sendInteractive}>
               <Send className="mr-1 h-4 w-4" />
               {t("send")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de evento -- link do Google Agenda + aviso opcional. */}
+      <Dialog open={eventOpen} onOpenChange={setEventOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("eventDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="event-title">{t("eventTitleLabel")}</Label>
+              <Input
+                id="event-title"
+                value={eventTitle}
+                onChange={(e) => setEventTitle(e.target.value)}
+                placeholder={t("eventTitlePlaceholder")}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-date">{t("eventDateLabel")}</Label>
+                <Input
+                  id="event-date"
+                  type="date"
+                  value={eventDate}
+                  onChange={(e) => setEventDate(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-start-time">{t("eventStartTimeLabel")}</Label>
+                <Input
+                  id="event-start-time"
+                  type="time"
+                  value={eventStartTime}
+                  onChange={(e) => setEventStartTime(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="event-end-time">{t("eventEndTimeLabel")}</Label>
+              <Input
+                id="event-end-time"
+                type="time"
+                value={eventEndTime}
+                onChange={(e) => setEventEndTime(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="event-location">{t("eventLocationLabel")}</Label>
+              <Input
+                id="event-location"
+                value={eventLocation}
+                onChange={(e) => setEventLocation(e.target.value)}
+                placeholder={t("eventLocationPlaceholder")}
+              />
+            </div>
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+              <Checkbox
+                checked={eventNotify}
+                onCheckedChange={(next) => setEventNotify(next === true)}
+              />
+              {t("eventNotifyContact")}
+            </label>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleCreateEvent}>
+              <CalendarDays className="mr-1 h-4 w-4" />
+              {t("eventCreate")}
             </Button>
           </DialogFooter>
         </DialogContent>
