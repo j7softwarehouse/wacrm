@@ -18,7 +18,6 @@ describe('canAccessSection', () => {
     // serem ferramenta de atendimento do dia a dia.
     const administrativoDoEspacoDeTrabalho = [
       'whatsapp',
-      'groups',
       'templates',
       'deals',
       'members',
@@ -30,6 +29,16 @@ describe('canAccessSection', () => {
 
     expect(canAccessSection('quick-replies', 'agent')).toBe(true);
     expect(canAccessSection('fields', 'agent')).toBe(true);
+  });
+
+  // 2026-09-21: a rota GET de grupos parou de exigir admin (a RLS por
+  // trás já liberava qualquer membro da conta) especificamente para
+  // destravar um agente sem canal aberto de iniciar a primeira
+  // conversa de um grupo — o botao "Conversar" já não exigia isso.
+  // O painel (GroupsManager) já sabia se comportar em modo leitura
+  // (canManage desliga sync/toggle/renomear/participantes com dica).
+  it('agent consegue ver a secao de grupos, mas so em modo leitura (2026-09-21)', () => {
+    expect(canAccessSection('groups', 'agent')).toBe(true);
   });
 
   it('admin e owner acessam todas as secoes', () => {
