@@ -80,6 +80,9 @@
       "pendingUnownedHint": "담당자 없음 {count}건",
       "pendingAccountHint": "계정 전체",
       "pendingMineHint": "나에게 배정됨",
+      "avgResponseTime": "평균 응답 시간",
+      "avgResponseTimeVsLastWeek": "지난주 {value}",
+      "avgResponseTimeNoComparison": "아직 데이터가 충분하지 않습니다",
       "openDeals": "진행 중인 딜 {count}건",
       "noChange": "변동 없음 {suffix}"
     },

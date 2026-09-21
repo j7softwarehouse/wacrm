@@ -81,7 +81,10 @@
       "pendingConversations": "Pendências",
       "pendingUnownedHint": "{count} sem responsável",
       "pendingAccountHint": "No total da conta",
-      "pendingMineHint": "Atribuídas a você"
+      "pendingMineHint": "Atribuídas a você",
+      "avgResponseTime": "Tempo médio de resposta",
+      "avgResponseTimeVsLastWeek": "{value} na semana passada",
+      "avgResponseTimeNoComparison": "Sem dados suficientes ainda"
     },
     "quickActions": {
       "newContact": "Novo Contato",

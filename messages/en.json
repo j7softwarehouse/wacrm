@@ -80,6 +80,9 @@
       "pendingUnownedHint": "{count} unowned",
       "pendingAccountHint": "Account total",
       "pendingMineHint": "Assigned to you",
+      "avgResponseTime": "Avg. response time",
+      "avgResponseTimeVsLastWeek": "{value} last week",
+      "avgResponseTimeNoComparison": "Not enough data yet",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
       "noChange": "No change {suffix}"
     },

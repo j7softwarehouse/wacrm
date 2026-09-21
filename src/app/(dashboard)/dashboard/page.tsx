@@ -12,7 +12,11 @@ import {
   CheckCircle2,
   Clock,
   Send,
+  ArrowDown,
+  ArrowUp,
+  Minus,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 import {
   loadActivity,
@@ -38,7 +42,7 @@ import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
-import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
+import { ResponseTimeChart, formatResponseMinutes } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 
 import { useTranslations } from 'next-intl'
@@ -208,9 +212,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {metricsLoading || !metrics ? (
-          Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
+          Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
             <MetricCard
@@ -355,6 +359,51 @@ export default function DashboardPage() {
                 ),
               }}
             />
+            {responseTimeLoading || !responseTime ? (
+              <SkeletonCard />
+            ) : (
+              (() => {
+                const thisWeek = responseTime.thisWeekAvg
+                const lastWeek = responseTime.lastWeekAvg
+                const hasComparison = thisWeek != null && lastWeek != null
+                // Tempo de resposta: MENOR é melhor — o inverso do que
+                // DeltaRow assume (positivo = bom). Por isso este card
+                // monta a própria seta/cor no lugar de usar a prop
+                // `delta` do MetricCard.
+                const improved = hasComparison && thisWeek < lastWeek
+                const worsened = hasComparison && thisWeek > lastWeek
+                const Arrow = improved ? ArrowDown : worsened ? ArrowUp : Minus
+                const tone = improved
+                  ? 'text-primary'
+                  : worsened
+                    ? 'text-red-400'
+                    : 'text-muted-foreground'
+                return (
+                  <MetricCard
+                    title={t('avgResponseTime')}
+                    value={formatResponseMinutes(thisWeek)}
+                    icon={Clock}
+                    subtitle={
+                      hasComparison ? (
+                        <>
+                          <Arrow className={cn('h-4 w-4', tone)} aria-hidden />
+                          <span className={tone}>
+                            {t('avgResponseTimeVsLastWeek', {
+                              value: formatResponseMinutes(lastWeek),
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="h-4 w-4" aria-hidden />
+                          <span>{t('avgResponseTimeNoComparison')}</span>
+                        </>
+                      )
+                    }
+                  />
+                )
+              })()
+            )}
           </>
         )}
       </div>
