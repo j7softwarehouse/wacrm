@@ -26,9 +26,10 @@ import {
   type SearchableGroup,
 } from "@/lib/inbox/group-search";
 import { openConversationForGroup } from "@/lib/whatsapp/groups/open-conversation";
+import { isAwaitingReply, type AwaitingReplyRow } from "@/lib/dashboard/business-hours";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
-import { Search, ChevronDown, Smartphone, X } from "lucide-react";
+import { Search, ChevronDown, Smartphone, X, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -61,7 +62,11 @@ interface ConversationListProps {
   channelsById?: Map<string, PublicChannel>;
 }
 
-type InboxFilter = ConversationStatus | "all" | "unread" | "markers";
+type InboxFilter = ConversationStatus | "all" | "unread" | "markers" | "unanswered";
+
+/** Linha da RPC conversations_awaiting_reply, já com o id da conversa
+ *  (a RPC devolve conversation_id + os dois campos de AwaitingReplyRow). */
+type AwaitingReplyItem = AwaitingReplyRow & { conversation_id: string };
 
 export function ConversationList({
   activeConversationId,
@@ -91,9 +96,10 @@ export function ConversationList({
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
     { label: t("filterMarkers"), value: "markers" },
+    { label: t("filterUnanswered"), value: "unanswered" },
   ], [t]);
 
-  const { user, channelScope } = useAuth();
+  const { user, channelScope, accountId } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   // Conversas onde o usuário logado tem pelo menos um marcador — ver
@@ -114,6 +120,14 @@ export function ConversationList({
   const [groups, setGroups] = useState<SearchableGroup[]>([]);
   const [openingGroupId, setOpeningGroupId] = useState<string | null>(null);
   const router = useRouter();
+
+  // Última mensagem de cada conversa ABERTA da conta, para o filtro
+  // "sem resposta +30min" — mesma RPC do cartão do Dashboard
+  // (loadAwaitingReply), então os dois nunca podem discordar sobre
+  // quantas conversas estão pendentes. Repolling a cada 60s (mesmo
+  // intervalo do Dashboard): o estado "sem resposta" muda só com o
+  // tempo passando, não com nenhum evento de realtime desta lista.
+  const [awaitingReplyRows, setAwaitingReplyRows] = useState<AwaitingReplyItem[]>([]);
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -244,6 +258,33 @@ export function ConversationList({
     };
   }, []);
 
+  // Repolling da mesma RPC do cartão "Sem resposta" do Dashboard —
+  // ver comentário no state acima. Falha silenciosa: se a RPC cair, o
+  // filtro/selo simplesmente ficam sem dado novo em vez de quebrar a
+  // lista de conversas (mesmo padrão do fetch de grupos acima).
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const supabase = createClient();
+
+    const fetchAwaitingReply = async () => {
+      const { data, error } = await supabase.rpc("conversations_awaiting_reply", {
+        p_account_id: accountId,
+      });
+      if (!cancelled && !error && Array.isArray(data)) {
+        setAwaitingReplyRows(data as AwaitingReplyItem[]);
+      }
+    };
+
+    fetchAwaitingReply();
+    const AWAITING_REPLY_REFRESH_MS = 60_000;
+    const interval = setInterval(fetchAwaitingReply, AWAITING_REPLY_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [accountId]);
+
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
   // are worth offering as an inbox filter.
@@ -262,6 +303,20 @@ export function ConversationList({
     return m;
   }, [tags]);
 
+  // Mapa (não Set) porque o selo de tempo na linha da conversa também
+  // precisa do `last_message_at` — não só saber se está "sem resposta".
+  // Recalcula quando a RPC repolla (a cada 60s) ou o relógio muda de
+  // minuto o bastante pra empurrar alguma conversa pelo limiar; 60s de
+  // granularidade já é a mesma do cartão do Dashboard.
+  const awaitingReplyByConversation = useMemo(() => {
+    const now = new Date();
+    const map = new Map<string, AwaitingReplyItem>();
+    for (const row of awaitingReplyRows) {
+      if (isAwaitingReply(row, now)) map.set(row.conversation_id, row);
+    }
+    return map;
+  }, [awaitingReplyRows]);
+
   const filtered = useMemo(() => {
     let result = conversations;
 
@@ -269,6 +324,8 @@ export function ConversationList({
       result = result.filter((c) => c.unread_count > 0);
     } else if (filter === "markers") {
       result = result.filter((c) => markedConversationIds.has(c.id));
+    } else if (filter === "unanswered") {
+      result = result.filter((c) => awaitingReplyByConversation.has(c.id));
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -292,7 +349,15 @@ export function ConversationList({
     // que chega mensagem nova, mesmo quando o estado em memória só
     // atualiza `last_message_at` no lugar sem mexer na posição do item.
     return sortConversationsByRecency(result);
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, markedConversationIds]);
+  }, [
+    conversations,
+    filter,
+    search,
+    selectedTagIds,
+    selectedCompany,
+    markedConversationIds,
+    awaitingReplyByConversation,
+  ]);
 
   // Só computado (e só mostrado) quando a busca normal não achou
   // nenhuma conversa — ver group-search.ts. Não recalcula à toa: sem
@@ -381,13 +446,18 @@ export function ConversationList({
                   key={opt.value}
                   onClick={() => setFilter(opt.value)}
                   className={cn(
-                    "text-sm",
+                    "flex items-center gap-2 text-sm",
                     filter === opt.value
                       ? "text-primary"
                       : "text-popover-foreground"
                   )}
                 >
-                  {opt.label}
+                  <span className="flex-1">{opt.label}</span>
+                  {opt.value === "unanswered" && awaitingReplyByConversation.size > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                      {awaitingReplyByConversation.size}
+                    </span>
+                  )}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -612,6 +682,7 @@ export function ConversationList({
                 // canal só, seria ruído visual sem propósito.
                 multiChannel={(channelsById?.size ?? 0) > 1}
                 allPhones={allPhones}
+                awaitingReplySince={awaitingReplyByConversation.get(conv.id)?.last_message_at ?? null}
                 t={t}
               />
             ))}
@@ -638,6 +709,10 @@ interface ConversationItemProps {
   /** Telefones de TODOS os canais da conta, na mesma ordem usada pra
    *  posicionar a cor de cada um (ver channel-color.ts). */
   allPhones: string[];
+  /** Preenchido só quando esta conversa está "sem resposta +30min"
+   *  (ver awaitingReplyByConversation no componente pai) — o instante
+   *  da última mensagem do CLIENTE, pra render do selo de tempo. */
+  awaitingReplySince?: string | null;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -648,6 +723,7 @@ function ConversationItem({
   channel,
   multiChannel,
   allPhones,
+  awaitingReplySince,
   t,
 }: ConversationItemProps) {
   const tContacts = useTranslations("Contacts");
@@ -681,6 +757,15 @@ function ConversationItem({
         addSuffix: false,
       })
     : "";
+
+  // Selo "sem resposta" -- só quando o pai já confirmou (via
+  // isAwaitingReply) que passou dos 30 minutos de expediente. O texto
+  // reaproveita o mesmo formatDistanceToNow do timeAgo acima (mesma
+  // convenção de idioma da lista inteira, embora sem locale pt-BR --
+  // limitação pré-existente, não introduzida aqui).
+  const awaitingReplyLabel = awaitingReplySince
+    ? formatDistanceToNow(new Date(awaitingReplySince), { addSuffix: false })
+    : null;
 
   return (
     <button
@@ -729,6 +814,15 @@ function ConversationItem({
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}
+              </span>
+            )}
+            {awaitingReplyLabel && (
+              <span
+                title={t("awaitingReplyHint")}
+                className="flex shrink-0 items-center gap-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+              >
+                <Clock className="h-2.5 w-2.5" />
+                {awaitingReplyLabel}
               </span>
             )}
             {label && (
