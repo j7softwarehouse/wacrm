@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
+  isInboxFilter,
   normalizeConversation,
 } from "@/lib/inbox/conversations";
 import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
@@ -49,6 +50,11 @@ function InboxPageInner() {
   // (que já é intrincado o bastante). MessageThread cuida sozinho de
   // esperar as mensagens carregarem antes de rolar até ela.
   const deepLinkMessageId = searchParams.get("m");
+  // `?filter=<opção do menu>` — os cards do Dashboard ("Sem resposta",
+  // "Pendências") linkam pra Inbox já filtrada. Validado: valor fora do
+  // menu cai em "Todos" em vez de virar um filtro que não existe.
+  const filterParam = searchParams.get("filter");
+  const initialFilter = isInboxFilter(filterParam) ? filterParam : "all";
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
@@ -676,6 +682,7 @@ function InboxPageInner() {
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
             channelsById={channelsById}
+            initialFilter={initialFilter}
           />
         </div>
 

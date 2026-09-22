@@ -13,6 +13,7 @@ import {
   matchesSearch,
   normalizeConversations,
   sortConversationsByRecency,
+  type InboxFilter,
 } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
 import {
@@ -27,7 +28,7 @@ import {
 } from "@/lib/inbox/group-search";
 import { openConversationForGroup } from "@/lib/whatsapp/groups/open-conversation";
 import { isAwaitingReply, type AwaitingReplyRow } from "@/lib/dashboard/business-hours";
-import type { Conversation, ConversationStatus, Tag } from "@/types";
+import type { Conversation, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { Search, ChevronDown, Smartphone, X, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -60,9 +61,15 @@ interface ConversationListProps {
    * number the customer messaged without a per-conversation fetch.
    */
   channelsById?: Map<string, PublicChannel>;
+  /**
+   * Filtro com que a lista abre — vem de `?filter=` na URL (cards do
+   * Dashboard linkam pra Inbox já filtrada). Só o valor INICIAL: depois
+   * a pessoa troca pelo menu como sempre, e o `router.replace` que a
+   * página faz ao clicar numa conversa (derrubando o param) não mexe
+   * neste estado, porque o componente não remonta.
+   */
+  initialFilter?: InboxFilter;
 }
-
-type InboxFilter = ConversationStatus | "all" | "unread" | "markers" | "unanswered";
 
 /** Linha da RPC conversations_awaiting_reply, já com o id da conversa
  *  (a RPC devolve conversation_id + os dois campos de AwaitingReplyRow). */
@@ -75,6 +82,7 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
   channelsById,
+  initialFilter = "all",
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
 
@@ -101,7 +109,7 @@ export function ConversationList({
 
   const { user, channelScope, accountId } = useAuth();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>("all");
+  const [filter, setFilter] = useState<InboxFilter>(initialFilter);
   // Conversas onde o usuário logado tem pelo menos um marcador — ver
   // docs/superpowers/specs/2026-09-16-marcadores-de-mensagem-design.md.
   const [markedConversationIds, setMarkedConversationIds] = useState<Set<string>>(
