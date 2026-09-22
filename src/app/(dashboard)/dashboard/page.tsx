@@ -247,7 +247,7 @@ export default function DashboardPage() {
             {awaitingReplyLoading || !awaitingReply ? (
               <SkeletonCard />
             ) : (
-              <Link href="/inbox" className="block">
+              <Link href="/inbox?filter=unanswered" className="block">
                 {(() => {
                   const hasRealAlert =
                     !awaitingReply.error &&
@@ -306,7 +306,7 @@ export default function DashboardPage() {
             {pendingLoading || !pendingSummary ? (
               <SkeletonCard />
             ) : (
-              <Link href="/inbox" className="block">
+              <Link href="/inbox?filter=pending" className="block">
                 {(() => {
                   // Admin/owner veem o total da conta; os demais veem só
                   // as suas (a RLS de `conversations` já filtra o que
