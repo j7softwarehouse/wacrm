@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   channelLabel,
   conversationDisplayName,
+  isInboxFilter,
   matchesContactFilters,
   matchesSearch,
   normalizeConversation,
@@ -290,5 +291,23 @@ describe("channelLabel", () => {
 
   it("returns undefined when neither is set (never-connected channel)", () => {
     expect(channelLabel({ label: undefined, phone_e164: undefined })).toBeUndefined();
+  });
+});
+
+// `?filter=` na URL da Inbox (links dos cards do Dashboard). Valor
+// desconhecido NUNCA pode virar filtro — cai em "all" no chamador.
+describe("isInboxFilter", () => {
+  it("aceita todos os valores do menu de filtro", () => {
+    for (const v of ["all", "unread", "open", "pending", "closed", "markers", "unanswered"]) {
+      expect(isInboxFilter(v)).toBe(true);
+    }
+  });
+
+  it("recusa valor desconhecido, vazio e nulo", () => {
+    expect(isInboxFilter("PENDING")).toBe(false);
+    expect(isInboxFilter("pendente")).toBe(false);
+    expect(isInboxFilter("")).toBe(false);
+    expect(isInboxFilter(null)).toBe(false);
+    expect(isInboxFilter(undefined)).toBe(false);
   });
 });

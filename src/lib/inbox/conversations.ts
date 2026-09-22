@@ -1,4 +1,4 @@
-import type { Conversation, Contact, Tag } from "@/types";
+import type { Conversation, ConversationStatus, Contact, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 
 /**
@@ -111,6 +111,36 @@ export function matchesContactFilters(
  * mensagem "não tinha chegado" quando na verdade só estava escondida da
  * lista filtrada.
  */
+/**
+ * Opções do menu de filtro da lista de conversas. Vive aqui (não em
+ * conversation-list.tsx) porque a página da Inbox precisa validar o
+ * `?filter=` vindo da URL — os cards do Dashboard ("Sem resposta",
+ * "Pendências") linkam direto pra Inbox já filtrada.
+ */
+export type InboxFilter =
+  | ConversationStatus
+  | "all"
+  | "unread"
+  | "markers"
+  | "unanswered";
+
+const INBOX_FILTERS: ReadonlySet<string> = new Set<InboxFilter>([
+  "all",
+  "unread",
+  "open",
+  "pending",
+  "closed",
+  "markers",
+  "unanswered",
+]);
+
+/** Valor de `?filter=` que pode virar filtro inicial. Qualquer coisa
+ *  fora do menu (typo, valor antigo, tentativa de injeção) devolve
+ *  false — o chamador cai em "all". */
+export function isInboxFilter(value: unknown): value is InboxFilter {
+  return typeof value === "string" && INBOX_FILTERS.has(value);
+}
+
 export function matchesSearch(conversation: Conversation, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
