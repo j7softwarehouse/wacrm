@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
@@ -12,20 +12,27 @@ import {
   CheckCircle2,
   Clock,
   Send,
+  ArrowDown,
+  ArrowUp,
+  Minus,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 import {
   loadActivity,
   loadAwaitingReply,
   loadConversationsSeries,
   loadMetrics,
+  loadPendingConversations,
   loadPipelineDonut,
   loadResponseTime,
+  summarizePending,
 } from '@/lib/dashboard/queries'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
+  PendingConversationRow,
   PipelineDonutData,
   ResponseTimeSummary,
 } from '@/lib/dashboard/types'
@@ -35,7 +42,7 @@ import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
-import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
+import { ResponseTimeChart, formatResponseMinutes } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 
 import { useTranslations } from 'next-intl'
@@ -45,7 +52,7 @@ type RangeDays = 7 | 30 | 90
 export default function DashboardPage() {
   useBlockRestrictedScope();
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency, accountId, salesEnabled } = useAuth()
+  const { defaultCurrency, accountId, salesEnabled, user, canManageMembers } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
@@ -144,6 +151,38 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [accountId])
 
+  // Pendências: mesma cadência de repolling do card acima (o dono
+  // resolvido de uma pendência pode mudar por ação de outra pessoa —
+  // marcar/desmarcar um marcador — sem que este usuário faça nada).
+  const [pendingRows, setPendingRows] = useState<PendingConversationRow[] | null>(null)
+  const [pendingLoading, setPendingLoading] = useState(true)
+
+  useEffect(() => {
+    if (!accountId) {
+      setPendingLoading(false)
+      return
+    }
+    const db = createClient()
+
+    const fetchPending = (silent: boolean) => {
+      if (!silent) setPendingLoading(true)
+      loadPendingConversations(db, accountId)
+        .then((rows) => setPendingRows(rows))
+        .catch((err) => console.error('[dashboard] pending conversations failed:', err))
+        .finally(() => setPendingLoading(false))
+    }
+
+    fetchPending(false)
+    const PENDING_REFRESH_MS = 60_000
+    const interval = setInterval(() => fetchPending(true), PENDING_REFRESH_MS)
+    return () => clearInterval(interval)
+  }, [accountId])
+
+  const pendingSummary = useMemo(
+    () => (pendingRows && user ? summarizePending(pendingRows, user.id) : null),
+    [pendingRows, user],
+  )
+
   // Range switch handler — kept in an event callback (not an effect)
   // so the setState calls stay out of the react-hooks/set-state-in-effect
   // rule's way. The cached bucket check means switching back to a
@@ -173,9 +212,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
             <MetricCard
@@ -264,6 +303,48 @@ export default function DashboardPage() {
                 })()}
               </Link>
             )}
+            {pendingLoading || !pendingSummary ? (
+              <SkeletonCard />
+            ) : (
+              <Link href="/inbox" className="block">
+                {(() => {
+                  // Admin/owner veem o total da conta; os demais veem só
+                  // as suas (a RLS de `conversations` já filtra o que
+                  // chega quando o papel é restrito por escopo de
+                  // conversa — ver loadPendingConversations). Alerta de
+                  // verdade é só a órfã (nem marcador, nem responsável):
+                  // ter pendências é operação normal, não falha.
+                  const displayCount = canManageMembers
+                    ? pendingSummary.total
+                    : pendingSummary.mine
+                  const hasUnowned = canManageMembers && pendingSummary.unowned > 0
+                  const icon = hasUnowned ? AlertTriangle : Clock
+                  return (
+                    <MetricCard
+                      title={t('pendingConversations')}
+                      value={displayCount.toLocaleString()}
+                      icon={icon}
+                      subtitle={
+                        <>
+                          {(() => {
+                            const SubtitleIcon = icon
+                            return <SubtitleIcon className="h-4 w-4" aria-hidden />
+                          })()}
+                          <span>
+                            {hasUnowned
+                              ? t('pendingUnownedHint', { count: pendingSummary.unowned })
+                              : canManageMembers
+                                ? t('pendingAccountHint')
+                                : t('pendingMineHint')}
+                          </span>
+                        </>
+                      }
+                      tone={hasUnowned ? 'alert' : 'default'}
+                    />
+                  )
+                })()}
+              </Link>
+            )}
             <MetricCard
               title={t('messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}
@@ -278,6 +359,51 @@ export default function DashboardPage() {
                 ),
               }}
             />
+            {responseTimeLoading || !responseTime ? (
+              <SkeletonCard />
+            ) : (
+              (() => {
+                const thisWeek = responseTime.thisWeekAvg
+                const lastWeek = responseTime.lastWeekAvg
+                const hasComparison = thisWeek != null && lastWeek != null
+                // Tempo de resposta: MENOR é melhor — o inverso do que
+                // DeltaRow assume (positivo = bom). Por isso este card
+                // monta a própria seta/cor no lugar de usar a prop
+                // `delta` do MetricCard.
+                const improved = hasComparison && thisWeek < lastWeek
+                const worsened = hasComparison && thisWeek > lastWeek
+                const Arrow = improved ? ArrowDown : worsened ? ArrowUp : Minus
+                const tone = improved
+                  ? 'text-primary'
+                  : worsened
+                    ? 'text-red-400'
+                    : 'text-muted-foreground'
+                return (
+                  <MetricCard
+                    title={t('avgResponseTime')}
+                    value={formatResponseMinutes(thisWeek)}
+                    icon={Clock}
+                    subtitle={
+                      hasComparison ? (
+                        <>
+                          <Arrow className={cn('h-4 w-4', tone)} aria-hidden />
+                          <span className={tone}>
+                            {t('avgResponseTimeVsLastWeek', {
+                              value: formatResponseMinutes(lastWeek),
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="h-4 w-4" aria-hidden />
+                          <span>{t('avgResponseTimeNoComparison')}</span>
+                        </>
+                      )
+                    }
+                  />
+                )
+              })()
+            )}
           </>
         )}
       </div>

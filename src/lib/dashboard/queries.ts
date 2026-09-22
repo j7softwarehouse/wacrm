@@ -7,11 +7,13 @@ import {
   mondayIndex,
   startOfLocalDay,
 } from './date-utils'
-import { businessMinutesBetween, isWithinBusinessHours } from './business-hours'
+import { isAwaitingReply, isWithinBusinessHours } from './business-hours'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
+  PendingConversationRow,
+  PendingSummary,
   PipelineDonutData,
   PipelineStageSlice,
   ResponseTimeBucket,
@@ -40,7 +42,6 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     newConvYesterday,
     newContactsToday,
     newContactsYesterday,
-    openDeals,
     messagesToday,
     messagesYesterday,
   ] = await Promise.all([
@@ -62,7 +63,6 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .select('id', { count: 'exact', head: true })
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    db.from('deals').select('value, status').eq('status', 'open'),
     db
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -76,9 +76,6 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .lt('created_at', todayStart),
   ])
 
-  const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
-  const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
-
   return {
     activeConversations: {
       current: openConvCur.count ?? 0,
@@ -91,8 +88,6 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: newContactsToday.count ?? 0,
       previous: newContactsYesterday.count ?? 0,
     },
-    openDealsValue,
-    openDealsCount: openDealsRows.length,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
@@ -141,28 +136,114 @@ export async function loadAwaitingReply(
     last_sender_type: string | null
   }[]
 
-  // Corte barato ANTES de chamar businessMinutesBetween: conversas nunca
-  // fecham sozinhas (só uma ação de automação fecha), então uma conversa
-  // parada há meses/anos ainda cairia no loop dia-a-dia de
-  // businessMinutesBetween, iterando um dia civil por vez desde o último
-  // fechamento até hoje — medido em 1,4s de trava para 200 conversas com
-  // 1 ano de inatividade. 7 dias CORRIDOS (não de expediente) já é folga
-  // enorme sobre os 30 minutos de expediente do limiar: mesmo contando só
-  // dias úteis, 7 dias corridos garantem bem mais que 30 minutos úteis.
-  // Só vale a pena rodar a aritmética fina quando o intervalo corrido for
-  // pequeno o bastante para o resultado não ser óbvio de antemão.
-  const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000
-
-  const count = rows.filter((r) => {
-    if (r.last_sender_type !== 'customer') return false
-    if (!r.last_message_at) return false
-    const lastMessageAt = new Date(r.last_message_at)
-    const elapsedMs = now.getTime() - lastMessageAt.getTime()
-    if (elapsedMs > STALE_THRESHOLD_MS) return true
-    return businessMinutesBetween(lastMessageAt, now) > 30
-  }).length
+  // Regra extraída para src/lib/dashboard/business-hours.ts — o filtro
+  // "sem resposta +30min" da Inbox usa a MESMA função, então os dois
+  // nunca podem discordar sobre quantas conversas estão pendentes.
+  const count = rows.filter((r) => isAwaitingReply(r, now)).length
 
   return { count, withinHours: true }
+}
+
+// --- 1c. Pendências --------------------------------------------------
+
+/**
+ * Conversas com status "pendente" da conta, cada uma já com o dono
+ * resolvido em cascata: o marcador MAIS RECENTE nela (se houver algum)
+ * ganha de `assigned_agent_id`. Duas consultas + junção em JS em vez de
+ * uma RPC — a escala atual (dezenas/centenas de pendentes) não paga o
+ * custo de escrever/manter mais uma função no banco; migrar pra RPC é
+ * trivial se um dia a paginação virar necessária.
+ *
+ * A RLS de `conversations` já escopa o resultado ao que o CHAMADOR pode
+ * ver — um agente com `conversation_scope: 'assigned'` só recebe as
+ * dele, então "admin vê tudo / demais veem só as suas" não precisa de
+ * lógica extra aqui: para esse papel, "tudo que a RLS devolve" JÁ é
+ * "só as suas". `summarizePending` decide o resto client-side.
+ */
+export async function loadPendingConversations(
+  db: DB,
+  accountId: string,
+): Promise<PendingConversationRow[]> {
+  const { data: convRows, error } = await db
+    .from('conversations')
+    .select('id, pending_since, assigned_agent_id')
+    .eq('account_id', accountId)
+    .eq('status', 'pending')
+
+  if (error || !convRows || convRows.length === 0) {
+    if (error) {
+      console.error('[dashboard] loadPendingConversations conversations failed:', {
+        accountId,
+        message: error.message,
+      })
+    }
+    return []
+  }
+
+  const rows = convRows as { id: string; pending_since: string | null; assigned_agent_id: string | null }[]
+  const ids = rows.map((r) => r.id)
+
+  const { data: markerRows, error: markerError } = await db
+    .from('message_markers')
+    .select('conversation_id, created_by, label, created_at')
+    .in('conversation_id', ids)
+    .order('created_at', { ascending: false })
+
+  if (markerError) {
+    console.error('[dashboard] loadPendingConversations markers failed:', {
+      accountId,
+      message: markerError.message,
+    })
+  }
+
+  // Ordenado DESC por created_at acima — a PRIMEIRA ocorrência de cada
+  // conversation_id já é o marcador mais recente dela.
+  const latestMarkerByConversation = new Map<
+    string,
+    { created_by: string; label: string | null }
+  >()
+  for (const m of (markerRows ?? []) as {
+    conversation_id: string
+    created_by: string
+    label: string | null
+  }[]) {
+    if (!latestMarkerByConversation.has(m.conversation_id)) {
+      latestMarkerByConversation.set(m.conversation_id, { created_by: m.created_by, label: m.label })
+    }
+  }
+
+  return rows.map((r) => {
+    const marker = latestMarkerByConversation.get(r.id)
+    return {
+      conversation_id: r.id,
+      pending_since: r.pending_since,
+      assigned_agent_id: r.assigned_agent_id,
+      marker_owner_id: marker?.created_by ?? null,
+      marker_label: marker?.label ?? null,
+    }
+  })
+}
+
+/**
+ * Reduz as linhas de `loadPendingConversations` a três números: total,
+ * quantas estão ÓRFÃS (nem marcador, nem responsável — o caso que
+ * motivou este card) e quantas o USUÁRIO ATUAL possui (dono resolvido
+ * pela mesma cascata: marcador > atribuição).
+ */
+export function summarizePending(
+  rows: PendingConversationRow[],
+  userId: string,
+): PendingSummary {
+  let unowned = 0
+  let mine = 0
+
+  for (const r of rows) {
+    const ownerId = r.marker_owner_id ?? r.assigned_agent_id
+    if (!ownerId) unowned += 1
+    else if (ownerId === userId) mine += 1
+  }
+
+  return { total: rows.length, unowned, mine }
 }
 
 // --- 2. Conversations over time ---------------------------------------

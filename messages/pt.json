@@ -77,7 +77,14 @@
       "awaitingReplyEmpty": "Tudo respondido",
       "awaitingReplyClosed": "Fora do horário de atendimento",
       "awaitingReplyHint": "Conversas em que o contato falou por último e já passaram 30 minutos de expediente",
-      "awaitingReplyErrorHint": "Não foi possível carregar agora"
+      "awaitingReplyErrorHint": "Não foi possível carregar agora",
+      "pendingConversations": "Pendências",
+      "pendingUnownedHint": "{count} sem responsável",
+      "pendingAccountHint": "No total da conta",
+      "pendingMineHint": "Atribuídas a você",
+      "avgResponseTime": "Tempo médio de resposta",
+      "avgResponseTimeVsLastWeek": "{value} na semana passada",
+      "avgResponseTimeNoComparison": "Sem dados suficientes ainda"
     },
     "quickActions": {
       "newContact": "Novo Contato",
@@ -143,6 +150,8 @@
       "filterPending": "Pendente",
       "filterClosed": "Fechado",
       "filterMarkers": "Com meus marcadores",
+      "filterUnanswered": "Sem resposta há +30min",
+      "awaitingReplyHint": "Cliente aguardando resposta há mais de 30 minutos de expediente",
       "tags": "Tags",
       "company": "Empresa",
       "allCompanies": "Todas as empresas",
@@ -232,7 +241,21 @@
       "quickReplySaved": "Salvo como resposta rápida.",
       "quickReplySaveError": "Não foi possível salvar a resposta rápida.",
       "editingMessage": "Editando mensagem",
-      "cancelEdit": "Cancelar edição"
+      "cancelEdit": "Cancelar edição",
+      "event": "Evento",
+      "eventDialogTitle": "Novo evento",
+      "eventTitleLabel": "Título",
+      "eventTitlePlaceholder": "Ex.: Reunião de pais",
+      "eventDateLabel": "Data",
+      "eventStartTimeLabel": "Hora de início",
+      "eventEndTimeLabel": "Hora de término (opcional)",
+      "eventLocationLabel": "Local (opcional)",
+      "eventLocationPlaceholder": "Ex.: Instituto Emanuel",
+      "eventNotifyContact": "Avisar o contato pelo WhatsApp",
+      "eventCreate": "Criar evento",
+      "eventMissingFields": "Preencha o título, a data e a hora de início.",
+      "eventCreated": "Evento aberto no Google Agenda.",
+      "eventNotifySent": "Evento aberto e contato avisado pelo WhatsApp."
     },
     "bubble": {
       "photo": "Foto",

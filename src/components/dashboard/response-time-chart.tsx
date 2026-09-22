@@ -68,12 +68,12 @@ export function ResponseTimeChart({
               <div className="text-muted-foreground">
                 {t('thisWeek')}{' '}
                 <span className="font-medium text-foreground tabular-nums">
-                  {fmt(data.thisWeekAvg)}
+                  {formatResponseMinutes(data.thisWeekAvg)}
                 </span>
               </div>
               <div className="text-muted-foreground">
                 {t('lastWeek')}{' '}
-                <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
+                <span className="tabular-nums">{formatResponseMinutes(data.lastWeekAvg)}</span>
               </div>
             </div>
           )}
@@ -110,7 +110,9 @@ export function ResponseTimeChart({
   )
 }
 
-function fmt(mins: number | null): string {
+// Exportado: o card "Tempo médio de resposta" do Dashboard reaproveita
+// o mesmo formato em vez de duplicar a lógica de arredondamento.
+export function formatResponseMinutes(mins: number | null): string {
   if (mins == null) return '—'
   if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`
   if (mins < 60) return `${mins.toFixed(1)}m`
