@@ -1,6 +1,7 @@
 import {
   Bell,
   Bookmark,
+  CalendarDays,
   Check,
   CheckCheck,
   ChevronDown,
@@ -9,6 +10,7 @@ import {
   CornerUpLeft,
   FileText,
   Image as ImageIcon,
+  MessageCircle,
   Mic,
   Paperclip,
   Pencil,
@@ -73,16 +75,16 @@ export function CapituloCaixaDeEntrada() {
         <p>Acima da lista existem duas ferramentas:</p>
         <Lista>
           <li>
-            <Botao icone={Search}>Procurar conversas...</Botao> — busca por nome
+            <Botao icone={Search}>Procurar conversas...</Botao>: busca por nome
             ou telefone.
           </li>
           <li>
-            <Botao icone={ChevronDown}>Todos</Botao> — o filtro. Ele abre as
+            <Botao icone={ChevronDown}>Todos</Botao>: o filtro. Ele abre as
             opções <Termo>Todos</Termo>, <Termo>Não lido</Termo>,{" "}
             <Termo>Aberto</Termo>, <Termo>Pendente</Termo>,{" "}
-            <Termo>Fechado</Termo> e <Termo>Com meus marcadores</Termo>, e
-            também permite filtrar por <Termo>Tags</Termo> e por{" "}
-            <Termo>Empresa</Termo>.
+            <Termo>Fechado</Termo>, <Termo>Com meus marcadores</Termo> e{" "}
+            <Termo>Sem resposta há +30min</Termo>, e também permite filtrar
+            por <Termo>Tags</Termo> e por <Termo>Empresa</Termo>.
           </li>
         </Lista>
         <p>
@@ -93,6 +95,23 @@ export function CapituloCaixaDeEntrada() {
           O filtro <Termo>Não lido</Termo> é o melhor jeito de começar o
           expediente: ele mostra só o que ainda ninguém respondeu.
         </Aviso>
+      </Secao>
+
+      <Secao id="sem-resposta-selo" titulo="O selo de conversa sem resposta">
+        <p>
+          Além do filtro, a própria lista de conversas mostra um selo laranja
+          com um relógio (<Icone icone={Clock} />) direto na linha de qualquer
+          conversa em que o contato falou por último e já passaram mais de 30
+          minutos de expediente sem resposta. Não é preciso abrir o filtro nem
+          o Dashboard para perceber: o aviso já aparece enquanto você navega a
+          lista normalmente.
+        </p>
+        <p>
+          O selo some assim que alguém responde, ou se a conversa for marcada
+          como <Termo>Pendente</Termo> ou <Termo>Fechado</Termo>, mesmo sem
+          resposta: os dois estados significam que a conversa já não está
+          simplesmente esquecida.
+        </p>
       </Secao>
 
       <Secao id="responder" titulo="Ler e responder">
@@ -115,19 +134,19 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Lista>
           <li>
-            <Icone icone={Clock} /> saindo — ainda está sendo enviada.
+            <Icone icone={Clock} /> saindo: ainda está sendo enviada.
           </li>
           <li>
-            <Icone icone={Check} /> enviada — chegou ao WhatsApp.
+            <Icone icone={Check} /> enviada: chegou ao WhatsApp.
           </li>
           <li>
-            <Icone icone={CheckCheck} /> entregue — chegou ao celular da pessoa.
+            <Icone icone={CheckCheck} /> entregue: chegou ao celular da pessoa.
           </li>
           <li>
-            <Icone icone={CheckCheck} /> em azul — a pessoa leu.
+            <Icone icone={CheckCheck} /> em azul: a pessoa leu.
           </li>
           <li>
-            <Icone icone={XCircle} /> falhou — não foi enviada. Veja o capítulo
+            <Icone icone={XCircle} /> falhou: não foi enviada. Veja o capítulo
             7 para os motivos mais comuns.
           </li>
         </Lista>
@@ -145,27 +164,27 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Lista>
           <li>
-            <Botao icone={SmilePlus}>Reagir</Botao> — responde com um emoji, sem
+            <Botao icone={SmilePlus}>Reagir</Botao>: responde com um emoji, sem
             escrever nada.
           </li>
           <li>
-            <Botao icone={CornerUpLeft}>Responder</Botao> — cita aquela mensagem
+            <Botao icone={CornerUpLeft}>Responder</Botao>: cita aquela mensagem
             na sua resposta, para não haver dúvida sobre o que você está
             respondendo.
           </li>
           <li>
-            <Botao icone={Copy}>Copiar texto</Botao> — copia o conteúdo.
+            <Botao icone={Copy}>Copiar texto</Botao>: copia o conteúdo.
           </li>
           <li>
-            <Botao icone={Pencil}>Editar</Botao> — corrige uma mensagem de texto
+            <Botao icone={Pencil}>Editar</Botao>: corrige uma mensagem de texto
             que <em>você</em> enviou.
           </li>
           <li>
-            <Botao icone={Trash2}>Deletar</Botao> — apaga para todos no
+            <Botao icone={Trash2}>Deletar</Botao>: apaga para todos no
             WhatsApp.
           </li>
           <li>
-            <Botao icone={Bookmark}>Marcar</Botao> — deixa uma etiqueta bem
+            <Botao icone={Bookmark}>Marcar</Botao>: deixa uma etiqueta bem
             naquele ponto da conversa, para não se perder depois. Veja a seção
             seguinte.
           </li>
@@ -190,13 +209,13 @@ export function CapituloCaixaDeEntrada() {
         </Passos>
         <p>
           A mensagem é corrigida no WhatsApp do contato também, e passa a exibir{" "}
-          <Termo>(editado)</Termo> ao lado do horário — igual ao WhatsApp comum.
+          <Termo>(editado)</Termo> ao lado do horário, igual ao WhatsApp comum.
           Para desistir no meio, clique no <Icone icone={X} /> do aviso.
         </p>
         <Aviso tipo="atencao">
           Só dá para editar mensagens de texto que você mesmo enviou, e o
           WhatsApp só aceita a edição dentro de um prazo curto depois do envio.
-          Passado esse prazo, o sistema avisa que não foi possível editar — e o
+          Passado esse prazo, o sistema avisa que não foi possível editar, e o
           texto que você digitou continua no campo, sem se perder.
         </Aviso>
       </Secao>
@@ -254,15 +273,52 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Aviso tipo="atencao">
           Vídeos podem ter até 30 MB. Arquivos recebidos ficam disponíveis por
-          48 horas — depois disso, o histórico guarda o registro da mensagem,
+          48 horas; depois disso, o histórico guarda o registro da mensagem,
           mas o arquivo em si não abre mais. Se for algo importante, baixe e
           guarde.
         </Aviso>
       </Secao>
 
+      <Secao id="evento" titulo="Criar um evento no Google Agenda">
+        <p>
+          Direto da conversa, dá para gerar um compromisso no Google Agenda,
+          sem sair do sistema.
+        </p>
+        <Passos>
+          <Passo>
+            Clique em <Icone icone={Plus} /> ao lado do campo de escrita e
+            escolha <Botao icone={CalendarDays}>Evento</Botao>.
+          </Passo>
+          <Passo>
+            Preencha o título, a data e a hora de início. Hora de término e
+            local são opcionais.
+          </Passo>
+          <Passo>
+            Marque <Termo>Avisar o contato pelo WhatsApp</Termo> se também
+            quiser mandar os detalhes na mesma conversa, ou deixe desmarcado
+            para só gerar o compromisso.
+          </Passo>
+          <Passo>
+            Clique em <Botao icone={CalendarDays}>Criar evento</Botao>.
+          </Passo>
+        </Passos>
+        <p>
+          O sistema abre uma aba nova do Google Agenda já preenchida. Quem
+          criou o evento confirma e salva por lá, na própria conta do Google.
+          Se a caixa de aviso estava marcada, o contato também recebe uma
+          mensagem no WhatsApp com o título, a data, a hora e o local.
+        </p>
+        <Aviso tipo="dica">
+          O evento é salvo na agenda pessoal de quem clicou em{" "}
+          <Termo>Criar evento</Termo>, não numa agenda única da instituição.
+          Cada pessoa que quiser ter o compromisso na própria agenda precisa
+          criar o evento pelo próprio login.
+        </Aviso>
+      </Secao>
+
       <Secao id="respostas-rapidas" titulo="Respostas rápidas">
         <p>
-          São textos prontos para o que você responde toda hora — horário de
+          São textos prontos para o que você responde toda hora: horário de
           funcionamento, endereço, documentos necessários para matrícula.
         </p>
         <Passos>
@@ -275,7 +331,7 @@ export function CapituloCaixaDeEntrada() {
         </Passos>
         <p>
           Para transformar algo que você acabou de escrever em resposta rápida,
-          use <Termo>Salvar como resposta rápida</Termo> no mesmo menu — o
+          use <Termo>Salvar como resposta rápida</Termo> no mesmo menu: o
           sistema pede um nome e guarda para a equipe inteira usar.
         </p>
         <Onde>
@@ -292,8 +348,8 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Aviso tipo="atencao">
           É um rascunho, não uma resposta pronta. <strong>Leia e corrija antes
-          de enviar</strong> — quem assina a mensagem é você, e a IA pode errar
-          detalhes como datas, valores e nomes.
+          de enviar</strong>, porque quem assina a mensagem é você, e a IA pode
+          errar detalhes como datas, valores e nomes.
         </Aviso>
       </Secao>
 
@@ -304,21 +360,29 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Lista>
           <li>
-            <Termo>Aberto</Termo> — em andamento, precisa de atenção.
+            <Termo>Aberto</Termo>: em andamento, precisa de atenção.
           </li>
           <li>
-            <Termo>Pendente</Termo> — esperando algo: o retorno do contato, um
-            documento, uma decisão interna.
+            <Termo>Pendente</Termo>: esperando algo, seja o retorno do
+            contato, um documento ou uma decisão interna.
           </li>
           <li>
-            <Termo>Fechado</Termo> — resolvido.
+            <Termo>Fechado</Termo>: resolvido.
           </li>
         </Lista>
         <p>
           Cada status tem uma cor, que aparece como um pontinho na lista de
-          conversas — assim dá para bater o olho e saber o que está pendente sem
+          conversas, assim dá para bater o olho e saber o que está pendente sem
           abrir nada. O status também alimenta os filtros da lista.
         </p>
+        <Aviso tipo="dica">
+          Ao marcar uma conversa como <Termo>Pendente</Termo>, se ainda não
+          houver ninguém responsável por ela (nem uma pessoa atribuída, nem um
+          marcador), o sistema atribui a conversa a você automaticamente,
+          exatamente como se você tivesse usado <Botao icone={UserPlus}>Atribuir</Botao>.
+          Assim nenhuma pendência fica sem dono só por esquecimento. Veja o
+          capítulo 4 para o painel de Pendências do Dashboard.
+        </Aviso>
         <Aviso tipo="dica">
           Fechar a conversa não apaga nem esconde nada. Ela continua na lista, e
           se o contato escrever de novo ela volta a aparecer normalmente.
@@ -342,7 +406,7 @@ export function CapituloCaixaDeEntrada() {
       <Secao id="marcadores" titulo="Marcar um ponto da conversa">
         <p>
           Numa conversa longa, compartilhada entre várias pessoas, é fácil
-          perder de vista onde você parou de tratar um assunto — alguém
+          perder de vista onde você parou de tratar um assunto: alguém
           responde outra coisa no meio, e depois é preciso rolar tudo de novo
           procurando. O <Termo>marcador</Termo> resolve isso: é uma etiqueta
           presa numa mensagem específica, com o seu nome e um rótulo curto
@@ -354,14 +418,14 @@ export function CapituloCaixaDeEntrada() {
             <Botao icone={Bookmark}>Marcar</Botao>.
           </Passo>
           <Passo>
-            Escreva um rótulo curto (por exemplo, <Termo>Financeiro</Termo>) —
-            ou deixe em branco.
+            Escreva um rótulo curto (por exemplo, <Termo>Financeiro</Termo>), ou
+            deixe em branco.
           </Passo>
           <Passo>Confirme.</Passo>
         </Passos>
         <p>
           Um chip com o rótulo e o seu nome aparece embaixo da mensagem, à
-          vista de toda a equipe — assim um colega também sabe que aquele
+          vista de toda a equipe, assim um colega também sabe que aquele
           assunto já está sendo tratado por você. No topo da conversa, o
           botão com o ícone <Icone icone={Bookmark} /> mostra todos os pontos
           marcados ali, com atalho direto para cada um.
@@ -373,7 +437,7 @@ export function CapituloCaixaDeEntrada() {
           <Termo>Notificações</Termo>, e o marcador já nasce em nome dela.
         </p>
         <p>
-          Todos os seus marcadores — de qualquer conversa — ficam reunidos em{" "}
+          Todos os seus marcadores, de qualquer conversa, ficam reunidos em{" "}
           <Botao icone={Bell}>Notificações → Meus marcadores</Botao>. Clicar
           num deles leva direto para o ponto exato marcado. A lista de
           conversas também tem o filtro <Termo>Com meus marcadores</Termo>,
@@ -393,12 +457,12 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Lista>
           <li>
-            <Botao icone={TagIcon}>Tags</Botao> — etiquetas para classificar o
+            <Botao icone={TagIcon}>Tags</Botao>: etiquetas para classificar o
             contato (por exemplo: responsável, aluno, fornecedor). Elas viram
             filtro na lista de conversas e na tela de Contatos.
           </li>
           <li>
-            <Botao icone={StickyNote}>Notas</Botao> — anotações internas sobre o
+            <Botao icone={StickyNote}>Notas</Botao>: anotações internas sobre o
             atendimento. <strong>O contato nunca vê as notas</strong>; elas são
             só para a equipe.
           </li>
@@ -421,7 +485,7 @@ export function CapituloCaixaDeEntrada() {
             <Termo>qual participante</Termo> escreveu.
           </li>
           <li>
-            Mensagem com botões não pode ser enviada em grupo — qualquer
+            Mensagem com botões não pode ser enviada em grupo, porque qualquer
             participante poderia clicar, e a resposta ficaria ambígua.
           </li>
         </Lista>
@@ -432,10 +496,23 @@ export function CapituloCaixaDeEntrada() {
           volta, o sistema percebe sozinho em poucos minutos e a conversa volta
           a funcionar.
         </p>
+        <p>
+          Um grupo que ainda não tem nenhuma conversa registrada não aparece
+          na lista comum, mas dá para começar a primeira mensagem sem sair da
+          Caixa de entrada: digite o nome do grupo em{" "}
+          <Botao icone={Search}>Procurar conversas...</Botao>. Se a busca
+          normal não achar nada, uma seção <Termo>Grupos</Termo> aparece com
+          o resultado; clicar nele já cria a conversa e abre a tela pronta
+          para escrever.
+        </p>
         <Aviso tipo="admin">
-          Escolher quais grupos aparecem na Caixa de entrada, sair de um grupo,
-          renomear ou mexer nos participantes é feito em{" "}
-          <Termo>Configurações → Grupos</Termo>, e exige papel de administrador.
+          Sincronizar a lista de grupos, ligar ou desligar quais aparecem na
+          Caixa de entrada, renomear um grupo ou mexer nos participantes exige
+          papel de administrador, em <Termo>Configurações → Grupos</Termo>.
+          Qualquer atendente pode abrir essa mesma tela para ver a lista e
+          usar <Botao icone={MessageCircle}>Conversar</Botao> nela, útil para
+          começar a primeira conversa de um grupo novo sem esperar um
+          administrador.
         </Aviso>
       </Secao>
 
@@ -446,15 +523,15 @@ export function CapituloCaixaDeEntrada() {
         </p>
         <Lista>
           <li>
-            <Termo>Somente leitura</Termo> — seu papel é Visualizador, que
+            <Termo>Somente leitura</Termo>: seu papel é Visualizador, que
             navega mas não responde.
           </li>
           <li>
-            <Termo>Canal indisponível</Termo> — o WhatsApp da instituição está
+            <Termo>Canal indisponível</Termo>: o WhatsApp da instituição está
             desconectado, ou o canal daquela conversa foi removido.
           </li>
           <li>
-            <Termo>Você saiu deste grupo</Termo> — o número não participa mais
+            <Termo>Você saiu deste grupo</Termo>: o número não participa mais
             daquele grupo.
           </li>
         </Lista>
