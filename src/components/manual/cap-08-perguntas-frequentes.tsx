@@ -44,16 +44,16 @@ export function CapituloPerguntasFrequentes() {
         <p>O sistema escreve o motivo logo acima do campo de escrita:</p>
         <Lista>
           <li>
-            <Termo>Você saiu deste grupo</Termo> — o número não participa mais.
+            <Termo>Você saiu deste grupo</Termo>: o número não participa mais.
             Alguém precisa adicionar o número de volta pelo WhatsApp; em poucos
             minutos a conversa volta a funcionar sozinha.
           </li>
           <li>
-            <Termo>Somente leitura</Termo> — seu papel é Visualizador. Peça a um
+            <Termo>Somente leitura</Termo>: seu papel é Visualizador. Peça a um
             administrador para mudar seu papel para Agente.
           </li>
           <li>
-            <Termo>Canal removido</Termo> — o canal daquela conversa foi
+            <Termo>Canal removido</Termo>: o canal daquela conversa foi
             desligado. O histórico fica, mas não dá para responder por ali.
           </li>
         </Lista>
@@ -61,7 +61,7 @@ export function CapituloPerguntasFrequentes() {
 
       <Secao titulo="O que significa (editado) numa mensagem?">
         <p>
-          Que aquela mensagem foi corrigida depois de enviada — por você, por um
+          Que aquela mensagem foi corrigida depois de enviada, por você, por um
           colega, ou pelo próprio contato no WhatsApp dele. O texto que aparece
           é sempre a versão mais recente. É o mesmo comportamento do WhatsApp
           comum.
@@ -71,7 +71,7 @@ export function CapituloPerguntasFrequentes() {
       <Secao titulo="Uma mensagem virou &ldquo;Mensagem apagada&rdquo;. Ela sumiu?">
         <p>
           Da tela, sim: quem apagou foi você, um colega ou o próprio contato. Do
-          banco de dados, não — o conteúdo original continua registrado, e um
+          banco de dados, não: o conteúdo original continua registrado, e um
           administrador consegue recuperá-lo se houver necessidade formal (uma
           auditoria, por exemplo). No dia a dia, trate como apagada.
         </p>
@@ -81,19 +81,19 @@ export function CapituloPerguntasFrequentes() {
         <p>Os indicadores contam a história da mensagem:</p>
         <Lista>
           <li>
-            Um ✓ — o WhatsApp recebeu, mas ainda não entregou ao celular da
+            Um ✓: o WhatsApp recebeu, mas ainda não entregou ao celular da
             pessoa. Costuma ser celular desligado ou sem internet.
           </li>
-          <li>✓✓ — entregue ao aparelho.</li>
-          <li>✓✓ em azul — a pessoa leu.</li>
+          <li>✓✓: entregue ao aparelho.</li>
+          <li>✓✓ em azul: a pessoa leu.</li>
           <li>
-            <Icone icone={XCircle} /> — falhou de verdade. Confira o número do
+            <Icone icone={XCircle} />: falhou de verdade. Confira o número do
             contato e o estado do canal.
           </li>
         </Lista>
         <Aviso tipo="dica">
           Nem todo mundo tem a confirmação de leitura ligada no próprio
-          WhatsApp. Quando a pessoa desliga, o ✓✓ azul nunca aparece — mesmo que
+          WhatsApp. Quando a pessoa desliga, o ✓✓ azul nunca aparece, mesmo que
           ela tenha lido.
         </Aviso>
       </Secao>
@@ -118,9 +118,12 @@ export function CapituloPerguntasFrequentes() {
       <Secao titulo="Um colega não está vendo o que eu vejo">
         <p>
           Papéis diferentes enxergam coisas diferentes. Atendentes com papel{" "}
-          <Termo>Agente</Termo> não veem as seções de WhatsApp e Grupos em
-          Configurações, e <Termo>Visualizadores</Termo> não enviam mensagem
-          nenhuma. O papel de cada um aparece em{" "}
+          <Termo>Agente</Termo> não veem a seção de WhatsApp em Configurações
+          (só administradores conectam ou desconectam canais), e{" "}
+          <Termo>Visualizadores</Termo> não enviam mensagem nenhuma. Se dois
+          agentes veem grupos ou conversas diferentes, vale checar também se
+          um deles está restrito por escopo de conversa ou de canal (capítulo
+          6). O papel de cada um aparece em{" "}
           <Botao icone={CheckCheck}>Configurações → Membros da equipe</Botao>.
         </p>
       </Secao>
@@ -129,7 +132,7 @@ export function CapituloPerguntasFrequentes() {
         <p>
           Fale com a pessoa responsável pelo CRM na instituição. Ao pedir ajuda,
           diga <Termo>o nome do contato</Termo>, <Termo>o horário</Termo> e{" "}
-          <Termo>o que apareceu na tela</Termo> — com isso, quem for investigar
+          <Termo>o que apareceu na tela</Termo>; com isso, quem for investigar
           encontra o registro exato do que aconteceu.
         </p>
       </Secao>
