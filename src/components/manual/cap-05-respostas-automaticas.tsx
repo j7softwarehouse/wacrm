@@ -24,12 +24,12 @@ export function CapituloRespostasAutomaticas() {
       <Secao id="tres-formas" titulo="Três formas, um mesmo resultado">
         <p>
           O sistema tem três maneiras de responder sem ninguém digitar. Todas
-          desembocam no mesmo lugar — a conversa na Caixa de entrada — e é por
+          desembocam no mesmo lugar, a conversa na Caixa de entrada, e é por
           isso que vale saber diferenciá-las:
         </p>
         <Lista>
           <li>
-            <Botao icone={Zap}>Automações</Botao> — regras do tipo{" "}
+            <Botao icone={Zap}>Automações</Botao>: regras do tipo{" "}
             <em>quando acontecer isso, faça aquilo</em>. O gatilho pode ser uma
             palavra-chave na mensagem do contato, um horário programado ou o
             clique num botão. Serve para tarefas repetitivas: responder
@@ -37,13 +37,13 @@ export function CapituloRespostasAutomaticas() {
             alguém.
           </li>
           <li>
-            <Botao icone={Workflow}>Fluxos</Botao> — conversas em árvore, com
+            <Botao icone={Workflow}>Fluxos</Botao>: conversas em árvore, com
             botões. O contato toca numa opção e é levado ao próximo passo. É o
             formato de menu: &ldquo;1 para matrículas, 2 para financeiro&rdquo;.
             Bom para triagem antes de chegar numa pessoa.
           </li>
           <li>
-            <Botao icone={Bot}>Agentes IA</Botao> — um assistente que entende
+            <Botao icone={Bot}>Agentes IA</Botao>: um assistente que entende
             texto livre e responde com as próprias palavras, usando a base de
             conhecimento da instituição. Quando não sabe ou percebe que o
             assunto é delicado, ele repassa para um humano.
@@ -70,8 +70,9 @@ export function CapituloRespostasAutomaticas() {
 
       <Secao id="assumir" titulo="Assumir o atendimento da IA">
         <p>
-          Em qualquer momento você pode tomar a frente — e deve, sempre que o
-          assunto for sensível, envolver dinheiro, prazo ou uma reclamação.
+          Em qualquer momento você pode tomar a frente, e deve fazer isso
+          sempre que o assunto for sensível, envolver dinheiro, prazo ou uma
+          reclamação.
         </p>
         <Passos>
           <Passo>
@@ -112,7 +113,7 @@ export function CapituloRespostasAutomaticas() {
         <p>
           Você pode abrir essas telas para entender o que está no ar. Em
           Automações, cada item mostra se está <Termo>Ativo</Termo>, quantas
-          vezes já executou e quando foi a última — e o botão{" "}
+          vezes já executou e quando foi a última, e o botão{" "}
           <Termo>Ver Logs</Termo> abre o histórico de execuções, útil para
           descobrir por que uma resposta automática saiu (ou não saiu). Em
           Fluxos, cada um aparece como <Termo>Rascunho</Termo>,{" "}
@@ -123,7 +124,7 @@ export function CapituloRespostasAutomaticas() {
         <Aviso tipo="admin">
           Criar, editar, ativar ou desativar automações, fluxos e agentes é
           tarefa de quem administra o sistema. Se uma resposta automática estiver
-          errada ou atrapalhando, o caminho é avisar a pessoa responsável — não
+          errada ou atrapalhando, o caminho é avisar a pessoa responsável; não
           tente corrigir a regra no meio de um atendimento.
         </Aviso>
       </Secao>
