@@ -343,6 +343,14 @@
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note..."
     },
+    "groupParticipants": {
+      "unnamedGroup": "Unnamed group",
+      "participantCount": "{count, plural, =1 {1 participant} other {# participants}}",
+      "loading": "Loading participants...",
+      "loadError": "Couldn't load participants.",
+      "leftGroup": "You left this group. The participant list is no longer available.",
+      "adminBadge": "Admin"
+    },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
       "activeText": "AI assistant is replying automatically",

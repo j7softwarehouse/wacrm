@@ -337,6 +337,14 @@
       "noDeals": "딜 없음",
       "addNotePlaceholder": "메모 추가..."
     },
+    "groupParticipants": {
+      "unnamedGroup": "이름 없는 그룹",
+      "participantCount": "참가자 {count}명",
+      "loading": "참가자를 불러오는 중...",
+      "loadError": "참가자를 불러올 수 없습니다.",
+      "leftGroup": "이 그룹에서 나갔습니다. 참가자 목록을 더 이상 볼 수 없습니다.",
+      "adminBadge": "관리자"
+    },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
       "activeText": "AI 어시스턴트가 자동으로 응답 중입니다",
