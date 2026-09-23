@@ -18,18 +18,91 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
- * Compare two phone numbers accounting for trunk prefix differences.
- * e.g. "370063949836" (with trunk 0) matches "37063949836" (without trunk 0)
- * by comparing the last 8 digits.
+ * Extrai DDD + assinante (8 dígitos, sem o nono opcional do celular) de
+ * um número brasileiro COMPLETO (com DDI 55). Retorna null quando o
+ * número não começa com 55, ou quando o formato não bate com nenhum
+ * padrão reconhecido — nesses casos o chamador cai no fallback genérico
+ * em vez de arriscar uma leitura errada.
+ */
+function extractBrazilianDddSubscriber(
+  digits: string,
+): { ddd: string; subscriber: string } | null {
+  if (!digits.startsWith('55')) return null
+  const rest = digits.slice(2)
+  if (rest.length === 10) {
+    // DDD + 8 dígitos: fixo, ou celular já sem o nono dígito.
+    return { ddd: rest.slice(0, 2), subscriber: rest.slice(2) }
+  }
+  if (rest.length === 11) {
+    // DDD + 9 dígitos: só reconhece como celular se o dígito extra for
+    // mesmo o "9" que precede o número desde a mudança nacional; um
+    // formato de 11 dígitos que não segue essa regra é ambíguo, não
+    // arriscamos interpretar.
+    const nineDigitSubscriber = rest.slice(2)
+    if (!nineDigitSubscriber.startsWith('9')) return null
+    return { ddd: rest.slice(0, 2), subscriber: nineDigitSubscriber.slice(1) }
+  }
+  return null
+}
+
+/**
+ * Compare two phone numbers accounting for trunk prefix and formatting
+ * differences.
+ *
+ * Números brasileiros completos (com DDI 55) nos dois lados: o DDD faz
+ * parte da identidade do número, então a comparação exige DDD igual —
+ * dois DDDs diferentes com os mesmos 8 dígitos finais são pessoas
+ * diferentes, nunca a mesma pessoa com/sem o nono dígito (confirmado em
+ * produção: dois contatos reais, DDD 27 e DDD 31, colidiam aqui antes
+ * desta correção).
+ *
+ * Qualquer outro caso (não-BR, ou só um dos lados reconhecido como BR
+ * completo) usa o fallback antigo: tolera prefixo de tronco comparando
+ * os últimos 8 dígitos. e.g. "370063949836" (com tronco 0) casa com
+ * "37063949836" (sem tronco 0).
  */
 export function phonesMatch(phone1: string, phone2: string): boolean {
   const n1 = normalizePhone(phone1)
   const n2 = normalizePhone(phone2)
   if (n1 === n2) return true
+
+  const br1 = extractBrazilianDddSubscriber(n1)
+  const br2 = extractBrazilianDddSubscriber(n2)
+  if (br1 && br2) {
+    return br1.ddd === br2.ddd && br1.subscriber === br2.subscriber
+  }
+
   if (n1.length >= 8 && n2.length >= 8) {
     return n1.slice(-8) === n2.slice(-8)
   }
   return false
+}
+
+/**
+ * Gera todas as formas equivalentes de um número brasileiro nacional
+ * (com/sem DDI 55, com/sem o nono dígito do celular), para consultar
+ * `contacts.phone_normalized` em UMA query com `.in(...)` e achar o
+ * contato independente de como o número foi digitado/salvo.
+ *
+ * Usa a mesma leitura de `extractBrazilianDddSubscriber`: quando o
+ * número não é reconhecido como BR nacional (outro país, ou formato
+ * ambíguo), devolve só o valor normalizado — não arrisca gerar
+ * variante errada.
+ */
+export function brazilianPhoneLookupVariants(phone: string): string[] {
+  const digits = normalizePhone(phone)
+  const withDdi = digits.startsWith('55') ? digits : '55' + digits
+  const parsed = extractBrazilianDddSubscriber(withDdi)
+  if (!parsed) return [digits]
+
+  const { ddd, subscriber } = parsed
+  const variants = new Set<string>()
+  for (const ddi of ['55', '']) {
+    for (const sub of [subscriber, '9' + subscriber]) {
+      variants.add(ddi + ddd + sub)
+    }
+  }
+  return [...variants]
 }
 
 /**

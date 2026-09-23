@@ -343,6 +343,14 @@
       "noDeals": "Nenhum negócio",
       "addNotePlaceholder": "Adicionar uma nota..."
     },
+    "groupParticipants": {
+      "unnamedGroup": "Grupo sem nome",
+      "participantCount": "{count, plural, =1 {1 participante} other {# participantes}}",
+      "loading": "Carregando participantes...",
+      "loadError": "Não foi possível carregar os participantes.",
+      "leftGroup": "Vocês saíram deste grupo. A lista de participantes não está mais disponível.",
+      "adminBadge": "Admin"
+    },
     "aiBanner": {
       "pausedTitle": "Assistente de IA pausado aqui",
       "activeText": "Assistente de IA respondendo automaticamente",

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Conversation, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
@@ -21,12 +21,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { isUnidentified } from "@/lib/contacts/source";
+import { GroupParticipantsPanel } from "@/components/inbox/group-participants-panel";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Presente para decidir entre o painel de contato (abaixo) e o
+   *  painel de participantes de grupo — uma conversa de grupo nunca
+   *  tem `contact`, então essa distinção não dava pra fazer só com a
+   *  prop `contact` de antes. */
+  conversation?: Conversation | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
   // Same badge copy as the Contacts list — kept at the `Contacts` root
@@ -122,6 +128,19 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     }
     setAddingNote(false);
   }, [contact, newNote, accountId]);
+
+  // Conversa de grupo: nunca tem `contact` (grupo e contato são
+  // mutuamente exclusivos, `conversations_contact_xor_group`). Painel
+  // próprio, checado antes do "nada selecionado" abaixo.
+  if (conversation?.group_id) {
+    return (
+      <GroupParticipantsPanel
+        conversationId={conversation.id}
+        groupName={conversation.group?.name ?? null}
+        groupAvatarUrl={conversation.group?.avatar_url ?? null}
+      />
+    );
+  }
 
   if (!contact) {
     return (
