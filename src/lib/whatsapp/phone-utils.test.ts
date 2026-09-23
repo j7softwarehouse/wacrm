@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  brazilianPhoneLookupVariants,
   isRecipientNotAllowedError,
   isValidE164,
   normalizePhone,
@@ -60,6 +61,70 @@ describe("phonesMatch", () => {
   it("ignores formatting noise on both sides", () => {
     expect(phonesMatch("+370 6 394 9836", "37063949836")).toBe(true);
     expect(phonesMatch("(415) 555-1212", "+1 415-555-1212")).toBe(true);
+  });
+
+  describe("números brasileiros completos (DDI 55): DDD faz parte da identidade", () => {
+    it("rejeita DDDs diferentes mesmo com os mesmos 8 dígitos finais (caso real de produção)", () => {
+      // "*** Taynara Vaga 4 4 Anos" (DDD 27, ES) vs "*** Vaga" (DDD 31,
+      // MG) — contatos distintos que o fallback antigo (últimos 8
+      // dígitos, sem olhar DDD) tratava como o mesmo número.
+      expect(phonesMatch("5527996897681", "553196897681")).toBe(false);
+    });
+
+    it("casa com e sem o nono dígito do celular quando o DDD é igual", () => {
+      expect(phonesMatch("5531988887777", "553188887777")).toBe(true);
+    });
+
+    it("rejeita mesmo DDD com assinante diferente", () => {
+      expect(phonesMatch("5531988887777", "5531988887778")).toBe(false);
+    });
+
+    it("cai no fallback genérico quando só um dos lados é um BR completo com DDI", () => {
+      // "3198151535" não tem o DDI 55 — não reconhecido como BR completo
+      // por este lado, então usa o fallback de 8 dígitos (mesmo
+      // comportamento de hoje; a ausência do DDI é um problema de dado
+      // diferente, não de DDD).
+      expect(phonesMatch("553198151535", "3198151535")).toBe(true);
+    });
+  });
+});
+
+describe("brazilianPhoneLookupVariants", () => {
+  it("gera as 4 combinações de DDI (com/sem 55) x nono dígito (com/sem 9)", () => {
+    // Participante de grupo vem da uazapi sem formatação, com DDI: o
+    // painel de participantes precisa achar o contato mesmo que ele
+    // esteja salvo sem o 55, ou sem o nono dígito, ou os dois.
+    const out = brazilianPhoneLookupVariants("553196897681");
+    expect(new Set(out)).toEqual(
+      new Set(["553196897681", "5531996897681", "3196897681", "31996897681"]),
+    );
+  });
+
+  it("funciona partindo de um número que já tem o nono dígito", () => {
+    const out = brazilianPhoneLookupVariants("5531996897681");
+    expect(new Set(out)).toEqual(
+      new Set(["553196897681", "5531996897681", "3196897681", "31996897681"]),
+    );
+  });
+
+  it("funciona partindo de um número sem o DDI 55", () => {
+    const out = brazilianPhoneLookupVariants("3196897681");
+    expect(new Set(out)).toEqual(
+      new Set(["553196897681", "5531996897681", "3196897681", "31996897681"]),
+    );
+  });
+
+  it("devolve só o valor normalizado quando o formato não é reconhecido como BR nacional", () => {
+    // Número lituano — não é BR, não arrisca gerar variantes erradas.
+    expect(brazilianPhoneLookupVariants("37063949836")).toEqual(["37063949836"]);
+  });
+
+  it("devolve só o valor normalizado quando o dígito extra não começa com 9", () => {
+    // Após o 55, sobram 11 dígitos (DDD 31 + 9 dígitos), mas o dígito
+    // extra é "0", não "9" — formato ambíguo, não arrisca interpretar.
+    expect(brazilianPhoneLookupVariants("5531012345678")).toEqual([
+      "5531012345678",
+    ]);
   });
 });
 
