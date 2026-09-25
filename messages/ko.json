@@ -249,7 +249,11 @@
       "eventCreate": "이벤트 만들기",
       "eventMissingFields": "제목, 날짜, 시작 시간을 입력하세요.",
       "eventCreated": "Google 캘린더에서 이벤트가 열렸습니다.",
-      "eventNotifySent": "이벤트가 열리고 WhatsApp으로 연락처에 알렸습니다."
+      "eventNotifySent": "이벤트가 열리고 WhatsApp으로 연락처에 알렸습니다.",
+      "finishCurrentAttachmentFirst": "사진을 선택하기 전에 현재 첨부 파일을 보내거나 삭제하세요.",
+      "finishImageBatchFirst": "다른 유형의 미디어를 첨부하기 전에 대기 중인 사진을 보내거나 삭제하세요.",
+      "imageBatchLimitReached": "한 번에 최대 {max}장까지 가능합니다.",
+      "imageBatchCount": "사진 {count}장"
     },
     "bubble": {
       "photo": "사진",

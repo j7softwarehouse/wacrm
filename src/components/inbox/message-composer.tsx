@@ -75,6 +75,10 @@ export const MEDIA_CAPTION_MAX = 1024;
  *  transcode limits — auto-stops the recorder when reached. */
 const MAX_RECORDING_SECONDS = 5 * 60;
 
+/** Soft cap on how many photos can be staged in one batch — guards
+ *  against picking an entire camera roll by accident. */
+const MAX_IMAGE_BATCH = 10;
+
 export interface SendMediaPayload {
   kind: ComposerMediaKind;
   /** Public chat-media URL Meta fetches at send time. */
@@ -154,7 +158,9 @@ interface MessageComposerProps {
    */
   groupLeft?: boolean;
   onSend: (text: string, replyToId?: string) => void;
-  onSendMedia: (payload: SendMediaPayload) => void;
+  /** Pode devolver uma Promise — sendImageBatch a aguarda pra mandar as
+   *  fotos do lote em sequência, uma de cada vez. */
+  onSendMedia: (payload: SendMediaPayload) => void | Promise<void>;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
@@ -273,17 +279,30 @@ export function MessageComposer({
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
   const [draft, setDraft] = useState<MediaDraft | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Fotos em lote (posso anexar várias antes de enviar) — mutuamente
+  // exclusivo com `draft` (vídeo/documento/áudio continuam um de cada
+  // vez). Legenda do lote fica separada da legenda de `draft`.
+  const [imageDrafts, setImageDrafts] = useState<MediaDraft[]>([]);
+  const [batchCaption, setBatchCaption] = useState("");
+  // Contador em vez de booleano: `stageImageBatch` sobe vários uploads
+  // em paralelo, e um terminar antes dos outros não pode liberar o
+  // botão de enviar enquanto o resto ainda sobe.
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const busy = uploadingCount > 0;
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
-  // Mirror of `draft` for the unmount cleanup, which can't read render
-  // state. Kept in sync below so navigating away with a staged-but-unsent
-  // attachment GCs the orphaned object.
+  // Mirror de `draft`/`imageDrafts` para a limpeza no unmount, que não lê
+  // estado de render. Mantidos em sincronia abaixo para que sair da
+  // conversa com anexo(s) parados faça GC dos objetos órfãos.
   const draftRef = useRef<MediaDraft | null>(null);
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  const imageDraftsRef = useRef<MediaDraft[]>([]);
+  useEffect(() => {
+    imageDraftsRef.current = imageDrafts;
+  }, [imageDrafts]);
 
   // Best-effort GC of a staged object the user never sent. Fire-and-forget.
   const removeStaged = useCallback((path: string | undefined) => {
@@ -320,8 +339,8 @@ export function MessageComposer({
   }, []);
 
   // Tear down any live recording + timer on unmount so a mid-record
-  // navigation doesn't leak the mic, and GC a staged-but-unsent
-  // attachment so it doesn't orphan in the bucket.
+  // navigation doesn't leak the mic, and GC staged-but-unsent
+  // attachment(s) so they don't orphan in the bucket.
   useEffect(() => {
     return () => {
       clearTimer();
@@ -329,6 +348,7 @@ export function MessageComposer({
       // stop() releases the mic stream + audio context inside opus-recorder.
       void recorderRef.current?.stop().catch(() => {});
       removeStaged(draftRef.current?.path);
+      for (const item of imageDraftsRef.current) removeStaged(item.path);
     };
   }, [clearTimer, removeStaged]);
 
@@ -526,8 +546,13 @@ export function MessageComposer({
   );
 
   // Upload a captured file to chat-media and stage it as a draft.
+  // Video/document only — image goes through stageImageBatch below.
   const stageUpload = useCallback(
-    async (kind: ComposerMediaKind, file: File) => {
+    async (kind: "video" | "document", file: File) => {
+      if (imageDraftsRef.current.length > 0) {
+        toast.error(t("finishImageBatchFirst"));
+        return;
+      }
       // Per-kind ceiling mirrors Meta's caps (image 5 MB, etc.) so we
       // reject before upload rather than orphaning an object that Meta
       // would then refuse at send.
@@ -540,7 +565,7 @@ export function MessageComposer({
         );
         return;
       }
-      setBusy(true);
+      setUploadingCount((n) => n + 1);
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
         // Replacing an existing draft? GC the previous object first.
@@ -549,17 +574,81 @@ export function MessageComposer({
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed.");
       } finally {
-        setBusy(false);
+        setUploadingCount((n) => n - 1);
       }
     },
-    [removeStaged],
+    [removeStaged, t],
   );
 
   const handlePicked = useCallback(
-    (kind: "image" | "video" | "document", file: File | undefined) => {
+    (kind: "video" | "document", file: File | undefined) => {
       if (file) void stageUpload(kind, file);
     },
     [stageUpload],
+  );
+
+  // Upload every picked photo in parallel and append them all to the
+  // batch — repeated attach clicks keep stacking onto the same lote
+  // instead of replacing it (unlike the single-attachment stageUpload).
+  const stageImageBatch = useCallback(
+    async (files: FileList) => {
+      if (draftRef.current) {
+        toast.error(t("finishCurrentAttachmentFirst"));
+        return;
+      }
+      const incoming = Array.from(files);
+      const room = MAX_IMAGE_BATCH - imageDraftsRef.current.length;
+      if (room <= 0) {
+        toast.error(t("imageBatchLimitReached", { max: MAX_IMAGE_BATCH }));
+        return;
+      }
+      const accepted = incoming.slice(0, room);
+      if (incoming.length > accepted.length) {
+        toast.error(t("imageBatchLimitReached", { max: MAX_IMAGE_BATCH }));
+      }
+
+      const results = await Promise.all(
+        accepted.map(async (file): Promise<MediaDraft | null> => {
+          if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+            toast.error(
+              `${file.name}: ${(file.size / 1024 / 1024).toFixed(1)} MB — image limit is ${Math.round(
+                MEDIA_MAX_BYTES_BY_KIND.image / 1024 / 1024,
+              )} MB.`,
+            );
+            return null;
+          }
+          setUploadingCount((n) => n + 1);
+          try {
+            const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+            return {
+              kind: "image",
+              mediaUrl: publicUrl,
+              path,
+              filename: file.name,
+              caption: "",
+            };
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Upload failed.");
+            return null;
+          } finally {
+            setUploadingCount((n) => n - 1);
+          }
+        }),
+      );
+
+      const staged = results.filter((r): r is MediaDraft => r !== null);
+      if (staged.length > 0) {
+        setImageDrafts((prev) => [...prev, ...staged]);
+      }
+    },
+    [t],
+  );
+
+  const handleImagesPicked = useCallback(
+    (files: FileList | null) => {
+      if (files && files.length > 0) void stageImageBatch(files);
+    },
+    [stageImageBatch],
   );
 
   // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
@@ -578,7 +667,7 @@ export function MessageComposer({
         toast.error("Recording is too long (over 16 MB).");
         return;
       }
-      setBusy(true);
+      setUploadingCount((n) => n + 1);
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
         removeStaged(draftRef.current?.path);
@@ -586,7 +675,7 @@ export function MessageComposer({
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed.");
       } finally {
-        setBusy(false);
+        setUploadingCount((n) => n - 1);
       }
     },
     [removeStaged],
@@ -594,6 +683,10 @@ export function MessageComposer({
 
   const startRecording = useCallback(async () => {
     if (inputsDisabled || busy || recording) return;
+    if (imageDraftsRef.current.length > 0) {
+      toast.error(t("finishImageBatchFirst"));
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
       toast.error("Voice recording isn't supported in this browser.");
       return;
@@ -624,7 +717,7 @@ export function MessageComposer({
       recorderRef.current = null;
       toast.error("Microphone access denied or unavailable.");
     }
-  }, [inputsDisabled, busy, recording, finalizeRecording]);
+  }, [inputsDisabled, busy, recording, finalizeRecording, t]);
 
   const stopRecording = useCallback(() => {
     clearTimer();
@@ -676,6 +769,56 @@ export function MessageComposer({
   const setCaption = useCallback((caption: string) => {
     setDraft((d) => (d ? { ...d, caption } : d));
   }, []);
+
+  // Envia o lote em SEQUÊNCIA (aguarda cada ciclo completo antes do
+  // próximo) — preserva a ordem em que as fotos aparecem na conversa e
+  // é a premissa que reconcileIncomingMessage usa pra casar cada
+  // confirmação com a bolha otimista certa. Legenda e resposta citada
+  // vão só na primeira foto, igual ao álbum nativo do WhatsApp (que só
+  // mostra a legenda numa imagem do grupo). Falha de uma foto não
+  // interrompe as demais — handleSendMedia (chamador) já isola e marca
+  // cada bolha com falha individualmente.
+  const sendImageBatch = useCallback(async () => {
+    if (imageDrafts.length === 0 || busy) return;
+    const items = imageDrafts;
+    const caption = batchCaption.trim();
+    const firstReplyToId = replyTo?.id;
+    setImageDrafts([]);
+    setBatchCaption("");
+    onClearReply?.();
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      try {
+        await onSendMedia({
+          kind: "image",
+          mediaUrl: item.mediaUrl,
+          path: item.path,
+          caption: i === 0 ? caption || undefined : undefined,
+          replyToId: i === 0 ? firstReplyToId : undefined,
+        });
+      } catch {
+        // handleSendMedia (chamador) já trata a falha por conta própria
+        // (marca a bolha como "failed" e faz GC do objeto) — segue pro
+        // próximo item do lote de qualquer forma.
+      }
+    }
+  }, [imageDrafts, busy, batchCaption, onSendMedia, replyTo?.id, onClearReply]);
+
+  // Discard GCs every staged-but-unsent object in the batch.
+  const discardImageBatch = useCallback(() => {
+    for (const item of imageDrafts) removeStaged(item.path);
+    setImageDrafts([]);
+    setBatchCaption("");
+  }, [imageDrafts, removeStaged]);
+
+  const removeImageFromBatch = useCallback(
+    (path: string) => {
+      removeStaged(path);
+      setImageDrafts((prev) => prev.filter((d) => d.path !== path));
+    },
+    [removeStaged],
+  );
 
   // ---- Render --------------------------------------------------------
 
@@ -755,9 +898,10 @@ export function MessageComposer({
         ref={imageInputRef}
         type="file"
         accept={PICKER_ACCEPT.image}
+        multiple
         className="hidden"
         onChange={(e) => {
-          handlePicked("image", e.target.files?.[0]);
+          handleImagesPicked(e.target.files);
           e.target.value = "";
         }}
       />
@@ -791,6 +935,21 @@ export function MessageComposer({
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
+          t={t}
+        />
+      ) : imageDrafts.length > 0 ? (
+        <ImageBatchPreview
+          items={imageDrafts}
+          caption={batchCaption}
+          uploading={busy}
+          readOnly={readOnly}
+          channelUnavailable={sendBlocked}
+          canAddMore={imageDrafts.length < MAX_IMAGE_BATCH}
+          onCaptionChange={setBatchCaption}
+          onRemoveItem={removeImageFromBatch}
+          onDiscardAll={discardImageBatch}
+          onSend={() => void sendImageBatch()}
+          onAddMore={() => imageInputRef.current?.click()}
           t={t}
         />
       ) : recording ? (
@@ -983,7 +1142,7 @@ export function MessageComposer({
       {/* Hint sits outside the flex row so its height doesn't push
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
-      {!draft && !recording && (
+      {!draft && imageDrafts.length === 0 && !recording && (
         <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
           {t("draftHint")}
         </p>
@@ -1190,6 +1349,122 @@ function MediaDraftPreview({
             "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
             draft.kind === "audio" && "ml-auto",
           )}
+        >
+          <Send className="h-4 w-4" />
+        </GatedButton>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Preview do lote de fotos — tira de miniaturas com X individual, mais
+ * "adicionar mais" enquanto não bateu o teto. Legenda única, aplicada só
+ * à primeira foto (ver comentário de sendImageBatch). Módulo-escopo pelo
+ * mesmo motivo de MediaDraftPreview: React precisa manter isto montado
+ * entre re-renders do pai, senão o campo de legenda perde o foco a cada
+ * tecla digitada.
+ */
+function ImageBatchPreview({
+  items,
+  caption,
+  uploading,
+  readOnly,
+  channelUnavailable,
+  canAddMore,
+  onCaptionChange,
+  onRemoveItem,
+  onDiscardAll,
+  onSend,
+  onAddMore,
+  t,
+}: {
+  items: MediaDraft[];
+  caption: string;
+  uploading: boolean;
+  readOnly: boolean;
+  channelUnavailable: boolean;
+  canAddMore: boolean;
+  onCaptionChange: (caption: string) => void;
+  onRemoveItem: (path: string) => void;
+  onDiscardAll: () => void;
+  onSend: () => void;
+  onAddMore: () => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("imageBatchCount", { count: items.length })}
+        </span>
+        <button
+          type="button"
+          onClick={onDiscardAll}
+          aria-label={t("removeAttachment")}
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+        {items.map((item) => (
+          <div key={item.path} className="relative shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.mediaUrl}
+              alt={item.filename}
+              className="h-20 w-20 rounded-lg object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => onRemoveItem(item.path)}
+              aria-label={t("removeAttachment")}
+              className="absolute -right-1.5 -top-1.5 rounded-full bg-background p-0.5 text-muted-foreground shadow hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+        {canAddMore && (
+          <button
+            type="button"
+            onClick={onAddMore}
+            disabled={uploading}
+            aria-label={t("photo")}
+            className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:opacity-40"
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-5 w-5" />
+            )}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-end gap-2">
+        <input
+          value={caption}
+          maxLength={MEDIA_CAPTION_MAX}
+          onChange={(e) => onCaptionChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder={t("addCaption")}
+          className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
+        />
+        <GatedButton
+          size="sm"
+          canAct={!readOnly}
+          gateReason="send messages"
+          disabled={uploading || channelUnavailable}
+          onClick={onSend}
+          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
           <Send className="h-4 w-4" />
         </GatedButton>

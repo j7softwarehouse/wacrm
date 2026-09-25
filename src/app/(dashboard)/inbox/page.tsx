@@ -10,6 +10,7 @@ import {
   normalizeConversation,
 } from "@/lib/inbox/conversations";
 import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
+import { reconcileIncomingMessage } from "@/lib/inbox/message-reconcile";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -285,15 +286,7 @@ function InboxPageInner() {
           activeConversation &&
           newMsg.conversation_id === activeConversation.id
         ) {
-          setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
-            const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
-            );
-            return [...withoutOptimistic, newMsg];
-          });
+          setMessages((prev) => reconcileIncomingMessage(prev, newMsg));
         }
 
         // Update conversation list preview. We need to know *synchronously*
