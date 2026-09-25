@@ -255,7 +255,11 @@
       "eventCreate": "Criar evento",
       "eventMissingFields": "Preencha o título, a data e a hora de início.",
       "eventCreated": "Evento aberto no Google Agenda.",
-      "eventNotifySent": "Evento aberto e contato avisado pelo WhatsApp."
+      "eventNotifySent": "Evento aberto e contato avisado pelo WhatsApp.",
+      "finishCurrentAttachmentFirst": "Envie ou descarte o anexo atual antes de escolher fotos.",
+      "finishImageBatchFirst": "Envie ou descarte as fotos em espera antes de anexar outro tipo de mídia.",
+      "imageBatchLimitReached": "Máximo de {max} fotos por vez.",
+      "imageBatchCount": "{count, plural, =1 {1 foto} other {# fotos}}"
     },
     "bubble": {
       "photo": "Foto",
