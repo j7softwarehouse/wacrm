@@ -255,7 +255,11 @@
       "eventCreate": "Create event",
       "eventMissingFields": "Fill in the title, date, and start time.",
       "eventCreated": "Event opened in Google Calendar.",
-      "eventNotifySent": "Event opened and contact notified on WhatsApp."
+      "eventNotifySent": "Event opened and contact notified on WhatsApp.",
+      "finishCurrentAttachmentFirst": "Send or discard the current attachment before picking photos.",
+      "finishImageBatchFirst": "Send or discard the pending photos before attaching another media type.",
+      "imageBatchLimitReached": "Maximum of {max} photos at a time.",
+      "imageBatchCount": "{count, plural, =1 {1 photo} other {# photos}}"
     },
     "bubble": {
       "photo": "Photo",
