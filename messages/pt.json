@@ -14,6 +14,28 @@
     "noAccount": "Não tem uma conta?",
     "createAccount": "Criar conta"
   },
+  "ForgotPasswordPage": {
+    "title": "Redefinir senha",
+    "description": "Digite seu e-mail e enviaremos um link de redefinição",
+    "emailLabel": "Email",
+    "emailPlaceholder": "voce@example.com",
+    "sending": "Enviando...",
+    "sendLink": "Enviar link de redefinição",
+    "backToSignIn": "Voltar para o login",
+    "checkEmailTitle": "Verifique seu e-mail",
+    "checkEmailDescription": "Enviamos um link de redefinição de senha para {email}. Confira sua caixa de entrada."
+  },
+  "ResetPasswordPage": {
+    "title": "Escolha uma nova senha",
+    "description": "Digite e confirme sua nova senha",
+    "passwordLabel": "Nova senha",
+    "passwordPlaceholder": "Digite a nova senha",
+    "confirmPasswordLabel": "Confirmar senha",
+    "confirmPasswordPlaceholder": "Digite a senha novamente",
+    "mismatchError": "As senhas não coincidem.",
+    "submitting": "Salvando...",
+    "submit": "Salvar nova senha"
+  },
   "Sidebar": {
     "title": "CRM Whatsapp J7",
     "dashboard": "Dashboard",
