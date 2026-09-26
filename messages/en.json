@@ -14,6 +14,28 @@
     "noAccount": "Don't have an account?",
     "createAccount": "Create account"
   },
+  "ForgotPasswordPage": {
+    "title": "Reset password",
+    "description": "Enter your email and we'll send you a reset link",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "sending": "Sending...",
+    "sendLink": "Send reset link",
+    "backToSignIn": "Back to sign in",
+    "checkEmailTitle": "Check your email",
+    "checkEmailDescription": "We've sent a password reset link to {email}. Please check your inbox."
+  },
+  "ResetPasswordPage": {
+    "title": "Choose a new password",
+    "description": "Enter and confirm your new password",
+    "passwordLabel": "New password",
+    "passwordPlaceholder": "Enter the new password",
+    "confirmPasswordLabel": "Confirm password",
+    "confirmPasswordPlaceholder": "Enter the password again",
+    "mismatchError": "Passwords don't match.",
+    "submitting": "Saving...",
+    "submit": "Save new password"
+  },
   "Sidebar": {
     "title": "CRM Whatsapp J7",
     "dashboard": "Dashboard",
