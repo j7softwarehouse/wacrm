@@ -320,6 +320,9 @@
       "deleteError": "Could not delete the message",
       "editError": "Could not edit the message",
       "forward": "Forward",
+      "selectForForward": "Select for forwarding",
+      "selectedForForwardCount": "{count, plural, =1 {1 selected} other {# selected}}",
+      "selectionLimitReached": "Maximum of {max} messages at a time.",
       "mark": "Mark",
       "editMarker": "Edit marker",
       "markTitle": "Mark this message",
@@ -396,11 +399,12 @@
       "loadError": "Could not load conversations.",
       "send": "Forward",
       "cancel": "Cancel",
-      "success": "{count, plural, =1 {Message forwarded} other {Message forwarded to # chats}}",
-      "partialFailure": "{count, plural, =1 {1 chat did not receive it} other {# chats did not receive it}}",
+      "success": "{count, plural, =1 {Forwarded successfully} other {# forwards completed}}",
+      "partialFailure": "{count, plural, =1 {1 forward failed} other {# forwards failed}}",
       "error": "Could not forward the message.",
       "usingChannel": "Forwarding via {label}",
-      "notePlaceholder": "Add a message (optional) — sent together in the same bubble"
+      "notePlaceholder": "Add a message (optional) — sent together in the same bubble",
+      "forwardingCount": "Forwarding {count} messages"
     }
   },
   "Contacts": {
