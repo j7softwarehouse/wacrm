@@ -41,6 +41,7 @@ import {
   ChevronUp,
   X,
   Bookmark,
+  Forward,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -57,6 +58,7 @@ import { MessageBubble } from "./message-bubble";
 import { findMessageMatches } from "@/lib/inbox/message-search";
 import { MessageActions } from "./message-actions";
 import { ForwardDialog } from "./forward-dialog";
+import { MAX_FORWARD_MESSAGES } from "@/lib/whatsapp/forward-limits";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -252,8 +254,46 @@ export function MessageThread({
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
-  /** Mensagem escolhida para encaminhar; abre o diálogo de destinos. */
-  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  /** Mensagens escolhidas para encaminhar; não-vazio abre o diálogo de
+   *  destinos. Uma mensagem só (clique no ícone de encaminhar de um
+   *  balão) ou várias (modo de seleção, ver `selectionMode` abaixo). */
+  const [forwardMessageIds, setForwardMessageIds] = useState<string[]>([]);
+  // Modo de seleção múltipla pra encaminhar em lote, igual ao WhatsApp:
+  // ativado a partir do ícone de "selecionar" de qualquer balão
+  // encaminhável, já marca aquela mensagem, e daí em diante clicar em
+  // qualquer balão encaminhável alterna a marcação dele. A barra
+  // flutuante (`SelectionBar` abaixo) mostra a contagem e os botões de
+  // cancelar/encaminhar.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedForForward, setSelectedForForward] = useState<Set<string>>(new Set());
+
+  const startSelection = useCallback((messageId: string) => {
+    setSelectionMode(true);
+    setSelectedForForward(new Set([messageId]));
+  }, []);
+
+  const cancelSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedForForward(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((messageId: string, checked: boolean) => {
+    setSelectedForForward((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        // Mesmo teto de MAX_FORWARD_MESSAGES que a rota aplica — aqui
+        // é só pra avisar antes de tentar, a rota é a rede real.
+        if (next.size >= MAX_FORWARD_MESSAGES) {
+          toast.error(tActions("selectionLimitReached", { max: MAX_FORWARD_MESSAGES }));
+          return prev;
+        }
+        next.add(messageId);
+      } else {
+        next.delete(messageId);
+      }
+      return next;
+    });
+  }, [tActions]);
   // Busca dentro da conversa (estilo WhatsApp). Toda a filtragem é local:
   // a thread já tem todas as mensagens em memória.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1686,6 +1726,39 @@ export function MessageThread({
         </div>
       </div>
 
+      {/* Barra do modo de seleção múltipla — igual ao WhatsApp:
+          cancelar à esquerda, contagem no meio, encaminhar à direita.
+          Fica no mesmo lugar da barra de busca (entre o cabeçalho e as
+          mensagens); as duas nunca aparecem juntas na prática (abrir a
+          busca não entra em modo de seleção, e vice-versa). */}
+      {selectionMode && (
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={cancelSelection}
+              aria-label={tActions("cancel")}
+              title={tActions("cancel")}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-medium text-foreground">
+              {tActions("selectedForForwardCount", { count: selectedForForward.size })}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForwardMessageIds(Array.from(selectedForForward))}
+            disabled={selectedForForward.size === 0}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            <Forward className="h-3.5 w-3.5" />
+            {tActions("forward")}
+          </button>
+        </div>
+      )}
+
       {/* Barra de busca dentro da conversa. Fica entre o cabeçalho e as
           mensagens, como no WhatsApp, e some junto com a busca. */}
       {searchOpen && (
@@ -1852,7 +1925,15 @@ export function MessageThread({
                         onDelete={canDeleteMsg ? () => void handleDeleteMessage(msg.id) : undefined}
                         onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
                         onForward={
-                          canForwardMsg ? () => setForwardMessageId(msg.id) : undefined
+                          canForwardMsg ? () => setForwardMessageIds([msg.id]) : undefined
+                        }
+                        onStartSelect={canForwardMsg ? () => startSelection(msg.id) : undefined}
+                        selectionMode={selectionMode}
+                        selected={selectedForForward.has(msg.id)}
+                        onToggleSelect={
+                          canForwardMsg
+                            ? (checked) => toggleSelected(msg.id, checked)
+                            : undefined
                         }
                         myMarker={myMarker}
                         onMark={
@@ -1935,9 +2016,16 @@ export function MessageThread({
       />
 
       <ForwardDialog
-        messageId={forwardMessageId}
-        open={forwardMessageId !== null}
-        onOpenChange={(next) => !next && setForwardMessageId(null)}
+        messageIds={forwardMessageIds}
+        open={forwardMessageIds.length > 0}
+        onOpenChange={(next) => {
+          if (!next) {
+            setForwardMessageIds([]);
+            // Confirmar/cancelar o diálogo encerra o modo de seleção
+            // também — mesmo comportamento do WhatsApp.
+            cancelSelection();
+          }
+        }}
         currentConversationId={conversation.id}
         // O diálogo resolve por TELEFONE (com o mesmo fallback pro
         // canal padrão da conta quando isto for nulo) — ver

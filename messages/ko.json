@@ -314,6 +314,9 @@
       "deleteError": "메시지를 삭제할 수 없습니다",
       "editError": "메시지를 수정할 수 없습니다",
       "forward": "전달",
+      "selectForForward": "전달할 항목 선택",
+      "selectedForForwardCount": "{count}개 선택됨",
+      "selectionLimitReached": "한 번에 최대 {max}개까지 가능합니다.",
       "mark": "표시",
       "editMarker": "표시 편집",
       "markTitle": "이 메시지 표시",
@@ -390,11 +393,12 @@
       "loadError": "대화를 불러올 수 없습니다.",
       "send": "전달",
       "cancel": "취소",
-      "success": "{count}개 대화로 메시지를 전달했습니다",
-      "partialFailure": "{count}개 대화가 수신하지 못했습니다",
+      "success": "전달 {count}건 완료",
+      "partialFailure": "전달 {count}건 실패",
       "error": "메시지를 전달할 수 없습니다.",
       "usingChannel": "{label} 채널로 전달 중",
-      "notePlaceholder": "메시지 추가 (선택 사항) — 같은 말풍선으로 함께 전송됩니다"
+      "notePlaceholder": "메시지 추가 (선택 사항) — 같은 말풍선으로 함께 전송됩니다",
+      "forwardingCount": "메시지 {count}개 전달 중"
     }
   },
   "Contacts": {

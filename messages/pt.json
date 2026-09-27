@@ -320,6 +320,9 @@
       "deleteError": "Não foi possível apagar a mensagem",
       "editError": "Não foi possível editar a mensagem",
       "forward": "Encaminhar",
+      "selectForForward": "Selecionar para encaminhar",
+      "selectedForForwardCount": "{count, plural, =1 {1 selecionada} other {# selecionadas}}",
+      "selectionLimitReached": "Máximo de {max} mensagens por vez.",
       "mark": "Marcar",
       "editMarker": "Editar marcação",
       "markTitle": "Marcar esta mensagem",
@@ -396,11 +399,12 @@
       "loadError": "Não foi possível carregar as conversas.",
       "send": "Encaminhar",
       "cancel": "Cancelar",
-      "success": "{count, plural, =1 {Mensagem encaminhada} other {Mensagem encaminhada para # conversas}}",
-      "partialFailure": "{count, plural, =1 {1 conversa não recebeu} other {# conversas não receberam}}",
+      "success": "{count, plural, =1 {Encaminhado com sucesso} other {# encaminhamentos concluídos}}",
+      "partialFailure": "{count, plural, =1 {1 encaminhamento falhou} other {# encaminhamentos falharam}}",
       "error": "Não foi possível encaminhar a mensagem.",
       "usingChannel": "Encaminhando pelo canal {label}",
-      "notePlaceholder": "Adicionar uma mensagem (opcional) — vai junto no mesmo balão"
+      "notePlaceholder": "Adicionar uma mensagem (opcional) — vai junto no mesmo balão",
+      "forwardingCount": "Encaminhando {count} mensagens"
     }
   },
   "Contacts": {

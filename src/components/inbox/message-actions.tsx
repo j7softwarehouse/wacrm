@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import {
   Bookmark,
   BookmarkX,
+  CheckSquare,
   CornerUpLeft,
   Copy,
   Forward,
@@ -14,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -47,6 +49,22 @@ interface MessageActionsProps {
   /** Ausente = botão de encaminhar não aparece (mensagem apagada, tipo
    *  não encaminhável, ou mídia que já expirou do storage). */
   onForward?: () => void;
+  /** Ausente = botão de "selecionar" (entrar em modo seleção múltipla
+   *  pra encaminhar várias de uma vez, com esta já marcada) não
+   *  aparece — mesma elegibilidade de `onForward`. Só é oferecido
+   *  quando a conversa NÃO está em modo de seleção ainda. */
+  onStartSelect?: () => void;
+  /** true = a conversa está em modo de seleção múltipla pra
+   *  encaminhar em lote. Substitui a barra de ações flutuante por uma
+   *  caixinha fixa na borda da linha (ou um espaço reservado, quando a
+   *  mensagem não é selecionável — mantém as bolhas alinhadas). */
+  selectionMode?: boolean;
+  /** Estado da caixinha desta mensagem, só relevante com
+   *  `selectionMode`. */
+  selected?: boolean;
+  /** Ausente = mensagem não selecionável neste modo (mesma regra de
+   *  `onForward`) — a linha aparece sem caixinha, no lugar dela. */
+  onToggleSelect?: (checked: boolean) => void;
   /** O PRÓPRIO marcador do usuário logado nesta mensagem, se houver —
    *  distinto do de outras pessoas, que aparecem como chip no balão
    *  mas não dão a ele controle de editar/remover por aqui. */
@@ -77,6 +95,10 @@ export function MessageActions({
   onDelete,
   onEdit,
   onForward,
+  onStartSelect,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
   myMarker,
   onMark,
   onUnmark,
@@ -146,6 +168,11 @@ export function MessageActions({
     setTouchOpen(false);
   };
 
+  const handleStartSelect = () => {
+    onStartSelect?.();
+    setTouchOpen(false);
+  };
+
   const handleMarkSubmit = () => {
     onMark?.(markerLabel, targetUserId ?? undefined);
     setMarkerOpen(false);
@@ -185,12 +212,26 @@ export function MessageActions({
       // thread acha a linha da mensagem para rolar até ela.
       data-message-id={message.id}
       className={cn(
-        "flex w-full",
+        "flex w-full items-center gap-2",
         isAgent ? "justify-end" : "justify-start",
       )}
       onContextMenu={handleContextMenu}
       onBlur={() => setTouchOpen(false)}
     >
+      {/* Caixinha de seleção — SEMPRE reservada com o mesmo espaço,
+          selecionável ou não, pra bolha não pular de posição conforme
+          o usuário rola a conversa em modo seleção. */}
+      {selectionMode && (
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center">
+          {onToggleSelect && (
+            <Checkbox
+              checked={selected}
+              onCheckedChange={(next) => onToggleSelect(next === true)}
+              aria-label={t("selectForForward")}
+            />
+          )}
+        </div>
+      )}
       {/* `min-w-0` lets this flex child actually respect the 75% cap.
        *  Default `min-width: auto` lets content (a long quote preview,
        *  an unbroken URL) push past the cap and shove the row past
@@ -198,6 +239,7 @@ export function MessageActions({
        *  area. See issue #165. */}
       <div className="group/actions relative min-w-0 max-w-[75%]">
         {children}
+      {!selectionMode && (
       <div
         data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
         className={cn(
@@ -250,6 +292,17 @@ export function MessageActions({
             title={t("forward")}
           >
             <Forward className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onStartSelect && (
+          <button
+            type="button"
+            onClick={handleStartSelect}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t("selectForForward")}
+            title={t("selectForForward")}
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
           </button>
         )}
         {onMark && (
@@ -362,6 +415,7 @@ export function MessageActions({
           </button>
         )}
       </div>
+      )}
       </div>
     </div>
   );
