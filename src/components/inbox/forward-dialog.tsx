@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CONVERSATION_SELECT, normalizeConversations } from "@/lib/inbox/conversations";
 import { channelColor } from "@/lib/whatsapp/channel-color";
 import { resolveChannelPhone } from "@/lib/whatsapp/channel-identity";
+import { MAX_FORWARD_DESTINATIONS } from "@/lib/whatsapp/forward-limits";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -37,8 +38,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 
-const MAX_DESTINATIONS = 5;
-
 function conversationLabel(conversation: Conversation, fallback: string): string {
   return (
     conversation.group?.name ||
@@ -49,7 +48,7 @@ function conversationLabel(conversation: Conversation, fallback: string): string
 }
 
 export function ForwardDialog({
-  messageId,
+  messageIds,
   open,
   onOpenChange,
   /** Conversa de onde a mensagem saiu — some da lista, igual ao
@@ -68,7 +67,9 @@ export function ForwardDialog({
    *  vai sair, pedido explícito do usuário quando há mais de um canal. */
   channelDisplayLabel,
 }: {
-  messageId: string | null;
+  /** Uma ou mais mensagens, até MAX_FORWARD_MESSAGES — vazio esconde o
+   *  diálogo (ver `open`). Sempre a MESMA conversa de origem. */
+  messageIds: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentConversationId?: string;
@@ -176,7 +177,7 @@ export function ForwardDialog({
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) {
-        if (next.size >= MAX_DESTINATIONS) return prev;
+        if (next.size >= MAX_FORWARD_DESTINATIONS) return prev;
         next.add(id);
       } else {
         next.delete(id);
@@ -186,15 +187,19 @@ export function ForwardDialog({
   }
 
   async function handleSend() {
-    if (!messageId || selected.size === 0) return;
+    if (messageIds.length === 0 || selected.size === 0) return;
     setSending(true);
     try {
-      const res = await fetch(`/api/whatsapp/messages/${messageId}/forward`, {
+      const res = await fetch(`/api/whatsapp/messages/forward`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          messageIds,
           conversationIds: Array.from(selected),
-          note: note.trim() || undefined,
+          // Nota só faz sentido presa a UMA mensagem — a rota também
+          // ignora quando vem junto com 2+, isto só evita mandar o
+          // que a própria UI já escondeu.
+          note: messageIds.length === 1 ? note.trim() || undefined : undefined,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -203,8 +208,11 @@ export function ForwardDialog({
         return;
       }
 
+      // Total esperado é mensagens × destinos, não só destinos — um
+      // lote de 3 mensagens pra 2 destinos são 6 envios no total.
+      const expectedTotal = messageIds.length * selected.size;
       const sent = (payload.sent as number | undefined) ?? 0;
-      const failed = selected.size - sent;
+      const failed = expectedTotal - sent;
       if (sent > 0) toast.success(t("success", { count: sent }));
       // Falha parcial precisa aparecer: sem isto, um destino que não
       // recebeu passaria despercebido atrás do toast de sucesso.
@@ -223,8 +231,13 @@ export function ForwardDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t("title")}</DialogTitle>
+          {messageIds.length > 1 && (
+            <p className="text-xs text-muted-foreground">
+              {t("forwardingCount", { count: messageIds.length })}
+            </p>
+          )}
           <DialogDescription>
-            {t("selectedCount", { count: selected.size, max: MAX_DESTINATIONS })}
+            {t("selectedCount", { count: selected.size, max: MAX_FORWARD_DESTINATIONS })}
           </DialogDescription>
           {channelDisplayLabel && (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -281,7 +294,7 @@ export function ForwardDialog({
                       <Checkbox
                         checked={checked}
                         disabled={
-                          sending || (!checked && selected.size >= MAX_DESTINATIONS)
+                          sending || (!checked && selected.size >= MAX_FORWARD_DESTINATIONS)
                         }
                         onCheckedChange={(next) =>
                           toggle(conversation.id, next === true)
@@ -310,17 +323,22 @@ export function ForwardDialog({
             </ScrollArea>
           )}
 
-          {/* Opcional, igual ao WhatsApp: manda como mensagem comum
-              separada, DEPOIS da encaminhada — nunca junto na mesma
-              bolha (não é uma legenda da mensagem original). */}
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder={t("notePlaceholder")}
-            disabled={sending}
-            rows={2}
-            className="resize-none text-sm"
-          />
+          {/* Nota opcional: vira legenda da própria mensagem encaminhada
+              (áudio é a exceção — WhatsApp recusa legenda em áudio, ali
+              sai como mensagem à parte). Só faz sentido com UMA
+              mensagem selecionada — com 2+ seria ambíguo em qual balão
+              ela entraria, mesma regra que a rota aplica do lado
+              servidor. */}
+          {messageIds.length === 1 && (
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={t("notePlaceholder")}
+              disabled={sending}
+              rows={2}
+              className="resize-none text-sm"
+            />
+          )}
         </div>
 
         <DialogFooter>

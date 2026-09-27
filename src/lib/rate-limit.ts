@@ -121,6 +121,13 @@ export const RATE_LIMITS = {
    *  broadcast is one call; this caps the rate at which a single user
    *  can launch campaigns, not the messages inside one. */
   broadcast: { limit: 5, windowMs: 60_000 },
+  /** Forward dispatch. Each call can already fan out to up to 25 sends
+   *  (5 messages × 5 destinations, see forward-limits.ts) — this caps
+   *  how often a single user can LAUNCH a forward, on top of that
+   *  per-call ceiling. 10/min is comfortably above normal use (nobody
+   *  forwards more than a couple of times a minute) while bounding a
+   *  runaway script or compromised session. */
+  forward: { limit: 10, windowMs: 60_000 },
   /** Reaction add/swap/remove. More permissive than send — users
    *  fidget with reactions and a single "swap" is actually two calls
    *  (remove + add) under the hood. */
