@@ -493,4 +493,17 @@ describe("createUazapiProvider", () => {
     await provider.deleteMessage({ messageId: "MSG123" });
     expect(post).toHaveBeenCalledWith("/message/delete", { id: "MSG123" });
   });
+
+  it("pede recuperação via /message/history-sync em mode=exact", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.requestMessageRecovery({
+      messageId: "MSG123",
+      chatId: "120363429748080632@g.us",
+    });
+    expect(post).toHaveBeenCalledWith("/message/history-sync", {
+      mode: "exact",
+      messageid: "MSG123",
+      number: "120363429748080632@g.us",
+    });
+  });
 });

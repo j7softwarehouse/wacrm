@@ -103,8 +103,15 @@ export function buildWebhookConfig(url: string): UazapiWebhookConfig {
     // entregue. Só descoberto testando contra uma instância real.
     enabled: true,
     // Nomes no PLURAL — a assinatura usa vocabulário diferente do
-    // envelope do evento, que chega no singular ("message").
-    events: ["messages", "messages_update", "connection"],
+    // envelope do evento, que chega no singular ("message"). "history"
+    // foi somado pra receber de volta uma mensagem recuperada via
+    // /message/history-sync (mode=exact) — ver
+    // .../messages/[id]/request-recovery/route.ts. IMPORTANTE: mudar
+    // esta lista no código NÃO atualiza canais já conectados — a
+    // UAZAPI só vê a config nova quando /webhook é chamado de novo
+    // (reconexão por QR, ou reenvio manual do mesmo POST). Ver
+    // comentário de registerUazapiWebhook.
+    events: ["messages", "messages_update", "connection", "history"],
     // `wasSentByApi` continua excluído para não reprocessarmos o eco
     // dos nossos próprios envios. Grupo NÃO é mais filtrado aqui — o
     // opt-in acontece no nosso lado (`whatsapp_groups.enabled`), o

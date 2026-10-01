@@ -183,6 +183,14 @@ export function createUazapiProvider(
       await client.post("/message/delete", { id: args.messageId });
     },
 
+    async requestMessageRecovery(args: { messageId: string; chatId: string }): Promise<void> {
+      await client.post("/message/history-sync", {
+        mode: "exact",
+        messageid: args.messageId,
+        number: args.chatId,
+      });
+    },
+
     async sendTemplate(): Promise<SendResult> {
       // Templates aprovados são um conceito exclusivo da Meta. A UI
       // esconde a funcionalidade em canais UAZAPI; isto é a rede de
