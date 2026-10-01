@@ -140,6 +140,74 @@ describe("handleEvent — mensagem normal (regressão)", () => {
     });
     expect(messagesTable).toHaveLength(0); // handleEvent não grava — quem grava é ingestInboundMessage (mockado)
   });
+
+  it("loga quando algum campo do payload menciona 'forward', mas continua ingerindo normalmente", async () => {
+    // Doc da uazapi não documenta nenhum campo de "mensagem
+    // encaminhada pelo cliente" (nem isForwarded, nem contextInfo) —
+    // mesma situação do evento "history". Em vez de arriscar o nome
+    // errado, o diagnóstico procura qualquer CHAVE (em qualquer nível)
+    // que contenha "forward", não um nome específico. Usa um campo
+    // fictício e ANINHADO pra provar que a busca não é só superficial.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = {
+      EventType: "messages",
+      message: {
+        chatid: "5511999999999@s.whatsapp.net",
+        content: "oi, vejam isso",
+        edited: "",
+        fromMe: false,
+        isGroup: false,
+        messageType: "Conversation",
+        messageTimestamp: 1789135598000,
+        messageid: "3EB0D0B896DF5B018F84E8",
+        sender_pn: "5511999999999@s.whatsapp.net",
+        text: "oi, vejam isso",
+        wasSentByApi: false,
+        contextInfo: { isForwarded: true },
+      },
+    };
+
+    await handleEvent(CHANNEL, body);
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("encaminhamento"),
+      expect.arrayContaining([expect.stringContaining("contextInfo.isForwarded")]),
+      expect.anything(),
+    );
+    // Diagnóstico não pode atrapalhar o fluxo normal — a mensagem
+    // continua sendo ingerida mesmo com o campo encontrado.
+    expect(mocks.ingestInboundMessage).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("não loga nada quando o payload não tem nenhum campo relacionado a encaminhamento", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = {
+      EventType: "messages",
+      message: {
+        chatid: "5511999999999@s.whatsapp.net",
+        content: "mensagem comum",
+        edited: "",
+        fromMe: false,
+        isGroup: false,
+        messageType: "Conversation",
+        messageTimestamp: 1789135598000,
+        messageid: "3EB0D0B896DF5B018F84E9",
+        sender_pn: "5511999999999@s.whatsapp.net",
+        text: "mensagem comum",
+        wasSentByApi: false,
+      },
+    };
+
+    await handleEvent(CHANNEL, body);
+
+    expect(spy).not.toHaveBeenCalledWith(
+      expect.stringContaining("encaminhamento"),
+      expect.anything(),
+      expect.anything(),
+    );
+    spy.mockRestore();
+  });
 });
 
 describe("handleEvent — edição pelo próprio participante", () => {
@@ -330,5 +398,29 @@ describe("handleEvent — status de entrega (compatibilidade com o formato antig
     });
 
     expect(messagesTable[0].status).toBe("delivered");
+  });
+});
+
+describe("handleEvent — evento 'history' (recuperação de mensagem, formato ainda não confirmado)", () => {
+  // A uazapi documenta que a mensagem recuperada via
+  // /message/history-sync (mode=exact) volta "via webhook/SSE em
+  // eventos do tipo history", mas não publica o formato do payload.
+  // Mesma regra de todo evento deste arquivo: nada é tratado sem antes
+  // ver o formato real ao vivo. Por ora, só loga o corpo cru pra
+  // conseguirmos inspecionar nos logs quando um pedido de recuperação
+  // (request-recovery) disparar um de verdade — tratar de fato fica
+  // pra depois de confirmar o formato.
+  it("loga o payload cru e não tenta ingerir (formato desconhecido)", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = { EventType: "history", algumCampoQualquer: "valor" };
+
+    await handleEvent(CHANNEL, payload);
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("history"),
+      expect.anything(),
+    );
+    expect(mocks.ingestInboundMessage).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

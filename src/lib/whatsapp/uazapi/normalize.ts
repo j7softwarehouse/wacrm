@@ -80,7 +80,7 @@ export function extractEventType(event: Record<string, unknown>): string | undef
 }
 
 /** Onde os campos da mensagem moram, nos dois vocabulários possíveis. */
-function extractMessageData(
+export function extractMessageData(
   event: Record<string, unknown>,
 ): Record<string, unknown> | null {
   if (event.message && typeof event.message === "object") {
