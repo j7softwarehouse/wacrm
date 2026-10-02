@@ -31,7 +31,13 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-background/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // 10% de opacidade (valor original) deixava a página de trás
+        // legível por baixo do modal — em telas com listas longas (ex.:
+        // Configurações > Grupos) ficava parecendo conteúdo vazando pra
+        // fora da caixa do diálogo, quando na verdade era só a página de
+        // trás pouco escurecida. 80% é o padrão usual de overlay de
+        // diálogo (shadcn/Radix) e garante separação visual real.
+        "fixed inset-0 isolate z-50 bg-background/80 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
