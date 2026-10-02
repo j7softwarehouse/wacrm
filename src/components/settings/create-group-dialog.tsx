@@ -51,6 +51,31 @@ interface CreatedGroup {
   enabled: boolean;
 }
 
+/**
+ * Um contato casa pela busca quando o nome contém o texto OU o
+ * telefone contém os dígitos da busca — mas o lado do telefone só
+ * entra quando a busca TEM algum dígito. Sem essa guarda,
+ * `sanitizePhoneForMeta('ra')` vira `''`, e todo telefone "contém" a
+ * string vazia (`str.includes('')` é sempre `true` em JS) — a busca
+ * por nome virava, na prática, um no-op que sempre mostrava todo
+ * mundo.
+ */
+export function matchesContactSearch(
+  contact: Pick<PickedContact, 'name' | 'phone'>,
+  rawQuery: string,
+): boolean {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return true;
+
+  const nameMatches = (contact.name ?? '').toLowerCase().includes(query);
+
+  const phoneQuery = sanitizePhoneForMeta(query);
+  const phoneMatches =
+    phoneQuery.length > 0 && sanitizePhoneForMeta(contact.phone).includes(phoneQuery);
+
+  return nameMatches || phoneMatches;
+}
+
 export function CreateGroupDialog({
   open,
   onOpenChange,
@@ -99,15 +124,10 @@ export function CreateGroupDialog({
     };
   }, [open, t]);
 
-  const filteredContacts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return contacts;
-    return contacts.filter(
-      (c) =>
-        (c.name ?? '').toLowerCase().includes(query) ||
-        sanitizePhoneForMeta(c.phone).includes(sanitizePhoneForMeta(query)),
-    );
-  }, [contacts, search]);
+  const filteredContacts = useMemo(
+    () => contacts.filter((c) => matchesContactSearch(c, search)),
+    [contacts, search],
+  );
 
   function toggleContact(id: string, checked: boolean) {
     setSelected((prev) => {
