@@ -7,7 +7,11 @@ import {
   mapUazapiMessageStatus,
   type CrmMessageStatus,
 } from "@/lib/whatsapp/uazapi/connection";
-import { extractEventType, normalizeUazapiEvent } from "@/lib/whatsapp/uazapi/normalize";
+import {
+  extractEventType,
+  extractMessageData,
+  normalizeUazapiEvent,
+} from "@/lib/whatsapp/uazapi/normalize";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import type { WhatsAppChannel } from "@/types";
 
@@ -269,6 +273,30 @@ function extractMessageIds(payload: Record<string, unknown>): string[] {
   return [];
 }
 
+/**
+ * Busca recursiva por qualquer CHAVE (em qualquer nível do objeto) cujo
+ * nome contenha `substring` (case-insensitive). Devolve o "caminho"
+ * pontilhado de cada achado (ex.: "contextInfo.isForwarded"), não o
+ * valor — é só pra confirmar ONDE um campo mora num payload cuja forma
+ * exata a doc não documenta, sem arriscar adivinhar o nome.
+ */
+function findKeysContaining(
+  obj: unknown,
+  substring: string,
+  path = "",
+  found: string[] = [],
+): string[] {
+  if (!obj || typeof obj !== "object") return found;
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const currentPath = path ? `${path}.${key}` : key;
+    if (key.toLowerCase().includes(substring)) found.push(currentPath);
+    if (value && typeof value === "object") {
+      findKeysContaining(value, substring, currentPath, found);
+    }
+  }
+  return found;
+}
+
 export async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   if (!body || typeof body !== "object") return;
   const envelope = body as Record<string, unknown>;
@@ -361,6 +389,42 @@ export async function handleEvent(channel: WhatsAppChannel, body: unknown) {
       // Mensagem original não encontrada (fora do nosso histórico, ou
       // o evento dela se perdeu) — cai pro fluxo normal abaixo, que
       // trata como mensagem nova. Mostrar é melhor que perder.
+    }
+  }
+
+  // DIAGNÓSTICO TEMPORÁRIO: a doc da uazapi diz que a mensagem
+  // recuperada via /message/history-sync (mode=exact) volta "via
+  // webhook/SSE em eventos do tipo history", mas não publica o formato
+  // do payload. Mesma regra de todo evento deste arquivo (ver
+  // "messages_update"/edição acima): nada é tratado sem antes ver o
+  // formato real ao vivo. Loga o corpo cru pra inspecionar nos logs da
+  // Vercel assim que um pedido de recuperação disparar um de verdade;
+  // escrever o tratamento definitivo fica pra depois de confirmar o
+  // formato (ver .../messages/[id]/request-recovery/route.ts).
+  if (eventName === "history") {
+    console.error("[uazapi webhook] evento 'history' recebido (payload cru):", envelope);
+    return;
+  }
+
+  // DIAGNÓSTICO TEMPORÁRIO: existe algum campo indicando que o CLIENTE
+  // encaminhou esta mensagem pra gente (equivalente ao `isForwarded`/
+  // `contextInfo` do protocolo do WhatsApp)? A doc da uazapi não
+  // documenta nenhum campo assim. Em vez de arriscar o nome errado
+  // (mesmo raciocínio do evento "history" acima), procura qualquer
+  // CHAVE que contenha "forward" em QUALQUER nível do payload — não
+  // interrompe o fluxo normal, só avisa quando achar algo pra eu poder
+  // confirmar o nome real e então exibir o selo "Encaminhada" no CRM.
+  if (eventName === "message" || eventName === "messages") {
+    const messageData = extractMessageData(envelope);
+    if (messageData) {
+      const hits = findKeysContaining(messageData, "forward");
+      if (hits.length > 0) {
+        console.error(
+          "[uazapi webhook] possível campo de encaminhamento encontrado:",
+          hits,
+          envelope,
+        );
+      }
     }
   }
 

@@ -9,6 +9,7 @@ import {
   Copy,
   Forward,
   Pencil,
+  RotateCcw,
   SmilePlus,
   Trash2,
 } from "lucide-react";
@@ -49,6 +50,11 @@ interface MessageActionsProps {
   /** Ausente = botão de encaminhar não aparece (mensagem apagada, tipo
    *  não encaminhável, ou mídia que já expirou do storage). */
   onForward?: () => void;
+  /** Ausente = botão de "tentar recuperar" não aparece — só vale pra
+   *  mensagens recebidas que a uazapi não conseguiu decifrar
+   *  ("[Undecryptable]") e só quando o chamador decide oferecer
+   *  (admin da conta; a ação pede reenvio de verdade ao WhatsApp). */
+  onRequestRecovery?: () => void;
   /** Ausente = botão de "selecionar" (entrar em modo seleção múltipla
    *  pra encaminhar várias de uma vez, com esta já marcada) não
    *  aparece — mesma elegibilidade de `onForward`. Só é oferecido
@@ -95,6 +101,7 @@ export function MessageActions({
   onDelete,
   onEdit,
   onForward,
+  onRequestRecovery,
   onStartSelect,
   selectionMode = false,
   selected = false,
@@ -165,6 +172,11 @@ export function MessageActions({
 
   const handleForward = () => {
     onForward?.();
+    setTouchOpen(false);
+  };
+
+  const handleRequestRecovery = () => {
+    onRequestRecovery?.();
     setTouchOpen(false);
   };
 
@@ -292,6 +304,17 @@ export function MessageActions({
             title={t("forward")}
           >
             <Forward className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onRequestRecovery && (
+          <button
+            type="button"
+            onClick={handleRequestRecovery}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t("requestRecovery")}
+            title={t("requestRecovery")}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
           </button>
         )}
         {onStartSelect && (

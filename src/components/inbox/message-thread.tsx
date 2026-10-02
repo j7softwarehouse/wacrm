@@ -59,6 +59,7 @@ import { findMessageMatches } from "@/lib/inbox/message-search";
 import { MessageActions } from "./message-actions";
 import { ForwardDialog } from "./forward-dialog";
 import { MAX_FORWARD_MESSAGES } from "@/lib/whatsapp/forward-limits";
+import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -1191,17 +1192,27 @@ export function MessageThread({
     [user, tActions],
   );
 
-  const contactDisplayName = contact?.name || contact?.phone || "Customer";
+  const contactDisplayName = contact?.name || contact?.phone || t("unknownAuthor");
 
-  // Author label for a quoted message: "You" when we sent the parent,
-  // contact name when the customer sent it.
+  // Rótulo de autor pra uma mensagem citada/respondida — usado tanto no
+  // chip do composer (ao clicar "Responder") quanto na citação exibida
+  // acima de uma mensagem na própria conversa. Fundido numa função só
+  // porque as duas renderizações tinham cada uma sua própria versão
+  // quebrada: "You"/"Customer" fixos em inglês, e nenhuma delas sabia
+  // resolver o nome de um PARTICIPANTE DE GRUPO — toda citação em
+  // grupo caía no genérico ("Unknown"/"Customer"), nunca no nome de
+  // quem escreveu de verdade.
   const authorLabelFor = useCallback(
     (m: Message): string => {
       const isAgentMsg =
         m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? "You" : contactDisplayName;
+      if (isAgentMsg) return t("you");
+      if (m.participant_id) {
+        return participantNames[m.participant_id] ?? tBubble("participant");
+      }
+      return contactDisplayName;
     },
-    [contactDisplayName],
+    [contactDisplayName, participantNames, t, tBubble],
   );
 
   const handleStartReply = useCallback(
@@ -1279,6 +1290,31 @@ export function MessageThread({
       } catch (err) {
         console.error("Failed to delete message:", err);
         toast.error(tActions("deleteError"));
+      }
+    },
+    [tActions],
+  );
+
+  // Pede ao WhatsApp que reenvie uma mensagem "[Undecryptable]". Sem
+  // atualização otimista: se o WhatsApp conseguir mesmo reenviar, a
+  // mensagem recuperada chega depois por um evento de webhook próprio
+  // (ainda não tratado — ver comentário em .../uazapi/webhook/route.ts),
+  // não como resposta desta chamada.
+  const handleRequestRecovery = useCallback(
+    async (messageId: string) => {
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${messageId}/request-recovery`, {
+          method: "POST",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || tActions("requestRecoveryError"));
+          return;
+        }
+        toast.success(tActions("requestRecoverySent"));
+      } catch (err) {
+        console.error("Failed to request message recovery:", err);
+        toast.error(tActions("requestRecoveryError"));
       }
     },
     [tActions],
@@ -1850,10 +1886,7 @@ export function MessageThread({
                       : null;
                     const reply = parent
                       ? {
-                          authorLabel:
-                            parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
-                              : contact?.name || contact?.phone || "Unknown",
+                          authorLabel: authorLabelFor(parent),
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
@@ -1910,6 +1943,14 @@ export function MessageThread({
                         : !!msg.media_url;
                     const canForwardMsg =
                       !msg.deleted_at && isForwardableType && hasContentToForward;
+                    // Admin-only: a ação pede reenvio de verdade ao
+                    // WhatsApp (ver comentário da rota
+                    // .../messages/[id]/request-recovery), não é uma
+                    // ação de atendimento do dia a dia.
+                    const canRequestRecovery =
+                      isAccountAdmin &&
+                      msg.sender_type === "customer" &&
+                      isUndecryptablePlaceholder(msg.content_text);
                     const msgMarkers = markersByMessageId.get(msg.id);
                     const myMarker = user
                       ? msgMarkers?.find((m) => m.created_by === user.id) ?? null
@@ -1926,6 +1967,11 @@ export function MessageThread({
                         onEdit={canEditMsg ? () => handleStartEdit(msg) : undefined}
                         onForward={
                           canForwardMsg ? () => setForwardMessageIds([msg.id]) : undefined
+                        }
+                        onRequestRecovery={
+                          canRequestRecovery
+                            ? () => void handleRequestRecovery(msg.id)
+                            : undefined
                         }
                         onStartSelect={canForwardMsg ? () => startSelection(msg.id) : undefined}
                         selectionMode={selectionMode}

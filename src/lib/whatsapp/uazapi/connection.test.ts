@@ -69,8 +69,12 @@ describe("phoneFromJid", () => {
 describe("buildWebhookConfig", () => {
   const config = buildWebhookConfig("https://crm.exemplo.com/api/whatsapp/uazapi/webhook/SEGREDO");
 
-  it("assina apenas os três eventos que o CRM consome", () => {
-    expect(config.events).toEqual(["messages", "messages_update", "connection"]);
+  it("assina os eventos que o CRM consome", () => {
+    // "history" foi somado para a recuperação sob demanda de mensagem
+    // "[Undecryptable]" (POST .../messages/[id]/request-recovery) —
+    // sem isso, mesmo pedindo o reenvio à uazapi, a resposta nunca
+    // chegaria de volta.
+    expect(config.events).toEqual(["messages", "messages_update", "connection", "history"]);
   });
 
   it("exclui o eco das próprias mensagens", () => {

@@ -213,4 +213,13 @@ export interface WhatsAppProvider {
    *  participantes. Lança se o provedor não suportar (Meta) ou se o
    *  WhatsApp recusar. */
   deleteMessage(args: { messageId: string }): Promise<void>;
+  /** Pede ao WhatsApp que reenvie uma mensagem RECEBIDA cujo conteúdo
+   *  não pôde ser lido (ex.: criptografia multiaparelho dessincronizada
+   *  — "[Undecryptable]"). Experimental do lado da uazapi (modo "exact"
+   *  declarado em teste pela própria doc); pode não funcionar,
+   *  principalmente se o celular do número estiver offline. A mensagem
+   *  recuperada chega depois por um evento de webhook separado, nunca
+   *  como retorno desta chamada — esta só confirma que o PEDIDO foi
+   *  aceito. Lança se o provedor não suportar (Meta).*/
+  requestMessageRecovery(args: { messageId: string; chatId: string }): Promise<void>;
 }
