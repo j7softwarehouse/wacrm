@@ -467,7 +467,8 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          // max-w-full: sem teto próprio, um link longo alarga a bolha — break-words só age depois da largura definida.
+          "relative max-w-full rounded-2xl px-3 py-2",
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
