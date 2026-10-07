@@ -19,6 +19,12 @@ import { previewRecovery } from "@/lib/whatsapp/uazapi/recovery-preview";
 // — é o número que importa pra decidir se vale rodar a recuperação.
 // ============================================================
 
+// Uma conta com centenas de conversas ativas no dia faz dezenas de
+// chamadas pra UAZAPI (paralelas, mas ainda assim demoradas) — o
+// padrão de 10s/15s do runtime estoura fácil. Mesmo teto já usado
+// pelo webhook e por outras rotas que chamam a UAZAPI.
+export const maxDuration = 60;
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
