@@ -70,6 +70,32 @@ const CHAT_PAGE_SIZE = 50;
 const MAX_CHAT_PAGES = 10;
 const MESSAGE_PAGE_SIZE = 100;
 const MAX_MESSAGE_PAGES_PER_CHAT = 5;
+/** Quantos chats consultamos em paralelo. Uma conta com centenas de
+ *  conversas ativas no dia estouraria o tempo da função rodando uma
+ *  chamada de cada vez — isto é I/O (espera de rede), não CPU, então
+ *  paralelizar é seguro; o limite existe só pra não martelar a UAZAPI
+ *  com dezenas de requisições simultâneas de uma vez. */
+const CHAT_CONCURRENCY = 8;
+
+/** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao
+ *  mesmo tempo, preservando a ordem do resultado. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 /** A UAZAPI já foi vista mandando timestamp em segundos OU em
  *  milissegundos (ver normalize.ts) — mesma heurística: acima de
@@ -135,7 +161,7 @@ export async function previewRecovery(
   let truncated = false;
   let offset = 0;
 
-  chatPages: for (let page = 0; page < MAX_CHAT_PAGES; page++) {
+  for (let page = 0; page < MAX_CHAT_PAGES; page++) {
     const resp = await client.post<ChatFindResponse>('/chat/find', {
       sort: '-wa_lastMsgTimestamp',
       limit: CHAT_PAGE_SIZE,
@@ -145,31 +171,41 @@ export async function previewRecovery(
     if (chats.length === 0) break;
     chatsScanned += chats.length;
 
+    // Separa os chats elegíveis (dentro da janela) dos que já indicam
+    // o fim dela, SEM consultar `/message/find` ainda — isso só
+    // acontece depois, em paralelo, pro `break chatPages` abaixo
+    // continuar barato mesmo numa página com centenas de chats.
+    const eligible: UazapiChatRow[] = [];
+    let hitOlderChat = false;
     for (const chat of chats) {
       const lastMs = toMs(chat.wa_lastMsgTimestamp);
       if (lastMs < window.sinceMs) {
         // Ordenado do mais recente pro mais antigo — daqui em diante
         // só tem chat sem mensagem na janela.
-        break chatPages;
+        hitOlderChat = true;
+        break;
       }
-      if (!chat.wa_chatid) continue;
+      if (chat.wa_chatid) eligible.push(chat);
+    }
 
+    await mapWithConcurrency(eligible, CHAT_CONCURRENCY, async (chat) => {
       const { ids, truncated: chatTruncated } = await collectMessagesInWindow(
         client,
-        chat.wa_chatid,
+        chat.wa_chatid!,
         window,
       );
       if (chatTruncated) truncated = true;
       if (ids.length > 0) {
         byChat.push({
-          chatid: chat.wa_chatid,
+          chatid: chat.wa_chatid!,
           isGroup: !!chat.wa_isGroup,
           count: ids.length,
           messageIds: ids,
         });
       }
-    }
+    });
 
+    if (hitOlderChat) break;
     if (chats.length < CHAT_PAGE_SIZE) break;
     offset += CHAT_PAGE_SIZE;
     if (page === MAX_CHAT_PAGES - 1) truncated = true;

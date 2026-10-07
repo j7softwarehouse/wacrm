@@ -86,4 +86,33 @@ describe('previewRecovery', () => {
     const result = await previewRecovery(client, WINDOW);
     expect(result.chatsScanned).toBe(51);
   });
+
+  it('consulta /message/find em paralelo (não um chat de cada vez) — centenas de conversas não podem estourar o tempo da função', async () => {
+    const CHAT_COUNT = 20;
+    const chats = Array.from({ length: CHAT_COUNT }, (_, i) => ({
+      wa_chatid: `c${i}@s.whatsapp.net`,
+      wa_lastMsgTimestamp: 1_700_001_000_000,
+    }));
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const post = vi.fn(async (path: string) => {
+      if (path === '/chat/find') return { chats };
+      // /message/find — atrasa um pouco pra dar tempo de outras chamadas
+      // entrarem "em voo" ao mesmo tempo, revelando se é sequencial.
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return { messages: [] };
+    });
+    const client = { post } as unknown as ReadOnlyUazapiClient;
+
+    await previewRecovery(client, WINDOW);
+
+    // Sequencial daria maxInFlight === 1. Provamos só que há
+    // paralelismo real (> 1), sem prender o teste ao valor exato do
+    // limite de concorrência.
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
 });
