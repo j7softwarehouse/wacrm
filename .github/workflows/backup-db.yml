@@ -61,7 +61,7 @@ jobs:
           # roles que o dump referencia nos GRANTs/políticas do Supabase
           # extensões que o dump do Supabase assume já existirem (schema
           # "extensions" + pgvector da busca de IA); imagem pgvector as traz
-          psql -h localhost -p 5433 -U postgres -c "CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA extensions;" || true
+          psql -h localhost -p 5433 -U postgres -c "CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA extensions;" || true
           psql -h localhost -p 5433 -U postgres -c "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE supabase_auth_admin;" || true
           /usr/lib/postgresql/17/bin/pg_restore -h localhost -p 5433 -U postgres -d postgres \
             --no-owner --no-privileges --clean --if-exists "wacrm-$STAMP.dump" 2>restore.log || true
