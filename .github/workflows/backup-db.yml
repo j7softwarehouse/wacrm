@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 30
     services:
       restore-check:
-        image: postgres:17
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_PASSWORD: restore
         ports: ['5433:5432']
@@ -59,10 +59,13 @@ jobs:
         run: |
           export PGPASSWORD=restore
           # roles que o dump referencia nos GRANTs/políticas do Supabase
+          # extensões que o dump do Supabase assume já existirem (schema
+          # "extensions" + pgvector da busca de IA); imagem pgvector as traz
+          psql -h localhost -p 5433 -U postgres -c "CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA extensions;" || true
           psql -h localhost -p 5433 -U postgres -c "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE supabase_auth_admin;" || true
           /usr/lib/postgresql/17/bin/pg_restore -h localhost -p 5433 -U postgres -d postgres \
-            --no-owner --no-privileges "wacrm-$STAMP.dump" 2>restore.log || true
-          echo "--- erros da restauração (primeiros) ---"; grep -m 15 -i "error" restore.log || echo "(nenhum)"
+            --no-owner --no-privileges --clean --if-exists "wacrm-$STAMP.dump" 2>restore.log || true
+          echo "--- erros da restauração (primeiros) ---"; grep -m 10 -i "error" restore.log || echo "(nenhum)"
           TABELAS=$(psql -h localhost -p 5433 -U postgres -Atc "select count(*) from information_schema.tables where table_schema='public'")
           MENSAGENS=$(psql -h localhost -p 5433 -U postgres -Atc "select count(*) from public.messages")
           echo "tabelas restauradas: $TABELAS | mensagens: $MENSAGENS"
