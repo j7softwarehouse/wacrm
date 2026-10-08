@@ -1,14 +1,12 @@
 // ============================================================
-// Prévia (somente leitura) de mensagens perdidas durante a queda de
-// produção em 2026-10-07 — a Vercel bloqueou o projeto (402
-// DEPLOYMENT_DISABLED) e o webhook da UAZAPI não teve pra onde
-// entregar eventos nesse intervalo.
+// Varredura (somente leitura) do histórico da UAZAPI numa janela de
+// tempo — base tanto da prévia (`previewRecovery`, conta quantas
+// mensagens existem) quanto da gravação de verdade (`recovery.ts`, que
+// usa os objetos crus retornados aqui pra reconstruir cada mensagem).
 //
-// NUNCA grava nada: só consulta `/chat/find` + `/message/find` da
-// UAZAPI (que guarda seu próprio histórico, independente do nosso
-// webhook) e devolve uma contagem. A decisão de ingerir de verdade
-// fica pra uma etapa separada, só depois de alguém revisar este
-// resultado.
+// NUNCA grava nada: só consulta `/chat/find` + `/message/find` (que
+// guardam o histórico da própria UAZAPI, independente do nosso
+// webhook).
 //
 // Varre por `/chat/find` ordenado por `-wa_lastMsgTimestamp` (mais
 // recente primeiro) e para assim que um chat tem a última mensagem
@@ -25,21 +23,42 @@ export interface RecoveryWindow {
   untilMs: number;
 }
 
-export interface ChatRecoverySummary {
-  chatid: string;
-  isGroup: boolean;
-  count: number;
-  messageIds: string[];
+/** Mensagem crua da UAZAPI (schema `Message` do OpenAPI) — só os
+ *  campos que `normalizeUazapiEvent` (normalize.ts) precisa pra
+ *  reconstruir a mensagem, mais os usados aqui pra filtrar/ordenar. */
+export interface UazapiMessageRow {
+  messageid?: string;
+  id?: string;
+  chatid?: string;
+  isGroup?: boolean;
+  fromMe?: boolean;
+  wasSentByApi?: boolean;
+  messageType?: string;
+  messageTimestamp?: number;
+  text?: string;
+  content?: unknown;
+  sender?: string;
+  sender_pn?: string;
+  senderName?: string;
+  quoted?: string;
+  edited?: string;
+  buttonOrListid?: string;
 }
 
-export interface RecoveryPreviewResult {
+export interface ChatMessages {
+  chatid: string;
+  isGroup: boolean;
+  messages: UazapiMessageRow[];
+  /** true quando algum limite de paginação foi atingido pra ESTE chat
+   *  — pode haver mais mensagens na janela do que as retornadas. */
+  truncated: boolean;
+}
+
+export interface MessagesInWindowResult {
   chatsScanned: number;
-  chatsWithMessages: number;
-  totalMessages: number;
-  byChat: ChatRecoverySummary[];
-  /** true quando algum limite de paginação foi atingido — o resultado
-   *  pode estar incompleto e a janela merece ser revisada em partes
-   *  menores. */
+  byChat: ChatMessages[];
+  /** true quando algum limite global (nº de páginas de chat) foi
+   *  atingido — a lista de CHATS pode estar incompleta. */
   truncated: boolean;
 }
 
@@ -51,13 +70,6 @@ interface UazapiChatRow {
 
 interface ChatFindResponse {
   chats?: UazapiChatRow[];
-}
-
-interface UazapiMessageRow {
-  messageid?: string;
-  id?: string;
-  messageTimestamp?: number;
-  wasSentByApi?: boolean;
 }
 
 interface MessageFindResponse {
@@ -105,12 +117,12 @@ function toMs(raw: number | undefined): number {
   return raw > 1e12 ? raw : raw * 1000;
 }
 
-async function collectMessagesInWindow(
+async function findRawMessagesInWindow(
   client: ReadOnlyUazapiClient,
   chatid: string,
   window: RecoveryWindow,
-): Promise<{ ids: string[]; truncated: boolean }> {
-  const ids: string[] = [];
+): Promise<{ messages: UazapiMessageRow[]; truncated: boolean }> {
+  const messages: UazapiMessageRow[] = [];
   let offset = 0;
 
   for (let page = 0; page < MAX_MESSAGE_PAGES_PER_CHAT; page++) {
@@ -119,44 +131,79 @@ async function collectMessagesInWindow(
       limit: MESSAGE_PAGE_SIZE,
       offset,
     });
-    const messages = resp.messages ?? [];
-    if (messages.length === 0) break;
+    const page_ = resp.messages ?? [];
+    if (page_.length === 0) break;
 
     let sawOlderThanWindow = false;
-    for (const m of messages) {
+    for (const m of page_) {
       const ts = toMs(m.messageTimestamp);
       if (ts < window.sinceMs) {
         sawOlderThanWindow = true;
         continue;
       }
       if (ts > window.untilMs) continue;
-      // Eco do nosso próprio envio pelo CRM — já está no nosso banco
-      // (foi gravado na hora do envio), recuperar duplicaria.
-      if (m.wasSentByApi === true) continue;
+      // Eco do nosso próprio envio pelo CRM, ou mensagem mandada pelo
+      // PRÓPRIO celular da escola direto no app (fora do CRM) — o
+      // webhook ao vivo descarta as duas (normalize.ts:
+      // normalizeUazapiEvent), então a recuperação tem que casar
+      // exatamente com o que o webhook teria ingerido se estivesse no
+      // ar.
+      if (m.wasSentByApi === true || m.fromMe === true) continue;
 
-      const id = m.messageid || m.id;
-      if (id) ids.push(id);
+      if (m.messageid || m.id) messages.push(m);
     }
 
     // Resultados vêm mais recentes primeiro — assim que uma página
     // cruza o início da janela, as próximas só ficam mais antigas.
     if (sawOlderThanWindow) break;
-    if (messages.length < MESSAGE_PAGE_SIZE) break;
+    if (page_.length < MESSAGE_PAGE_SIZE) break;
 
     offset += MESSAGE_PAGE_SIZE;
     if (page === MAX_MESSAGE_PAGES_PER_CHAT - 1) {
-      return { ids, truncated: true };
+      return { messages, truncated: true };
     }
   }
 
-  return { ids, truncated: false };
+  return { messages, truncated: false };
 }
 
-export async function previewRecovery(
+/**
+ * Varre o histórico da UAZAPI numa janela de tempo e devolve, por
+ * chat, os objetos de mensagem crus (filtrados e já sem eco do CRM).
+ *
+ * `onlyChatid` pula a listagem de chats e varre só esse — usado pra
+ * rodar a recuperação num lote pequeno antes de confiar no resultado
+ * pra conta inteira.
+ */
+export async function findMessagesInWindow(
   client: ReadOnlyUazapiClient,
   window: RecoveryWindow,
-): Promise<RecoveryPreviewResult> {
-  const byChat: ChatRecoverySummary[] = [];
+  options?: { onlyChatid?: string; onlyIsGroup?: boolean },
+): Promise<MessagesInWindowResult> {
+  if (options?.onlyChatid) {
+    const { messages, truncated } = await findRawMessagesInWindow(
+      client,
+      options.onlyChatid,
+      window,
+    );
+    return {
+      chatsScanned: 1,
+      truncated,
+      byChat:
+        messages.length > 0
+          ? [
+              {
+                chatid: options.onlyChatid,
+                isGroup: !!options.onlyIsGroup,
+                messages,
+                truncated,
+              },
+            ]
+          : [],
+    };
+  }
+
+  const byChat: ChatMessages[] = [];
   let chatsScanned = 0;
   let truncated = false;
   let offset = 0;
@@ -172,9 +219,8 @@ export async function previewRecovery(
     chatsScanned += chats.length;
 
     // Separa os chats elegíveis (dentro da janela) dos que já indicam
-    // o fim dela, SEM consultar `/message/find` ainda — isso só
-    // acontece depois, em paralelo, pro `break chatPages` abaixo
-    // continuar barato mesmo numa página com centenas de chats.
+    // o fim dela, SEM consultar `/message/find` ainda — isso mantém o
+    // corte barato mesmo numa página com centenas de chats.
     const eligible: UazapiChatRow[] = [];
     let hitOlderChat = false;
     for (const chat of chats) {
@@ -189,18 +235,18 @@ export async function previewRecovery(
     }
 
     await mapWithConcurrency(eligible, CHAT_CONCURRENCY, async (chat) => {
-      const { ids, truncated: chatTruncated } = await collectMessagesInWindow(
+      const { messages, truncated: chatTruncated } = await findRawMessagesInWindow(
         client,
         chat.wa_chatid!,
         window,
       );
       if (chatTruncated) truncated = true;
-      if (ids.length > 0) {
+      if (messages.length > 0) {
         byChat.push({
           chatid: chat.wa_chatid!,
           isGroup: !!chat.wa_isGroup,
-          count: ids.length,
-          messageIds: ids,
+          messages,
+          truncated: chatTruncated,
         });
       }
     });
@@ -211,11 +257,43 @@ export async function previewRecovery(
     if (page === MAX_CHAT_PAGES - 1) truncated = true;
   }
 
+  return { chatsScanned, byChat, truncated };
+}
+
+export interface ChatRecoverySummary {
+  chatid: string;
+  isGroup: boolean;
+  count: number;
+  messageIds: string[];
+}
+
+export interface RecoveryPreviewResult {
+  chatsScanned: number;
+  chatsWithMessages: number;
+  totalMessages: number;
+  byChat: ChatRecoverySummary[];
+  truncated: boolean;
+}
+
+/** Prévia só de contagem — usada pela rota .../recover-messages/preview. */
+export async function previewRecovery(
+  client: ReadOnlyUazapiClient,
+  window: RecoveryWindow,
+): Promise<RecoveryPreviewResult> {
+  const scan = await findMessagesInWindow(client, window);
+
+  const byChat: ChatRecoverySummary[] = scan.byChat.map((c) => ({
+    chatid: c.chatid,
+    isGroup: c.isGroup,
+    count: c.messages.length,
+    messageIds: c.messages.map((m) => (m.messageid || m.id)!),
+  }));
+
   return {
-    chatsScanned,
+    chatsScanned: scan.chatsScanned,
     chatsWithMessages: byChat.length,
     totalMessages: byChat.reduce((sum, c) => sum + c.count, 0),
     byChat,
-    truncated,
+    truncated: scan.truncated,
   };
 }

@@ -22,6 +22,10 @@ export interface ResolvedGroupConversation {
   /** Status atual da conversa, para o chamador reabrir uma conversa
    *  fechada que acabou de receber mensagem (ver `reopenOnInboundPatch`). */
   status: ConversationStatus | null;
+  /** `last_message_at` atual da conversa, ANTES desta mensagem — usado
+   *  pela recuperação manual pra nunca deixar uma mensagem antiga
+   *  regredir o preview de uma conversa que já recebeu algo mais novo. */
+  lastMessageAt: string | null;
 }
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`; `...@lid` → null. */
@@ -140,7 +144,7 @@ export async function resolveGroupConversation(
   // (de qualquer participante) violar a constraint.
   const { data: existingConversation } = await db
     .from('conversations')
-    .select('id, unread_count, status')
+    .select('id, unread_count, status, last_message_at')
     .eq('account_id', accountId)
     .eq('group_id', groupId)
     .eq('channel_id', channelId)
@@ -149,10 +153,12 @@ export async function resolveGroupConversation(
   let conversationId: string;
   let unreadCount: number;
   let status: ConversationStatus | null;
+  let lastMessageAt: string | null;
   if (existingConversation) {
     conversationId = existingConversation.id;
     unreadCount = existingConversation.unread_count ?? 0;
     status = existingConversation.status ?? null;
+    lastMessageAt = existingConversation.last_message_at ?? null;
   } else {
     const { data: created, error } = await db
       .from('conversations')
@@ -163,7 +169,7 @@ export async function resolveGroupConversation(
         group_id: groupId,
         channel_id: channelId,
       })
-      .select('id, unread_count, status')
+      .select('id, unread_count, status, last_message_at')
       .single();
     if (error) {
       // Perdeu uma corrida: o clique em "Conversar"
@@ -176,7 +182,7 @@ export async function resolveGroupConversation(
       if (isUniqueViolation(error)) {
         const { data: raced } = await db
           .from('conversations')
-          .select('id, unread_count, status')
+          .select('id, unread_count, status, last_message_at')
           .eq('account_id', accountId)
           .eq('group_id', groupId)
           .eq('channel_id', channelId)
@@ -188,6 +194,7 @@ export async function resolveGroupConversation(
             participantId: participant.id,
             unreadCount: raced.unread_count ?? 0,
             status: raced.status ?? null,
+            lastMessageAt: raced.last_message_at ?? null,
           };
         }
       }
@@ -197,7 +204,15 @@ export async function resolveGroupConversation(
     conversationId = created.id;
     unreadCount = created.unread_count ?? 0;
     status = created.status ?? null;
+    lastMessageAt = created.last_message_at ?? null;
   }
 
-  return { conversationId, groupId, participantId: participant.id, unreadCount, status };
+  return {
+    conversationId,
+    groupId,
+    participantId: participant.id,
+    unreadCount,
+    status,
+    lastMessageAt,
+  };
 }

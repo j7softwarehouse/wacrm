@@ -4,6 +4,7 @@ import { buildConversationPreview, isDuplicateMessage } from "./ingest";
 import { dispatchInboundToFlows } from "@/lib/flows/engine";
 import { runAutomationsForTrigger } from "@/lib/automations/engine";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
+import { dispatchWebhookEvent } from "@/lib/webhooks/deliver";
 
 // Os motores de flows/automations/AI e a entrega de webhooks são
 // efeitos colaterais disparados DEPOIS que a mensagem já foi gravada —
@@ -712,5 +713,130 @@ describe("ingestInboundMessage — pushName nunca sobrescreve nome existente", (
     await ingest(db, "Ste");
     expect(db.tables.contacts).toHaveLength(1);
     expect(db.tables.contacts[0].name).toBe("Ste");
+  });
+});
+
+describe("ingestInboundMessage — suppressEngines (recuperação manual de mensagem perdida)", () => {
+  // Mensagem recuperada de uma queda de produção é horas atrasada — não
+  // pode disparar fluxo, automação, resposta de IA, nem o webhook
+  // público message.received (um assinante externo reagiria "ao vivo"
+  // a algo velho). A mensagem AINDA precisa ser gravada normalmente;
+  // suppressEngines corta só os efeitos colaterais.
+  const channel = {
+    id: "chan-1",
+    account_id: "acc-1",
+    user_id: "user-1",
+    provider: "uazapi",
+    status: "connected",
+  };
+
+  it("não chama flows/automations/IA/webhook público, mas grava a mensagem", async () => {
+    vi.clearAllMocks();
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      contacts: [],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    const result = await ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.RECOVERY-1",
+      timestamp: Math.floor(Date.parse("2026-10-07T12:00:00.000Z") / 1000),
+      content: { type: "text", text: "mensagem recuperada" },
+      suppressEngines: true,
+    });
+
+    expect(result?.messageId).toBeTruthy();
+    expect(db.tables.messages).toHaveLength(1);
+    expect(db.tables.messages[0].content_text).toBe("mensagem recuperada");
+
+    expect(dispatchInboundToFlows).not.toHaveBeenCalled();
+    expect(runAutomationsForTrigger).not.toHaveBeenCalled();
+    expect(dispatchInboundToAiReply).not.toHaveBeenCalled();
+    expect(dispatchWebhookEvent).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "message.received",
+      expect.anything(),
+    );
+  });
+
+  it("sem a flag (tráfego normal), os motores continuam disparando — suppressEngines não muda o comportamento padrão", async () => {
+    vi.clearAllMocks();
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      contacts: [],
+      conversations: [],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    await ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.NORMAL-1",
+      timestamp: Math.floor(Date.now() / 1000),
+      content: { type: "text", text: "mensagem normal" },
+    });
+
+    expect(dispatchInboundToFlows).toHaveBeenCalled();
+  });
+});
+
+describe("ingestInboundMessage — last_message_at não regride com mensagem antiga", () => {
+  const channel = {
+    id: "chan-1",
+    account_id: "acc-1",
+    user_id: "user-1",
+    provider: "uazapi",
+    status: "connected",
+  };
+
+  it("mensagem recuperada mais antiga que last_message_at atual não altera o preview da conversa", async () => {
+    const { ingestInboundMessage } = await import("./ingest");
+    const db = new FakeDb({
+      contacts: [
+        {
+          id: "ct-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          phone: "+5511999997777",
+        },
+      ],
+      conversations: [
+        {
+          id: "conv-1",
+          account_id: "acc-1",
+          user_id: "user-1",
+          contact_id: "ct-1",
+          channel_id: "chan-1",
+          status: "open",
+          unread_count: 0,
+          last_message_text: "mensagem mais nova, já recebida",
+          last_message_at: "2026-10-07T18:00:00.000Z",
+        },
+      ],
+      messages: [],
+      broadcast_recipients: [],
+    });
+
+    await ingestInboundMessage(db as never, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: channel as any,
+      from: "+5511999997777",
+      providerMessageId: "wamid.RECOVERY-OLD",
+      timestamp: Math.floor(Date.parse("2026-10-07T12:00:00.000Z") / 1000),
+      content: { type: "text", text: "mensagem recuperada, mais antiga" },
+      suppressEngines: true,
+    });
+
+    const conv = db.tables["conversations"].find((c: Row) => c.id === "conv-1");
+    expect(conv?.last_message_text).toBe("mensagem mais nova, já recebida");
+    expect(conv?.last_message_at).toBe("2026-10-07T18:00:00.000Z");
   });
 });

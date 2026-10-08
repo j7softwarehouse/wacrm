@@ -50,13 +50,14 @@ describe('previewRecovery', () => {
     expect(result.totalMessages).toBe(2);
   });
 
-  it('exclui mensagens com wasSentByApi (eco do próprio envio pelo CRM)', async () => {
+  it('exclui mensagens com wasSentByApi (eco do próprio envio pelo CRM) ou fromMe (enviada pelo celular direto) — o webhook ao vivo descarta as duas', async () => {
     const client = fakeClient({
       '/chat/find': [{ chats: [{ wa_chatid: 'a@s.whatsapp.net', wa_lastMsgTimestamp: 1_700_001_000_000 }] }],
       '/message/find': [
         {
           messages: [
             { messageid: 'MSG_API', messageTimestamp: 1_700_001_000_000, wasSentByApi: true },
+            { messageid: 'MSG_FROM_ME', messageTimestamp: 1_700_000_800_000, fromMe: true },
             { messageid: 'MSG_REAL', messageTimestamp: 1_700_000_500_000, wasSentByApi: false },
           ],
         },

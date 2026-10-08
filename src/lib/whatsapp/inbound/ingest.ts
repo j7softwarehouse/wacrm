@@ -77,6 +77,16 @@ export interface IngestParams {
     participantJid: string;
     participantName?: string;
   };
+  /**
+   * true só na recuperação manual de mensagens perdidas numa queda de
+   * produção (ver .../channels/[id]/recover-messages/route.ts) —
+   * mensagem HORAS atrasada não pode disparar resposta automática,
+   * fluxo, automação, nem o webhook público `message.received` (que
+   * outros sistemas podem usar pra reagir em tempo real). A mensagem
+   * ainda é gravada normalmente, só os efeitos colaterais "ao vivo"
+   * ficam de fora. Ausente/false = comportamento de sempre.
+   */
+  suppressEngines?: boolean;
 }
 
 export interface IngestResult {
@@ -535,17 +545,37 @@ async function ingestGroupMessage(
       // 1:1 (ingestInboundMessage, abaixo) já usa 'delivered' para o
       // mesmo cenário — mensagem recebida de um cliente.
       status: "delivered",
+      // Faltava aqui — sem isso toda mensagem de grupo gravava com
+      // `now()` (default da coluna), nunca com o horário real do
+      // WhatsApp. Em tráfego ao vivo isso nunca importou (now() ≈
+      // hora real, a mensagem chega segundos depois de ser enviada),
+      // mas a recuperação manual grava mensagens de horas atrás — sem
+      // isso elas apareceriam todas "agora", na ordem errada da
+      // conversa. Mesmo campo que o caminho 1:1 já preenche abaixo.
+      created_at: new Date(params.timestamp * 1000).toISOString(),
     })
     .select("id")
     .single();
 
   if (error || !message) return null;
 
+  // Recuperação pode inserir uma mensagem ANTIGA numa conversa que já
+  // recebeu mensagem mais nova depois (o fluxo normal voltou a
+  // funcionar antes da recuperação rodar) — nesse caso o preview da
+  // conversa não pode regredir pra essa mensagem antiga. Só atualiza
+  // `last_message_*` quando esta É a mensagem mais recente da conversa.
+  const isLatestInConversation =
+    !resolved.lastMessageAt || params.timestamp * 1000 >= Date.parse(resolved.lastMessageAt);
+
   await db
     .from("conversations")
     .update({
-      last_message_text: buildConversationPreview(params.content),
-      last_message_at: new Date().toISOString(),
+      ...(isLatestInConversation
+        ? {
+            last_message_text: buildConversationPreview(params.content),
+            last_message_at: new Date(params.timestamp * 1000).toISOString(),
+          }
+        : {}),
       // Faltava aqui — o caminho 1:1 (ingestInboundMessage, abaixo)
       // sempre soma 1 no unread_count ao inserir mensagem de cliente,
       // mas este caminho separado de grupo nunca fazia isso. Resultado:
@@ -747,12 +777,25 @@ export async function ingestInboundMessage(
     return null;
   }
 
-  // Atualiza a conversa
+  // Atualiza a conversa. `last_message_*` só muda quando esta mensagem
+  // é de fato a mais recente da conversa — protege a recuperação
+  // manual (ver `suppressEngines`), que pode gravar uma mensagem de
+  // horas atrás numa conversa que já recebeu algo mais novo desde
+  // então; sem essa guarda o preview regrediria pra uma mensagem
+  // antiga. Em tráfego ao vivo isto nunca muda o comportamento: uma
+  // mensagem recebida agora é sempre a mais recente.
+  const isLatestInConversation =
+    !conversation.last_message_at ||
+    params.timestamp * 1000 >= Date.parse(conversation.last_message_at);
   const { error: convError } = await db
     .from("conversations")
     .update({
-      last_message_text: buildConversationPreview(content),
-      last_message_at: new Date().toISOString(),
+      ...(isLatestInConversation
+        ? {
+            last_message_text: buildConversationPreview(content),
+            last_message_at: new Date(params.timestamp * 1000).toISOString(),
+          }
+        : {}),
       unread_count: (conversation.unread_count || 0) + 1,
       // Cliente voltou a escrever: se a conversa estava fechada, reabre
       // na hora em vez de esperar a varredura de 24h.
@@ -767,8 +810,10 @@ export async function ingestInboundMessage(
 
   // Grupo nunca aciona os motores (flows, automations, IA). Ver
   // `shouldDispatchEngines`: defesa em profundidade enquanto grupo
-  // ainda passa por este mesmo caminho de ingestão do 1:1.
-  if (shouldDispatchEngines(params)) {
+  // ainda passa por este mesmo caminho de ingestão do 1:1. Recuperação
+  // manual (`suppressEngines`) tem o mesmo motivo: é texto antigo, uma
+  // resposta "ao vivo" agora seria errada.
+  if (shouldDispatchEngines(params) && !params.suppressEngines) {
     // Se este contato recebeu um broadcast recente, marca a resposta
     // para o `replied_count` do broadcast avançar (via o trigger de
     // agregação instalado na migração 003).
@@ -886,14 +931,21 @@ export async function ingestInboundMessage(
   // uma promessa solta poderia ser congelada antes de entregar.
   // `dispatchWebhookEvent` sai cedo quando a conta não tem endpoint
   // correspondente e nunca lança. (conversation.created é emitido
-  // antes, assim que a thread é aberta.)
-  await dispatchWebhookEvent(db, accountId, "message.received", {
-    conversation_id: conversation.id,
-    contact_id: contactRecord.id,
-    whatsapp_message_id: providerMessageId,
-    content_type: contentType,
-    text: contentText,
-  });
+  // antes, assim que a thread é aberta — continua disparando mesmo em
+  // recuperação: é estado estrutural, não uma reação "ao vivo".)
+  //
+  // Suprimido na recuperação manual: um sistema externo assinante
+  // reagindo agora a uma mensagem de horas atrás é o mesmo problema
+  // que suprimir automations/IA acima.
+  if (!params.suppressEngines) {
+    await dispatchWebhookEvent(db, accountId, "message.received", {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+      whatsapp_message_id: providerMessageId,
+      content_type: contentType,
+      text: contentText,
+    });
+  }
 
   return {
     messageId: insertedMessage.id,
