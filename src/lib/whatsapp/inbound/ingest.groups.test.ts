@@ -75,7 +75,12 @@ function fakeDb(porTabela: Record<string, Record<string, unknown>[]>) {
           }),
         };
       },
-      update: () => ({ eq: async () => ({ error: null }) }),
+      update: (row: Record<string, unknown>) => ({
+        eq: async () => {
+          (porTabela[`${table}:update`] ??= []).push(row);
+          return { error: null };
+        },
+      }),
     }),
   } as unknown as SupabaseClient;
 }
@@ -191,5 +196,85 @@ describe('ingestInboundMessage — mensagem de grupo', () => {
       sender_type: 'customer',
       content_type: 'image',
     });
+  });
+});
+
+describe('ingestInboundMessage — grupo: created_at e last_message_at usam o timestamp real', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('grava created_at a partir de params.timestamp, não de now() — essencial pra recuperação manual de mensagem antiga', async () => {
+    mocks.resolveGroupConversation.mockResolvedValue({
+      conversationId: 'cv-1',
+      groupId: 'grp-1',
+      participantId: 'p-1',
+      unreadCount: 0,
+      status: 'open',
+      lastMessageAt: null,
+    });
+    const porTabela: Record<string, Record<string, unknown>[]> = {};
+    const timestampAntigo = Math.floor(Date.parse('2026-10-07T12:00:00.000Z') / 1000);
+
+    await ingestInboundMessage(fakeDb(porTabela), {
+      channel: CANAL,
+      from: '5511999999999',
+      providerMessageId: 'wamid-antigo-1',
+      timestamp: timestampAntigo,
+      content: { type: 'text', text: 'mensagem recuperada' },
+      group: GRUPO,
+    });
+
+    expect(porTabela['messages']?.[0]?.created_at).toBe('2026-10-07T12:00:00.000Z');
+  });
+
+  it('NÃO regride last_message_at/text quando a conversa já tem mensagem mais recente que a sendo gravada', async () => {
+    mocks.resolveGroupConversation.mockResolvedValue({
+      conversationId: 'cv-1',
+      groupId: 'grp-1',
+      participantId: 'p-1',
+      unreadCount: 0,
+      status: 'open',
+      lastMessageAt: '2026-10-07T18:00:00.000Z', // já tem algo mais novo
+    });
+    const porTabela: Record<string, Record<string, unknown>[]> = {};
+    const timestampAntigo = Math.floor(Date.parse('2026-10-07T12:00:00.000Z') / 1000);
+
+    await ingestInboundMessage(fakeDb(porTabela), {
+      channel: CANAL,
+      from: '5511999999999',
+      providerMessageId: 'wamid-antigo-2',
+      timestamp: timestampAntigo,
+      content: { type: 'text', text: 'mensagem recuperada, mais antiga' },
+      group: GRUPO,
+    });
+
+    const update = porTabela['conversations:update']?.[0];
+    expect(update?.last_message_text).toBeUndefined();
+    expect(update?.last_message_at).toBeUndefined();
+  });
+
+  it('ATUALIZA last_message_at quando a mensagem gravada é de fato a mais recente (comportamento normal)', async () => {
+    mocks.resolveGroupConversation.mockResolvedValue({
+      conversationId: 'cv-1',
+      groupId: 'grp-1',
+      participantId: 'p-1',
+      unreadCount: 0,
+      status: 'open',
+      lastMessageAt: '2026-10-07T10:00:00.000Z', // mais antiga que a que está chegando
+    });
+    const porTabela: Record<string, Record<string, unknown>[]> = {};
+    const timestampNovo = Math.floor(Date.parse('2026-10-07T12:00:00.000Z') / 1000);
+
+    await ingestInboundMessage(fakeDb(porTabela), {
+      channel: CANAL,
+      from: '5511999999999',
+      providerMessageId: 'wamid-novo-1',
+      timestamp: timestampNovo,
+      content: { type: 'text', text: 'mensagem nova' },
+      group: GRUPO,
+    });
+
+    const update = porTabela['conversations:update']?.[0];
+    expect(update?.last_message_text).toBe('mensagem nova');
+    expect(update?.last_message_at).toBe('2026-10-07T12:00:00.000Z');
   });
 });
