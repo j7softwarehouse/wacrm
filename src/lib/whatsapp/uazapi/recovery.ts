@@ -21,6 +21,7 @@ import {
   type IngestParams,
   type IngestResult,
 } from "@/lib/whatsapp/inbound/ingest";
+import { isGroupEnabled as realIsGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import type { WhatsAppProvider } from "@/lib/whatsapp/providers/types";
 import { normalizeUazapiEvent } from "@/lib/whatsapp/uazapi/normalize";
 import type { WhatsAppChannel } from "@/types";
@@ -35,6 +36,7 @@ export type RecoveryOutcomeStatus =
   | "inserted"
   | "already_existed"
   | "skipped_unparseable"
+  | "skipped_not_ingested"
   | "error";
 
 export interface RecoveryOutcome {
@@ -51,6 +53,9 @@ export interface RecoverMessagesResult {
   inserted: number;
   alreadyExisted: number;
   skippedUnparseable: number;
+  /** O ingest devolveu null: grupo desabilitado, contato/conversa que
+   *  não resolveram, ou erro de banco já logado — nada foi gravado. */
+  skippedNotIngested: number;
   errors: number;
 }
 
@@ -61,6 +66,12 @@ export interface RecoverMessagesOptions {
   onlyIsGroup?: boolean;
   /** Injeção pra teste — produção usa sempre o `ingestInboundMessage`
    *  real (ver o default no final deste arquivo). */
+  isGroupEnabled?: (
+    db: SupabaseClient,
+    accountId: string,
+    channelId: string,
+    groupJid: string,
+  ) => Promise<boolean>;
   ingestInboundMessage?: (
     db: SupabaseClient,
     params: IngestParams,
@@ -76,6 +87,7 @@ export async function recoverMessages(
   options: RecoverMessagesOptions = {},
 ): Promise<RecoverMessagesResult> {
   const ingest = options.ingestInboundMessage ?? realIngestInboundMessage;
+  const groupEnabled = options.isGroupEnabled ?? realIsGroupEnabled;
 
   const scan = await findMessagesInWindow(client, window, {
     onlyChatid: options.onlyChatid,
@@ -125,7 +137,15 @@ export async function recoverMessages(
       // mídia — nunca derruba a recuperação inteira por causa de UM
       // arquivo.
       let content = normalized.content;
-      if (content.mediaUrl) {
+      // Grupo desabilitado: o ingest descarta a mensagem, então baixar a
+      // mídia só gastaria CPU e deixaria arquivo órfão (mesma regra do
+      // webhook ao vivo).
+      const skipMedia =
+        !!normalized.group &&
+        !(await groupEnabled(db, channel.account_id, channel.id, normalized.group.groupJid));
+      if (content.mediaUrl && skipMedia) {
+        content = { ...content, mediaUrl: undefined };
+      } else if (content.mediaUrl) {
         try {
           const stored = await provider.resolveInboundMediaUrl(content.mediaUrl);
           content = { ...content, mediaUrl: stored ?? undefined };
@@ -139,7 +159,7 @@ export async function recoverMessages(
       }
 
       try {
-        await ingest(db, {
+        const ingested = await ingest(db, {
           channel,
           from: normalized.from,
           pushName: normalized.pushName,
@@ -150,7 +170,11 @@ export async function recoverMessages(
           group: normalized.group,
           suppressEngines: true,
         });
-        outcomes.push({ providerMessageId, chatid: chat.chatid, status: "inserted" });
+        outcomes.push({
+          providerMessageId,
+          chatid: chat.chatid,
+          status: ingested ? "inserted" : "skipped_not_ingested",
+        });
       } catch (err) {
         outcomes.push({
           providerMessageId,
@@ -169,6 +193,7 @@ export async function recoverMessages(
     inserted: outcomes.filter((o) => o.status === "inserted").length,
     alreadyExisted: outcomes.filter((o) => o.status === "already_existed").length,
     skippedUnparseable: outcomes.filter((o) => o.status === "skipped_unparseable").length,
+    skippedNotIngested: outcomes.filter((o) => o.status === "skipped_not_ingested").length,
     errors: outcomes.filter((o) => o.status === "error").length,
   };
 }

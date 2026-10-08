@@ -37,6 +37,39 @@ export function phoneFromParticipantJid(jid: string): string | null {
   return phone || null;
 }
 
+/**
+ * Consulta leve: este grupo está habilitado pra entrar na inbox?
+ * Mesma regra de `resolveGroupConversation` (a linha órfã de um canal
+ * recriado vale mais que a do canal atual), mas SEM efeitos colaterais —
+ * não cria grupo, participante nem conversa.
+ *
+ * Existe pra o webhook decidir ANTES de baixar e descriptografar a mídia
+ * de uma mensagem de grupo: se o grupo não está habilitado a mensagem é
+ * descartada de qualquer jeito, e o download era CPU gasta à toa (mais
+ * um arquivo órfão no Storage). Em erro de consulta devolve `true`, ou
+ * seja, mantém o comportamento antigo (baixar) em vez de arriscar perder
+ * mídia de um grupo habilitado.
+ */
+export async function isGroupEnabled(
+  db: SupabaseClient,
+  accountId: string,
+  channelId: string,
+  groupJid: string,
+): Promise<boolean> {
+  const { data: rows, error } = await db
+    .from('whatsapp_groups')
+    .select('channel_id, enabled')
+    .eq('account_id', accountId)
+    .eq('group_jid', groupJid);
+
+  if (error) return true;
+
+  const list = rows ?? [];
+  const orphan = list.find((r) => r.channel_id === null);
+  const current = list.find((r) => r.channel_id === channelId);
+  return (orphan ?? current)?.enabled === true;
+}
+
 export async function resolveGroupConversation(
   db: SupabaseClient,
   accountId: string,

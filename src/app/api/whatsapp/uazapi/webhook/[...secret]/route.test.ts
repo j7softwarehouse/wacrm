@@ -7,6 +7,17 @@ const mocks = vi.hoisted(() => ({
   ingestInboundMessage: vi.fn(async (_db: unknown, _params: unknown) => ({
     ok: true,
   })),
+  isGroupEnabled: vi.fn(async () => true),
+  resolveInboundMediaUrl: vi.fn(async (_ref: string) => "https://storage/x.jpg"),
+}));
+
+vi.mock("@/lib/whatsapp/groups/resolve-group-conversation", () => ({
+  isGroupEnabled: mocks.isGroupEnabled,
+}));
+vi.mock("@/lib/whatsapp/providers/resolve", () => ({
+  getProviderForChannel: async () => ({
+    resolveInboundMediaUrl: mocks.resolveInboundMediaUrl,
+  }),
 }));
 
 // `ingestInboundMessage` já tem suíte própria (ingest.test.ts) — aqui só
@@ -422,5 +433,47 @@ describe("handleEvent — evento 'history' (recuperação de mensagem, formato a
     );
     expect(mocks.ingestInboundMessage).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("handleEvent — mídia de grupo só é baixada se o grupo estiver habilitado", () => {
+  const imagem = (isGroup: boolean) => ({
+    EventType: "messages",
+    message: {
+      chatid: isGroup ? "120363000000000000@g.us" : "5511999999999@s.whatsapp.net",
+      isGroup,
+      fromMe: false,
+      messageType: "ImageMessage",
+      messageTimestamp: 1789135598000,
+      messageid: "IMG1",
+      sender_pn: "5511999999999@s.whatsapp.net",
+      senderName: "Fulana",
+      content: { URL: "https://cdn.whatsapp.net/x.enc", mediaKey: "a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5MTIzNDU2", mimetype: "image/jpeg" },
+      wasSentByApi: false,
+    },
+  });
+
+  it("grupo DESABILITADO: não baixa a mídia, mas ainda chama o ingest (que registra o grupo pra tela de seleção)", async () => {
+    mocks.isGroupEnabled.mockResolvedValueOnce(false);
+
+    await handleEvent(CHANNEL, imagem(true));
+
+    expect(mocks.resolveInboundMediaUrl).not.toHaveBeenCalled();
+    expect(mocks.ingestInboundMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("grupo HABILITADO: baixa a mídia normalmente", async () => {
+    mocks.isGroupEnabled.mockResolvedValueOnce(true);
+
+    await handleEvent(CHANNEL, imagem(true));
+
+    expect(mocks.resolveInboundMediaUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("conversa 1:1: baixa a mídia sem nem consultar o grupo", async () => {
+    await handleEvent(CHANNEL, imagem(false));
+
+    expect(mocks.isGroupEnabled).not.toHaveBeenCalled();
+    expect(mocks.resolveInboundMediaUrl).toHaveBeenCalledTimes(1);
   });
 });

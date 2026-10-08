@@ -98,6 +98,7 @@ export async function POST(
       inserted: result.inserted,
       alreadyExisted: result.alreadyExisted,
       skippedUnparseable: result.skippedUnparseable,
+      skippedNotIngested: result.skippedNotIngested,
       errors: result.errors,
       outcomes: result.outcomes,
     });
