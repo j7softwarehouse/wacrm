@@ -1,4 +1,4 @@
-name: Sync WhatsApp groups (homolog e produção)
+name: Sync WhatsApp groups (produção)
 
 # Vercel's Hobby plan only allows native Cron Jobs to run once a day —
 # too slow for "a rejoined/new group should reappear within minutes".
@@ -7,26 +7,31 @@ name: Sync WhatsApp groups (homolog e produção)
 # the same shared-secret mechanism the app's own daily crons already use
 # (src/lib/cron/auth.ts accepts this custom x-cron-secret header
 # specifically so an external pinger like this one can call it without
-# needing Vercel's own Cron Jobs feature). Um job por ambiente, cada um
-# com seu próprio secret, para que uma falha em um não afete o outro.
+# needing Vercel's own Cron Jobs feature).
+#
+# 2026-10-08: produção migrou pra outra conta Vercel (time J7, projeto
+# "wacrm") depois que a conta antiga estourou o limite de CPU do plano
+# Hobby — ver [[wacrm-migracao-vercel-nova-conta]] na memória do
+# projeto. A URL aponta pro domínio da escola, não pro subdomínio
+# *.vercel.app do projeto (esse muda a cada deploy do time). O
+# WACRM_CRON_SECRET_PRODUCTION foi regerado nessa migração — o antigo
+# ficava só como variável Sensitive na conta antiga e não dava pra
+# recuperar.
+#
+# O job de homolog foi removido aqui: a conta antiga (onde ele
+# apontava) está bloqueada, e a conta nova não tem ambiente de Preview
+# configurado (sem variáveis de ambiente lá). Recriar quando existir um
+# homolog de verdade rodando.
 on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
 jobs:
-  sync-homolog:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger group sync (homolog)
-        run: |
-          curl -sf -X GET "https://wacrm-git-staging-ramonppaula-5619s-projects.vercel.app/api/whatsapp/groups/sync-cron" \
-            -H "x-cron-secret: ${{ secrets.WACRM_CRON_SECRET }}"
-
   sync-production:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger group sync (produção)
         run: |
-          curl -sf -X GET "https://wacrm-sable-psi.vercel.app/api/whatsapp/groups/sync-cron" \
+          curl -sf -X GET "https://emanuel.j7softwarehouse.com.br/api/whatsapp/groups/sync-cron" \
             -H "x-cron-secret: ${{ secrets.WACRM_CRON_SECRET_PRODUCTION }}"
