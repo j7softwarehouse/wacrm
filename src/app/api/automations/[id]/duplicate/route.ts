@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
@@ -7,6 +8,7 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await params
 
   // Duplicating creates a new automation row — a write. Enforce `agent`
@@ -22,7 +24,7 @@ export async function POST(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
 
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
@@ -32,7 +34,7 @@ export async function POST(
     .eq('user_id', user.id)
     .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
-  if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!original) return NextResponse.json({ error: t('notFound') }, { status: 404 })
 
   const { data: copy, error: copyErr } = await admin
     .from('automations')
@@ -50,7 +52,7 @@ export async function POST(
     .select()
     .single()
   if (copyErr || !copy) {
-    return NextResponse.json({ error: copyErr?.message ?? 'copy failed' }, { status: 500 })
+    return NextResponse.json({ error: copyErr?.message ?? t('copyFailedFallback') }, { status: 500 })
   }
 
   const { data: steps } = await admin

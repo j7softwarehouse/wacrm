@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import {
   getCurrentAccount,
   requireRole,
@@ -15,6 +16,7 @@ type Params = { params: Promise<{ id: string }> }
  * GET /api/ai/knowledge/[id] — full document (any member).
  */
 export async function GET(_request: Request, { params }: Params) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await getCurrentAccount()
     const { id } = await params
@@ -26,9 +28,9 @@ export async function GET(_request: Request, { params }: Params) {
       .maybeSingle()
     if (error) {
       console.error('[ai/knowledge/[id] GET] error:', error)
-      return NextResponse.json({ error: 'Failed to load document' }, { status: 500 })
+      return NextResponse.json({ error: t('failedToLoadDocument') }, { status: 500 })
     }
-    if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!data) return NextResponse.json({ error: t('notFound') }, { status: 404 })
     return NextResponse.json(data)
   } catch (err) {
     return toErrorResponse(err)
@@ -40,6 +42,7 @@ export async function GET(_request: Request, { params }: Params) {
  * re-index when the content changed.
  */
 export async function PATCH(request: Request, { params }: Params) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
     const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
@@ -50,13 +53,13 @@ export async function PATCH(request: Request, { params }: Params) {
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
     const content = typeof body?.content === 'string' ? body.content.trim() : undefined
     if (title === undefined && content === undefined) {
-      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+      return NextResponse.json({ error: t('nothingToUpdate') }, { status: 400 })
     }
     if (title !== undefined && !title) {
-      return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 })
+      return NextResponse.json({ error: t('titleCannotBeEmpty') }, { status: 400 })
     }
     if (content !== undefined && !content) {
-      return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
+      return NextResponse.json({ error: t('contentEmpty') }, { status: 400 })
     }
 
     const update: Record<string, string> = {}
@@ -72,9 +75,9 @@ export async function PATCH(request: Request, { params }: Params) {
       .maybeSingle()
     if (error) {
       console.error('[ai/knowledge/[id] PATCH] error:', error)
-      return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
+      return NextResponse.json({ error: t('failedToUpdateDocument') }, { status: 500 })
     }
-    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!updated) return NextResponse.json({ error: t('notFound') }, { status: 404 })
 
     if (content !== undefined) {
       const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(
@@ -84,12 +87,12 @@ export async function PATCH(request: Request, { params }: Params) {
       try {
         await ingestDocument(supabase, accountId, { embeddingsApiKey }, id, content)
       } catch (err) {
-        const message = err instanceof AiError ? err.message : 'indexing failed'
+        const message = err instanceof AiError ? err.message : t('indexingFailedFallback')
         console.error('[ai/knowledge/[id] PATCH] ingest error:', err)
         return NextResponse.json(
           {
             success: true,
-            warning: `Updated, but semantic indexing failed (${message}). Lexical search still works; use Reindex to retry.`,
+            warning: t('updatedButIndexingFailed', { message }),
           },
           { status: 200 },
         )
@@ -97,8 +100,7 @@ export async function PATCH(request: Request, { params }: Params) {
       if (corrupt) {
         return NextResponse.json({
           success: true,
-          warning:
-            'Updated with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).',
+          warning: t('updatedKeywordOnlyEmbeddingsCorrupt'),
         })
       }
     }
@@ -113,6 +115,7 @@ export async function PATCH(request: Request, { params }: Params) {
  * DELETE /api/ai/knowledge/[id]  (admin+) — chunks cascade.
  */
 export async function DELETE(_request: Request, { params }: Params) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await requireRole('admin')
     const { id } = await params
@@ -123,7 +126,7 @@ export async function DELETE(_request: Request, { params }: Params) {
       .eq('id', id)
     if (error) {
       console.error('[ai/knowledge/[id] DELETE] error:', error)
-      return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 })
+      return NextResponse.json({ error: t('failedToDeleteDocument') }, { status: 500 })
     }
     return NextResponse.json({ success: true })
   } catch (err) {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -59,6 +60,7 @@ interface NewRecipient {
 }
 
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const supabase = await createClient()
 
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
     }
 
     // Per-user broadcast budget. Note: this limits how often a user
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
+        { error: t('profileNotLinked') },
         { status: 403 },
       )
     }
@@ -120,8 +122,7 @@ export async function POST(request: Request) {
     } else {
       return NextResponse.json(
         {
-          error:
-            'Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array',
+          error: t('provideRecipientsOrPhoneNumbers'),
         },
         { status: 400 }
       )
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
 
     if (!template_name) {
       return NextResponse.json(
-        { error: 'template_name is required' },
+        { error: t('templateNameIsRequired') },
         { status: 400 }
       )
     }
@@ -143,8 +144,7 @@ export async function POST(request: Request) {
     if (configError || !config) {
       return NextResponse.json(
         {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
+          error: t('whatsappNotConfiguredPleaseSetup'),
         },
         { status: 400 }
       )
@@ -167,8 +167,7 @@ export async function POST(request: Request) {
     if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
       return NextResponse.json(
         {
-          error:
-            'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
+          error: t('templateRowMalformed'),
         },
         { status: 500 },
       )
@@ -186,7 +185,7 @@ export async function POST(request: Request) {
         results.push({
           phone: recipient.phone,
           status: 'failed',
-          error: 'Invalid phone number format',
+          error: t('invalidPhoneFormat'),
         })
         failedCount++
         continue
@@ -256,7 +255,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error in WhatsApp broadcast POST:', error)
     return NextResponse.json(
-      { error: 'Failed to process broadcast' },
+      { error: t('failedToProcessBroadcast') },
       { status: 500 }
     )
   }

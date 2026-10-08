@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
@@ -22,6 +23,7 @@ const MAX_TURNS = 20
  * going live. Stateless: the client sends the running transcript each turn.
  */
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
 
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const rawMessages = Array.isArray(body?.messages) ? body.messages : null
     if (!rawMessages) {
-      return NextResponse.json({ error: 'messages is required' }, { status: 400 })
+      return NextResponse.json({ error: t('messagesIsRequired') }, { status: 400 })
     }
 
     const messages: ChatMessage[] = rawMessages
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
 
     if (messages.length === 0) {
       return NextResponse.json(
-        { error: 'Send a message to test the agent.' },
+        { error: t('sendMessageToTestAgent') },
         { status: 400 },
       )
     }
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
       requireActive: false,
     }).catch((err) => {
       console.error('[ai/playground] loadAiConfig error:', err)
-      throw new AiError('Stored API key could not be decrypted.', {
+      throw new AiError(t('storedApiKeyCouldNotBeDecryptedPeriod'), {
         code: 'key_decrypt_failed',
         status: 400,
       })
@@ -65,7 +67,7 @@ export async function POST(request: Request) {
     if (!config) {
       return NextResponse.json(
         {
-          error: 'No agent configured yet. Add your provider key in Setup.',
+          error: t('noAgentConfigured'),
           code: 'ai_not_configured',
         },
         { status: 400 },

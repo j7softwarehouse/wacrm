@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import type { PostgrestError } from "@supabase/supabase-js";
+import { getTranslations } from "next-intl/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { isAccountRole } from "@/lib/auth/roles";
@@ -28,7 +29,10 @@ import {
 // Map known SQLSTATEs from the RPCs (see migration 018) onto HTTP
 // statuses. The `error.code` field is the SQLSTATE; the `message`
 // is the human-readable RAISE message we put in the migration.
-function rpcErrorToResponse(err: PostgrestError): NextResponse {
+function rpcErrorToResponse(
+  err: PostgrestError,
+  t: Awaited<ReturnType<typeof getTranslations>>,
+): NextResponse {
   if (err.code === "42501") {
     return NextResponse.json({ error: err.message }, { status: 403 });
   }
@@ -37,7 +41,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[members route] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to update member" },
+    { error: t("failedToUpdateMember") },
     { status: 500 },
   );
 }
@@ -46,6 +50,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -64,7 +69,7 @@ export async function PATCH(
 
     if (!isAccountRole(role)) {
       return NextResponse.json(
-        { error: "'role' must be one of owner, admin, agent, viewer" },
+        { error: t("roleMustBeOneOfOwnerAdminAgentViewer") },
         { status: 400 },
       );
     }
@@ -73,10 +78,7 @@ export async function PATCH(
     // surface the friendlier 400 before crossing the wire too.
     if (role === "owner") {
       return NextResponse.json(
-        {
-          error:
-            "Use POST /api/account/transfer-ownership to promote a member to owner",
-        },
+        { error: t("usePostTransferOwnership") },
         { status: 400 },
       );
     }
@@ -86,7 +88,7 @@ export async function PATCH(
       p_new_role: role,
     });
 
-    if (error) return rpcErrorToResponse(error);
+    if (error) return rpcErrorToResponse(error, t);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -98,6 +100,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ userId: string }> },
 ) {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -113,7 +116,7 @@ export async function DELETE(
       p_user_id: userId,
     });
 
-    if (error) return rpcErrorToResponse(error);
+    if (error) return rpcErrorToResponse(error, t);
 
     return NextResponse.json({ ok: true, newPersonalAccountId: data });
   } catch (err) {

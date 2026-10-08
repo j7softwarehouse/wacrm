@@ -13,6 +13,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server';
+import { getTranslations } from 'next-intl/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import {
@@ -25,6 +26,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t = await getTranslations('Api');
   try {
     const ctx = await requireRole('admin');
 
@@ -52,14 +54,14 @@ export async function DELETE(
     if (error) {
       console.error('[DELETE /api/account/api-keys/[id]] error:', error);
       return NextResponse.json(
-        { error: 'Failed to revoke API key' },
+        { error: t('failedToRevokeApiKey') },
         { status: 500 }
       );
     }
     if (!data) {
       // Either no such key in this account, or it was already revoked.
       return NextResponse.json(
-        { error: 'API key not found or already revoked' },
+        { error: t('apiKeyNotFound') },
         { status: 404 }
       );
     }

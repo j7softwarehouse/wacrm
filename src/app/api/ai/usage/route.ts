@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { daysAgoStart, lastNDayKeys, localDayKey } from '@/lib/dashboard/date-utils'
 
@@ -29,6 +30,7 @@ interface UsageRow {
  * `ai_usage_log` SELECT policy — spend is billing-class.
  */
 export async function GET(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await requireRole('admin')
 
@@ -64,7 +66,7 @@ export async function GET(request: Request) {
     if (error) {
       console.error('[ai/usage GET] fetch error:', error)
       return NextResponse.json(
-        { error: 'Failed to load usage' },
+        { error: t('failedToLoadUsage') },
         { status: 500 },
       )
     }

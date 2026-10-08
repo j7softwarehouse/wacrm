@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { listFlowTemplates } from '@/lib/flows/templates'
 
@@ -13,22 +14,23 @@ import { listFlowTemplates } from '@/lib/flows/templates'
  * Available to any signed-in user. Flows is in soft-GA.
  */
 export async function GET() {
+  const t = await getTranslations('Api')
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
   }
   // Shallow shape so the client gallery doesn't have to know about
   // the full node tree.
-  const templates = listFlowTemplates().map((t) => ({
-    slug: t.slug,
-    name: t.name,
-    description: t.description,
-    icon: t.icon,
-    trigger_type: t.trigger_type,
-    node_count: t.nodes.length,
+  const templates = listFlowTemplates().map((tpl) => ({
+    slug: tpl.slug,
+    name: tpl.name,
+    description: tpl.description,
+    icon: tpl.icon,
+    trigger_type: tpl.trigger_type,
+    node_count: tpl.nodes.length,
   }))
   return NextResponse.json({ templates })
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
@@ -24,6 +25,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   let ctx
   try {
     ctx = await requireRole('agent')
@@ -32,12 +34,12 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('invalidJson') }, { status: 400 })
 
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   const kind = body.kind === 'interactive' ? 'interactive' : 'text'
   if (!title) {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    return NextResponse.json({ error: t('titleIsRequired') }, { status: 400 })
   }
 
   let content_text: string | null = null
@@ -53,7 +55,7 @@ export async function POST(request: Request) {
     const text = typeof body.content_text === 'string' ? body.content_text : ''
     if (!text.trim()) {
       return NextResponse.json(
-        { error: 'content_text is required for text quick replies' },
+        { error: t('contentTextRequiredForText') },
         { status: 400 },
       )
     }

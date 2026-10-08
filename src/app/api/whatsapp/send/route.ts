@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   checkRateLimit,
@@ -21,6 +22,7 @@ import {
 // conversation, delegate, then map `SendMessageError` back onto the
 // dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const supabase = await createClient()
 
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: t('unauthorized') },
         { status: 401 }
       )
     }
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
+        { error: t('profileNotLinked') },
         { status: 403 },
       )
     }
@@ -82,8 +84,7 @@ export async function POST(request: Request) {
     if ((!conversationIdInput && !contact_id) || !message_type) {
       return NextResponse.json(
         {
-          error:
-            'Either conversation_id or contact_id, plus message_type, are required',
+          error: t('eitherConvOrContactRequired'),
         },
         { status: 400 }
       )
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
 
       if (convError || !data) {
         return NextResponse.json(
-          { error: 'Conversation not found' },
+          { error: t('conversationNotFound') },
           { status: 404 }
         )
       }
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
 
       if (contactErr || !contactRow) {
         return NextResponse.json(
-          { error: 'Contact not found' },
+          { error: t('contactNotFound') },
           { status: 404 }
         )
       }
@@ -153,7 +154,7 @@ export async function POST(request: Request) {
       )
       if (!resolved) {
         return NextResponse.json(
-          { error: 'Failed to open a conversation for this contact' },
+          { error: t('failedToOpenConversation') },
           { status: 500 }
         )
       }
@@ -162,7 +163,7 @@ export async function POST(request: Request) {
 
     if (!conversationId) {
       return NextResponse.json(
-        { error: 'Conversation not found' },
+        { error: t('conversationNotFound') },
         { status: 404 }
       )
     }
@@ -203,7 +204,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error in WhatsApp send POST:', error)
     return NextResponse.json(
-      { error: 'Failed to send message' },
+      { error: t('failedToSendMessage') },
       { status: 500 }
     )
   }

@@ -12,6 +12,7 @@ import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
+import { dateFnsLocale } from "@/lib/i18n/locale";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -447,6 +448,7 @@ function ConversationItem({
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
         addSuffix: false,
+        locale: dateFnsLocale,
       })
     : "";
 

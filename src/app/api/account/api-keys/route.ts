@@ -18,6 +18,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server';
+import { getTranslations } from 'next-intl/server';
 
 import {
   getCurrentAccount,
@@ -43,6 +44,7 @@ const SAFE_COLUMNS =
   'id, name, key_prefix, scopes, last_used_at, expires_at, revoked_at, created_at';
 
 export async function GET() {
+  const t = await getTranslations('Api');
   try {
     // Any member can view the roster (RLS allows it); we just need a
     // resolved account context.
@@ -57,7 +59,7 @@ export async function GET() {
     if (error) {
       console.error('[GET /api/account/api-keys] fetch error:', error);
       return NextResponse.json(
-        { error: 'Failed to load API keys' },
+        { error: t('failedToLoadApiKeys') },
         { status: 500 }
       );
     }
@@ -69,6 +71,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const t = await getTranslations('Api');
   try {
     const ctx = await requireRole('admin');
 
@@ -87,13 +90,13 @@ export async function POST(request: Request) {
     const rawName = typeof body?.name === 'string' ? body.name.trim() : '';
     if (!rawName) {
       return NextResponse.json(
-        { error: "'name' is required" },
+        { error: t('nameQuotedRequired') },
         { status: 400 }
       );
     }
     if (rawName.length > MAX_NAME_LEN) {
       return NextResponse.json(
-        { error: `Name must be ${MAX_NAME_LEN} characters or fewer` },
+        { error: t('nameMaxLength', { max: MAX_NAME_LEN }) },
         { status: 400 }
       );
     }
@@ -103,7 +106,7 @@ export async function POST(request: Request) {
     const scopes = normalizeScopes(body?.scopes ?? []);
     if (scopes === null) {
       return NextResponse.json(
-        { error: "'scopes' must be an array of known scope strings" },
+        { error: t('scopesMustBeArray') },
         { status: 400 }
       );
     }
@@ -140,7 +143,7 @@ export async function POST(request: Request) {
     if (error || !data) {
       console.error('[POST /api/account/api-keys] insert error:', error);
       return NextResponse.json(
-        { error: 'Failed to create API key' },
+        { error: t('failedToCreateApiKey') },
         { status: 500 }
       );
     }

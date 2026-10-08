@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import {
   getCurrentAccount,
   requireRole,
@@ -15,6 +16,7 @@ import { AiError } from '@/lib/ai/types'
  * List the account's knowledge-base documents (any member).
  */
 export async function GET() {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
@@ -25,7 +27,7 @@ export async function GET() {
     if (error) {
       console.error('[ai/knowledge GET] error:', error)
       return NextResponse.json(
-        { error: 'Failed to load knowledge base' },
+        { error: t('failedToLoadKnowledgeBase') },
         { status: 500 },
       )
     }
@@ -42,6 +44,7 @@ export async function GET() {
  * fails the document is still saved so the admin can retry via reindex.
  */
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
     const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
     if (!title || !content) {
       return NextResponse.json(
-        { error: 'title and content are required' },
+        { error: t('titleAndContentRequired') },
         { status: 400 },
       )
     }
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     if (error || !doc) {
       console.error('[ai/knowledge POST] insert error:', error)
       return NextResponse.json(
-        { error: 'Failed to save document' },
+        { error: t('failedToSaveDocument') },
         { status: 500 },
       )
     }
@@ -83,13 +86,13 @@ export async function POST(request: Request) {
         content,
       )
     } catch (err) {
-      const message = err instanceof AiError ? err.message : 'indexing failed'
+      const message = err instanceof AiError ? err.message : t('indexingFailedFallback')
       console.error('[ai/knowledge POST] ingest error:', err)
       return NextResponse.json(
         {
           success: true,
           id: doc.id,
-          warning: `Saved, but semantic indexing failed (${message}). Lexical search still works; use Reindex to retry.`,
+          warning: t('savedButIndexingFailed', { message }),
         },
         { status: 200 },
       )
@@ -99,8 +102,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         id: doc.id,
-        warning:
-          'Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).',
+        warning: t('savedKeywordOnlyEmbeddingsCorrupt'),
       })
     }
     return NextResponse.json({ success: true, id: doc.id })

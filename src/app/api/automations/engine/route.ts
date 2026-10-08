@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { AutomationTriggerType } from '@/types'
@@ -9,6 +10,7 @@ import type { AutomationTriggerType } from '@/types'
  * account_id and dispatch over the account's automations.
  */
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   // Firing automations sends outbound WhatsApp — a write action. Require
   // at least `agent`; a viewer must not be able to trigger sends.
   let accountId: string
@@ -21,7 +23,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null)
   if (!body?.trigger_type) {
-    return NextResponse.json({ error: 'trigger_type required' }, { status: 400 })
+    return NextResponse.json({ error: t('triggerTypeRequired') }, { status: 400 })
   }
 
   await runAutomationsForTrigger({

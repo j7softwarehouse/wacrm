@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -20,6 +21,7 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await context.params
 
   const supabase = await createClient()
@@ -27,7 +29,7 @@ export async function GET(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
   }
 
   // Confirm flow exists + caller owns it (RLS does this) before doing
@@ -38,7 +40,7 @@ export async function GET(
     .eq('id', id)
     .maybeSingle()
   if (!flow) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('notFound') }, { status: 404 })
   }
 
   // Pull runs + each run's contact name + each run's events. Two

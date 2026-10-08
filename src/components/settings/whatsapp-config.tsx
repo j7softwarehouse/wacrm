@@ -30,6 +30,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
+import { APP_LOCALE } from '@/lib/i18n/locale';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -502,7 +503,7 @@ export function WhatsAppConfig() {
                   dangerouslySetInnerHTML={{
                     __html: t('subscribedSince', {
                       date: config.registered_at
-                        ? new Date(config.registered_at).toLocaleString()
+                        ? new Date(config.registered_at).toLocaleString(APP_LOCALE)
                         : t('unknownDate'),
                     }),
                   }}

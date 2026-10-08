@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
+import { APP_LOCALE } from '@/lib/i18n/locale';
 import {
   Users,
   Tags,
@@ -439,7 +440,7 @@ export function Step2SelectAudience({
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
             <span className="text-sm text-foreground">
-              {estimatedCount.toLocaleString()}
+              {estimatedCount.toLocaleString(APP_LOCALE)}
             </span>
             <span className="text-xs text-muted-foreground">estimated recipients</span>
           </div>

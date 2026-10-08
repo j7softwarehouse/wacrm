@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
@@ -24,9 +25,10 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await params
   const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
 
   const admin = supabaseAdmin()
   const { data: automation, error } = await admin
@@ -37,7 +39,7 @@ export async function GET(
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!automation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!automation) return NextResponse.json({ error: t('notFound') }, { status: 404 })
 
   const steps = await loadStepsTree(id)
   return NextResponse.json({ automation, steps })
@@ -47,6 +49,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await params
 
   // Editing an automation is a write — the RLS automations_update policy
@@ -59,10 +62,10 @@ export async function PATCH(
   }
 
   const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('invalidJson') }, { status: 400 })
 
   const admin = supabaseAdmin()
 
@@ -74,7 +77,7 @@ export async function PATCH(
     .eq('id', id)
     .maybeSingle()
   if (!existing || existing.user_id !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('notFound') }, { status: 404 })
   }
 
   const update: Record<string, unknown> = {}
@@ -107,7 +110,7 @@ export async function PATCH(
     if (issues.length > 0) {
       return NextResponse.json(
         {
-          error: 'Cannot keep automation active with invalid configuration',
+          error: t('cannotKeepAutomationActive'),
           issues,
         },
         { status: 400 },
@@ -135,6 +138,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await params
 
   // Deleting an automation is a write — enforce `agent` (the service-role
@@ -146,7 +150,7 @@ export async function DELETE(
   }
 
   const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
 
   const { error } = await supabaseAdmin()
     .from('automations')

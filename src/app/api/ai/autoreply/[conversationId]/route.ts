@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -25,6 +26,7 @@ type Params = { params: Promise<{ conversationId: string }> }
  * the caller's account simply isn't found (404).
  */
 export async function POST(request: Request, { params }: Params) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
 
@@ -37,7 +39,7 @@ export async function POST(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     if (!body || typeof body.paused !== 'boolean') {
       return NextResponse.json(
-        { error: 'paused (boolean) is required' },
+        { error: t('pausedBooleanRequired') },
         { status: 400 },
       )
     }
@@ -54,12 +56,12 @@ export async function POST(request: Request, { params }: Params) {
     if (convErr) {
       console.error('[ai/autoreply] conversation lookup error:', convErr)
       return NextResponse.json(
-        { error: 'Failed to load conversation' },
+        { error: t('failedToLoadConversation') },
         { status: 500 },
       )
     }
     if (!conv) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+      return NextResponse.json({ error: t('conversationNotFound') }, { status: 404 })
     }
 
     const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
@@ -91,7 +93,7 @@ export async function POST(request: Request, { params }: Params) {
     if (upErr) {
       console.error('[ai/autoreply] update error:', upErr)
       return NextResponse.json(
-        { error: 'Failed to update conversation' },
+        { error: t('failedToUpdateConversation') },
         { status: 500 },
       )
     }

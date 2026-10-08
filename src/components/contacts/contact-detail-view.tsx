@@ -41,6 +41,7 @@ import {
   LayoutTemplate,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { APP_LOCALE } from '@/lib/i18n/locale';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -627,7 +628,7 @@ export function ContactDetailView({
                           </button>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1.5">
-                          {new Date(note.created_at).toLocaleDateString('en-US', {
+                          {new Date(note.created_at).toLocaleDateString(APP_LOCALE, {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

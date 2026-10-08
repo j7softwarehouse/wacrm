@@ -18,6 +18,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { getTranslations } from "next-intl/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -137,6 +138,7 @@ function getBaseUrl(request: Request): string {
 const MAX_LABEL_LEN = 80;
 
 export async function GET() {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -153,7 +155,7 @@ export async function GET() {
     if (error) {
       console.error("[GET /api/account/invitations] fetch error:", error);
       return NextResponse.json(
-        { error: "Failed to load invitations" },
+        { error: t("failedToLoadInvitations") },
         { status: 500 },
       );
     }
@@ -165,6 +167,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -188,7 +191,7 @@ export async function POST(request: Request) {
       // here gives a clearer 400 than the eventual constraint
       // violation surfaced as a 500.
       return NextResponse.json(
-        { error: "'role' must be one of admin, agent, viewer" },
+        { error: t("roleMustBeOneOfAdminAgentViewer") },
         { status: 400 },
       );
     }
@@ -207,7 +210,7 @@ export async function POST(request: Request) {
       const trimmed = body.label.trim();
       if (trimmed.length > MAX_LABEL_LEN) {
         return NextResponse.json(
-          { error: `Label must be ${MAX_LABEL_LEN} characters or fewer` },
+          { error: t("labelMaxLength", { max: MAX_LABEL_LEN }) },
           { status: 400 },
         );
       }
@@ -232,7 +235,7 @@ export async function POST(request: Request) {
     if (error || !data) {
       console.error("[POST /api/account/invitations] insert error:", error);
       return NextResponse.json(
-        { error: "Failed to create invitation" },
+        { error: t("failedToCreateInvitation") },
         { status: 500 },
       );
     }

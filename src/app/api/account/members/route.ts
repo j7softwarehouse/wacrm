@@ -13,6 +13,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { getTranslations } from "next-intl/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
@@ -28,6 +29,7 @@ interface ProfileRow {
 }
 
 export async function GET() {
+  const t = await getTranslations("Api");
   try {
     const ctx = await getCurrentAccount();
 
@@ -42,7 +44,7 @@ export async function GET() {
     if (error) {
       console.error("[GET /api/account/members] fetch error:", error);
       return NextResponse.json(
-        { error: "Failed to load members" },
+        { error: t("failedToLoadMembers") },
         { status: 500 },
       );
     }

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { APP_LOCALE, dateFnsLocale } from "@/lib/i18n/locale";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
@@ -231,7 +232,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                     <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                       <span>
                         {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
+                        {deal.value.toLocaleString(APP_LOCALE)}
                       </span>
                       {deal.stage && (
                         <span
@@ -289,7 +290,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                       {note.note_text}
                     </p>
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
+                      {format(new Date(note.created_at), "MMM d, yyyy HH:mm", { locale: dateFnsLocale })}
                     </p>
                   </div>
                 ))}

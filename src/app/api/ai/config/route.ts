@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import {
   getCurrentAccount,
   requireRole,
@@ -22,6 +23,7 @@ function bad(message: string) {
  * `has_key` flag; the settings form shows a masked placeholder.
  */
 export async function GET() {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await getCurrentAccount()
 
@@ -38,7 +40,7 @@ export async function GET() {
     if (error) {
       console.error('[ai/config GET] fetch error:', error)
       return NextResponse.json(
-        { error: 'Failed to load AI configuration' },
+        { error: t('failedToLoadAiConfig') },
         { status: 500 },
       )
     }
@@ -68,6 +70,7 @@ export async function GET() {
  * when the user re-enters it).
  */
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
 
@@ -75,14 +78,14 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)
-    if (!body || typeof body !== 'object') return bad('Invalid request body')
+    if (!body || typeof body !== 'object') return bad(t('invalidRequestBody'))
 
     const provider = body.provider as AiProvider
     if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+      return bad(t('providerMustBe'))
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
-    if (!model) return bad('model is required')
+    if (!model) return bad(t('modelIsRequired'))
 
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
         .eq('user_id', rawHandoff)
         .maybeSingle()
-      if (!member) return bad('handoff_agent_id must be a member of this account')
+      if (!member) return bad(t('handoffAgentMustBeMember'))
       handoffAgentId = rawHandoff
     }
 
@@ -139,10 +142,10 @@ export async function POST(request: Request) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
-        return bad('Stored API key could not be decrypted — re-enter your key.')
+        return bad(t('storedApiKeyCouldNotBeDecrypted'))
       }
     } else {
-      return bad('api_key is required')
+      return bad(t('apiKeyIsRequired'))
     }
 
     // Only spend a provider round-trip when the credentials that affect
@@ -176,7 +179,7 @@ export async function POST(request: Request) {
           )
         }
         console.error('[ai/config POST] validation error:', err)
-        return bad('Could not validate the API key with the provider.')
+        return bad(t('couldNotValidateApiKeyWithProvider'))
       }
     }
 
@@ -188,12 +191,12 @@ export async function POST(request: Request) {
       } catch (err) {
         if (err instanceof AiError) {
           return NextResponse.json(
-            { error: `Embeddings key: ${err.message}`, code: err.code },
+            { error: t('embeddingsKeyError', { message: err.message }), code: err.code },
             { status: 400 },
           )
         }
         console.error('[ai/config POST] embeddings validation error:', err)
-        return bad('Could not validate the embeddings key.')
+        return bad(t('couldNotValidateEmbeddingsKey'))
       }
     }
 
@@ -223,7 +226,7 @@ export async function POST(request: Request) {
       if (upErr) {
         console.error('[ai/config POST] update error:', upErr)
         return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
+          { error: t('failedToSaveAiConfig') },
           { status: 500 },
         )
       }
@@ -237,7 +240,7 @@ export async function POST(request: Request) {
       if (insErr) {
         console.error('[ai/config POST] insert error:', insErr)
         return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
+          { error: t('failedToSaveAiConfig') },
           { status: 500 },
         )
       }
@@ -256,6 +259,7 @@ export async function POST(request: Request) {
  * key). Also used to recover from a corrupted encrypted key.
  */
 export async function DELETE() {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId } = await requireRole('admin')
     const { error } = await supabase
@@ -265,7 +269,7 @@ export async function DELETE() {
     if (error) {
       console.error('[ai/config DELETE] error:', error)
       return NextResponse.json(
-        { error: 'Failed to delete AI configuration' },
+        { error: t('failedToDeleteAiConfig') },
         { status: 500 },
       )
     }

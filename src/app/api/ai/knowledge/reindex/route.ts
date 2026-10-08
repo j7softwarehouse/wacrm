@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
@@ -14,6 +15,7 @@ import { AiError } from '@/lib/ai/types'
  * turns on. Also recovers documents whose indexing failed earlier.
  */
 export async function POST() {
+  const t = await getTranslations('Api')
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
     const limit = checkRateLimit(`ai-kb-reindex:${userId}`, RATE_LIMITS.adminAction)
@@ -26,7 +28,7 @@ export async function POST() {
     if (error) {
       console.error('[ai/knowledge/reindex] fetch error:', error)
       return NextResponse.json(
-        { error: 'Failed to load documents' },
+        { error: t('failedToLoadDocuments') },
         { status: 500 },
       )
     }
@@ -43,8 +45,7 @@ export async function POST() {
         {
           success: false,
           reindexed: 0,
-          error:
-            'Your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key in Settings → AI Assistant). Nothing was reindexed.',
+          error: t('embeddingsKeyCorruptNothingReindexed'),
         },
         { status: 200 },
       )
@@ -65,7 +66,7 @@ export async function POST() {
             success: false,
             reindexed,
             total: (docs ?? []).length,
-            error: `Reindexed ${reindexed}, then hit an error: ${message}`,
+            error: t('reindexedThenError', { count: reindexed, message }),
           },
           { status: 200 },
         )

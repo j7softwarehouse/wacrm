@@ -20,6 +20,7 @@
 
 import { NextResponse } from "next/server";
 import type { PostgrestError } from "@supabase/supabase-js";
+import { getTranslations } from "next-intl/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -28,7 +29,10 @@ import {
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 
-function rpcErrorToResponse(err: PostgrestError): NextResponse {
+function rpcErrorToResponse(
+  err: PostgrestError,
+  t: Awaited<ReturnType<typeof getTranslations>>,
+): NextResponse {
   if (err.code === "42501") {
     return NextResponse.json({ error: err.message }, { status: 403 });
   }
@@ -37,7 +41,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[transfer-ownership] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to transfer ownership" },
+    { error: t("failedToTransferOwnership") },
     { status: 500 },
   );
 }
@@ -53,6 +57,7 @@ function looksLikeUuid(v: unknown): v is string {
 }
 
 export async function POST(request: Request) {
+  const t = await getTranslations("Api");
   try {
     // `requireRole('owner')` is belt-and-braces — the RPC checks
     // this too, but failing fast here saves a Supabase round trip
@@ -76,7 +81,7 @@ export async function POST(request: Request) {
 
     if (!looksLikeUuid(newOwnerUserId)) {
       return NextResponse.json(
-        { error: "'newOwnerUserId' must be a valid UUID" },
+        { error: t("newOwnerUserIdMustBeUuid") },
         { status: 400 },
       );
     }
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
       p_new_owner_user_id: newOwnerUserId,
     });
 
-    if (error) return rpcErrorToResponse(error);
+    if (error) return rpcErrorToResponse(error, t);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -14,6 +14,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { getTranslations } from "next-intl/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -26,6 +27,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -51,7 +53,7 @@ export async function DELETE(
     if (error) {
       console.error("[DELETE /api/account/invitations/[id]] error:", error);
       return NextResponse.json(
-        { error: "Failed to revoke invitation" },
+        { error: t("failedToRevokeInvitation") },
         { status: 500 },
       );
     }
@@ -61,7 +63,7 @@ export async function DELETE(
       // account). 404 either way — surfacing "exists but not
       // yours" would leak existence.
       return NextResponse.json(
-        { error: "Invitation not found" },
+        { error: t("invitationNotFound") },
         { status: 404 },
       );
     }

@@ -12,6 +12,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { getTranslations } from "next-intl/server";
 
 import {
   requireRole,
@@ -39,6 +40,7 @@ export async function GET() {
 const MAX_NAME_LEN = 80;
 
 export async function PATCH(request: Request) {
+  const t = await getTranslations("Api");
   try {
     const ctx = await requireRole("admin");
 
@@ -59,7 +61,7 @@ export async function PATCH(request: Request) {
 
     if (typeof rawName !== "string") {
       return NextResponse.json(
-        { error: "'name' must be a string" },
+        { error: t("nameQuotedMustBeString") },
         { status: 400 },
       );
     }
@@ -67,13 +69,13 @@ export async function PATCH(request: Request) {
     const name = rawName.trim();
     if (name.length === 0) {
       return NextResponse.json(
-        { error: "Account name cannot be empty" },
+        { error: t("accountNameEmpty") },
         { status: 400 },
       );
     }
     if (name.length > MAX_NAME_LEN) {
       return NextResponse.json(
-        { error: `Account name must be ${MAX_NAME_LEN} characters or fewer` },
+        { error: t("accountNameMaxLength", { max: MAX_NAME_LEN }) },
         { status: 400 },
       );
     }
@@ -91,7 +93,7 @@ export async function PATCH(request: Request) {
     if (error) {
       console.error("[PATCH /api/account] update error:", error);
       return NextResponse.json(
-        { error: "Failed to update account" },
+        { error: t("failedToUpdateAccount") },
         { status: 500 },
       );
     }

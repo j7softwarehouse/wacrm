@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
@@ -20,6 +21,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 
 async function requireOwnership(
   flowId: string,
+  t: Awaited<ReturnType<typeof getTranslations>>,
 ): Promise<
   | {
       ok: true
@@ -33,7 +35,7 @@ async function requireOwnership(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { ok: false, status: 401, body: { error: 'Unauthorized' } }
+    return { ok: false, status: 401, body: { error: t('unauthorized') } }
   }
   // RLS scopes this to the caller — a flow owned by another user
   // returns null (404 below).
@@ -43,7 +45,7 @@ async function requireOwnership(
     .eq('id', flowId)
     .maybeSingle()
   if (!flow) {
-    return { ok: false, status: 404, body: { error: 'Not found' } }
+    return { ok: false, status: 404, body: { error: t('notFound') } }
   }
   return { ok: true, userId: user.id, supabase }
 }
@@ -52,8 +54,9 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await context.params
-  const guard = await requireOwnership(id)
+  const guard = await requireOwnership(id, t)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
   const { supabase } = guard
 
@@ -66,7 +69,7 @@ export async function GET(
       .order('created_at', { ascending: true }),
   ])
   if (!flow) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('notFound') }, { status: 404 })
   }
   return NextResponse.json({ flow, nodes: nodes ?? [] })
 }
@@ -91,6 +94,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await context.params
 
   // Writes require at least `agent` — the RLS flows_update policy demands
@@ -102,16 +106,16 @@ export async function PUT(
     return toErrorResponse(err)
   }
 
-  const guard = await requireOwnership(id)
+  const guard = await requireOwnership(id, t)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
   const body = (await request.json().catch(() => null)) as PutBody | null
   if (!body) {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return NextResponse.json({ error: t('invalidJson') }, { status: 400 })
   }
   if (body.name !== undefined && !body.name.trim()) {
     return NextResponse.json(
-      { error: 'name cannot be empty' },
+      { error: t('nameCannotBeEmpty') },
       { status: 400 },
     )
   }
@@ -187,6 +191,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await context.params
 
   // Writes require at least `agent` — see the PUT handler note. The
@@ -197,7 +202,7 @@ export async function DELETE(
     return toErrorResponse(err)
   }
 
-  const guard = await requireOwnership(id)
+  const guard = await requireOwnership(id, t)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
   // CASCADE on flow_nodes / flow_runs / flow_run_events handles the

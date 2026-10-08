@@ -19,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 import type { PostgrestError } from "@supabase/supabase-js";
+import { getTranslations } from "next-intl/server";
 
 import { hashInviteToken } from "@/lib/auth/invitations";
 import {
@@ -36,7 +37,10 @@ function getClientIp(request: Request): string {
   return "unknown";
 }
 
-function rpcErrorToResponse(err: PostgrestError): NextResponse {
+function rpcErrorToResponse(
+  err: PostgrestError,
+  t: Awaited<ReturnType<typeof getTranslations>>,
+): NextResponse {
   if (err.code === "42501") {
     return NextResponse.json({ error: err.message }, { status: 401 });
   }
@@ -48,7 +52,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[redeem] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to redeem invitation" },
+    { error: t("failedToRedeemInvitation") },
     { status: 500 },
   );
 }
@@ -57,6 +61,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  const t = await getTranslations("Api");
   const ip = getClientIp(request);
   const limit = checkRateLimit(`redeem:${ip}`, RATE_LIMITS.invitationRedeem);
   if (!limit.success) return rateLimitResponse(limit);
@@ -64,7 +69,7 @@ export async function POST(
   const { token } = await params;
   if (!token || typeof token !== "string") {
     return NextResponse.json(
-      { error: "Missing invitation token" },
+      { error: t("missingInvitationToken") },
       { status: 400 },
     );
   }
@@ -78,14 +83,14 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: t("unauthorized") }, { status: 401 });
   }
 
   const { data: accountId, error } = await supabase.rpc("redeem_invitation", {
     p_token_hash: hashInviteToken(token),
   });
 
-  if (error) return rpcErrorToResponse(error);
+  if (error) return rpcErrorToResponse(error, t);
 
   return NextResponse.json({ ok: true, accountId });
 }

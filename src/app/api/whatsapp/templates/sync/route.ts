@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
@@ -123,6 +124,7 @@ function extractSampleValues(
 }
 
 export async function POST() {
+  const t = await getTranslations('Api')
   try {
     const supabase = await createClient()
 
@@ -132,7 +134,7 @@ export async function POST() {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
     }
 
     // Resolve the caller's account_id — both whatsapp_config and
@@ -145,7 +147,7 @@ export async function POST() {
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
+        { error: t('profileNotLinked') },
         { status: 403 },
       )
     }
@@ -159,8 +161,7 @@ export async function POST() {
     if (configError || !config) {
       return NextResponse.json(
         {
-          error:
-            'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+          error: t('whatsappNotConfiguredConnectFirst'),
         },
         { status: 400 },
       )
@@ -169,8 +170,7 @@ export async function POST() {
     if (!config.waba_id) {
       return NextResponse.json(
         {
-          error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+          error: t('wabaIdMissing'),
         },
         { status: 400 },
       )
@@ -214,11 +214,11 @@ export async function POST() {
     let updated = 0
     const errors: { name: string; language: string; message: string }[] = []
 
-    for (const t of metaTemplates) {
-      const body = (t.components ?? []).find((c) => c.type === 'BODY')
-      const header = (t.components ?? []).find((c) => c.type === 'HEADER')
-      const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
-      const buttons = (t.components ?? []).find((c) => c.type === 'BUTTONS')
+    for (const mt of metaTemplates) {
+      const body = (mt.components ?? []).find((c) => c.type === 'BODY')
+      const header = (mt.components ?? []).find((c) => c.type === 'HEADER')
+      const footer = (mt.components ?? []).find((c) => c.type === 'FOOTER')
+      const buttons = (mt.components ?? []).find((c) => c.type === 'BUTTONS')
 
       const parsedButtons = parseButtons(buttons?.buttons)
       const sampleValues = extractSampleValues(body, header)
@@ -238,9 +238,9 @@ export async function POST() {
         // post-017, so an INSERT without it errors.
         account_id: accountId,
         user_id: user.id,
-        name: t.name,
-        category: normalizeCategory(t.category),
-        language: t.language,
+        name: mt.name,
+        category: normalizeCategory(mt.category),
+        language: mt.language,
         header_type: headerType,
         header_content: header?.text ?? null,
         header_handle: header?.example?.header_handle?.[0] ?? null,
@@ -248,9 +248,9 @@ export async function POST() {
         footer_text: footer?.text ?? null,
         buttons: parsedButtons.length ? parsedButtons : null,
         sample_values: sampleValues,
-        status: normalizeStatus(t.status),
-        meta_template_id: t.id,
-        quality_score: normalizeQualityScore(t.quality_score),
+        status: normalizeStatus(mt.status),
+        meta_template_id: mt.id,
+        quality_score: normalizeQualityScore(mt.quality_score),
         updated_at: new Date().toISOString(),
       }
 
@@ -258,14 +258,14 @@ export async function POST() {
         .from('message_templates')
         .select('id')
         .eq('account_id', accountId)
-        .eq('name', t.name)
-        .eq('language', t.language)
+        .eq('name', mt.name)
+        .eq('language', mt.language)
         .maybeSingle()
 
       if (lookupErr) {
         errors.push({
-          name: t.name,
-          language: t.language,
+          name: mt.name,
+          language: mt.language,
           message: lookupErr.message,
         })
         continue
@@ -278,8 +278,8 @@ export async function POST() {
           .eq('id', existing.id)
         if (updErr) {
           errors.push({
-            name: t.name,
-            language: t.language,
+            name: mt.name,
+            language: mt.language,
             message: updErr.message,
           })
         } else {
@@ -291,8 +291,8 @@ export async function POST() {
           .insert(row)
         if (insErr) {
           errors.push({
-            name: t.name,
-            language: t.language,
+            name: mt.name,
+            language: mt.language,
             message: insErr.message,
           })
         } else {
@@ -314,7 +314,7 @@ export async function POST() {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to sync templates',
+          error instanceof Error ? error.message : t('failedToSyncTemplatesFallback'),
       },
       { status: 500 },
     )

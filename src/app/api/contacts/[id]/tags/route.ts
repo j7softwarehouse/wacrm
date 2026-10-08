@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getTranslations } from 'next-intl/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
@@ -24,12 +25,13 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t = await getTranslations('Api');
   try {
     const ctx = await requireRole('agent');
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
+      return NextResponse.json({ error: t('tagIdRequired') }, { status: 400 });
     }
 
     const result = await addContactTagAndDispatch({
@@ -52,12 +54,13 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t = await getTranslations('Api');
   try {
     const ctx = await requireRole('agent');
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
+      return NextResponse.json({ error: t('tagIdRequired') }, { status: 400 });
     }
 
     await removeContactTag(ctx.supabase, {

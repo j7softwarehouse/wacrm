@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
@@ -12,6 +13,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const t = await getTranslations('Api')
   const { id } = await params
   let ctx
   try {
@@ -21,12 +23,12 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('invalidJson') }, { status: 400 })
 
   const update: Record<string, unknown> = {}
   if (typeof body.title === 'string') {
     const title = body.title.trim()
-    if (!title) return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 })
+    if (!title) return NextResponse.json({ error: t('titleCannotBeEmpty') }, { status: 400 })
     update.title = title
   }
 
@@ -35,7 +37,7 @@ export async function PATCH(
   // otherwise a switched row keeps a stale payload the picker mis-routes on.
   if ('kind' in body) {
     if (body.kind !== 'text' && body.kind !== 'interactive') {
-      return NextResponse.json({ error: 'kind must be "text" or "interactive"' }, { status: 400 })
+      return NextResponse.json({ error: t('kindMustBe') }, { status: 400 })
     }
     update.kind = body.kind
     if (body.kind === 'interactive') {
@@ -47,7 +49,7 @@ export async function PATCH(
       const text = typeof body.content_text === 'string' ? body.content_text : ''
       if (!text.trim()) {
         return NextResponse.json(
-          { error: 'content_text is required for text quick replies' },
+          { error: t('contentTextRequiredForText') },
           { status: 400 },
         )
       }

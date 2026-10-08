@@ -3,6 +3,7 @@
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { APP_LOCALE } from "@/lib/i18n/locale";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -13,7 +14,7 @@ interface DealCardProps {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString(APP_LOCALE, {
     month: "short",
     day: "numeric",
     year: "numeric",

@@ -35,6 +35,7 @@ import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 
 import { useTranslations } from 'next-intl'
+import { APP_LOCALE } from '@/lib/i18n/locale'
 
 type RangeDays = 7 | 30 | 90
 
@@ -139,7 +140,7 @@ export default function DashboardPage() {
           <>
             <MetricCard
               title={t('activeConversations')}
-              value={metrics.activeConversations.current.toLocaleString()}
+              value={metrics.activeConversations.current.toLocaleString(APP_LOCALE)}
               icon={MessageSquare}
               delta={{
                 sign: metrics.activeConversations.previous,
@@ -152,7 +153,7 @@ export default function DashboardPage() {
             />
             <MetricCard
               title={t('newContactsToday')}
-              value={metrics.newContactsToday.current.toLocaleString()}
+              value={metrics.newContactsToday.current.toLocaleString(APP_LOCALE)}
               icon={UserPlus}
               delta={{
                 sign:
@@ -172,7 +173,7 @@ export default function DashboardPage() {
             />
             <MetricCard
               title={t('messagesSentToday')}
-              value={metrics.messagesSentToday.current.toLocaleString()}
+              value={metrics.messagesSentToday.current.toLocaleString(APP_LOCALE)}
               icon={Send}
               delta={{
                 sign:
@@ -230,5 +231,5 @@ export default function DashboardPage() {
 function deltaLabel(delta: number, suffix: string, noChangeLabel: string): string {
   if (delta === 0) return noChangeLabel
   const sign = delta > 0 ? '+' : ''
-  return `${sign}${delta.toLocaleString()} ${suffix}`
+  return `${sign}${delta.toLocaleString(APP_LOCALE)} ${suffix}`
 }

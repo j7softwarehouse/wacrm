@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
@@ -87,6 +88,7 @@ async function upsertTemplateRow(
  * submitted; editing or deleting requires hsm_id and lives in PR 4.
  */
 export async function POST(request: Request) {
+  const t = await getTranslations('Api')
   try {
     const supabase = await createClient()
     const {
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
       error: authError,
     } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: t('unauthorized') }, { status: 401 })
     }
 
     // Resolve the caller's account_id — whatsapp_config + the
@@ -107,7 +109,7 @@ export async function POST(request: Request) {
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
+        { error: t('profileNotLinked') },
         { status: 403 },
       )
     }
@@ -116,14 +118,13 @@ export async function POST(request: Request) {
     try {
       payload = (await request.json()) as TemplatePayload
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+      return NextResponse.json({ error: t('invalidJsonBody') }, { status: 400 })
     }
 
     if (payload.category === 'Authentication') {
       return NextResponse.json(
         {
-          error:
-            'AUTHENTICATION templates are not yet supported here — create them in Meta WhatsApp Manager and use "Sync from Meta".',
+          error: t('authTemplatesNotYetSupported'),
         },
         { status: 400 },
       )
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
       validateTemplatePayload(payload)
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : 'Validation failed.' },
+        { error: e instanceof Error ? e.message : t('validationFailedFallback') },
         { status: 400 },
       )
     }
@@ -157,8 +158,7 @@ export async function POST(request: Request) {
       if (configError || !config) {
         return NextResponse.json(
           {
-            error:
-              'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+            error: t('whatsappNotConfiguredConnectFirst'),
           },
           { status: 400 },
         )
@@ -166,8 +166,7 @@ export async function POST(request: Request) {
       if (!config.waba_id) {
         return NextResponse.json(
           {
-            error:
-              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+            error: t('wabaIdMissing'),
           },
           { status: 400 },
         )
@@ -183,7 +182,7 @@ export async function POST(request: Request) {
         await ensureImageHeaderHandle(payload, accessToken)
       } catch (e) {
         return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header image upload failed.' },
+          { error: e instanceof Error ? e.message : t('headerImageUploadFailedFallback') },
           { status: 400 },
         )
       }
@@ -198,7 +197,7 @@ export async function POST(request: Request) {
         metaTemplateId = meta.id
         metaStatus = meta.status
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta submit failed.'
+        const message = e instanceof Error ? e.message : t('metaSubmitFailedFallback')
         // Persist the failure so the user can retry; row stays DRAFT
         // until they fix and re-submit.
         await upsertTemplateRow(
@@ -213,7 +212,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error: isRateLimit
-              ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
+              ? t('metaRateLimitHit')
               : message,
           },
           { status: isRateLimit ? 429 : 502 },
@@ -236,7 +235,7 @@ export async function POST(request: Request) {
       // so the user can recover via "Sync from Meta".
       return NextResponse.json(
         {
-          error: `Submitted to Meta but failed to save locally: ${upsertErr.message}. Run "Sync from Meta" to recover.`,
+          error: t('submittedOnMetaButLocalSaveFailed', { message: upsertErr.message }),
           meta_template_id: metaTemplateId,
         },
         { status: 500 },
@@ -253,7 +252,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to submit template.',
+          error instanceof Error ? error.message : t('failedToSubmitTemplateFallback'),
       },
       { status: 500 },
     )
