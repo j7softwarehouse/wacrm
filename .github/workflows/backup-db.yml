@@ -1,0 +1,83 @@
+name: Backup do banco (produção → Cloudflare R2)
+
+# O plano gratuito do Supabase não tem backup restaurável — este
+# workflow é a única proteção dos dados. Roda na branch main porque o
+# GitHub só dispara `schedule` a partir da branch padrão.
+#
+# Gera um dump completo (schemas public + auth; auth guarda os
+# usuários), grava no bucket privado wacrm-backups do Cloudflare R2 e
+# mantém 30 dias. Depois RESTAURA o dump num Postgres temporário e
+# confere que as tabelas voltaram: backup que nunca foi restaurado é só
+# um arquivo.
+#
+# Segredos (Settings → Secrets → Actions): BACKUP_DB_URL (pooler em modo
+# sessão, porta 5432), R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+on:
+  schedule:
+    - cron: '0 7 * * *' # 04:00 em Brasília, antes do expediente
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      restore-check:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+    steps:
+      - name: Instalar pg_dump 17 (cliente precisa ser >= servidor)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Gerar dump
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.BACKUP_DB_URL }}" \
+            --format=custom --no-owner --no-privileges \
+            --schema=public --schema=auth \
+            --file="wacrm-$STAMP.dump"
+          ls -l "wacrm-$STAMP.dump"
+          test "$(stat -c %s "wacrm-$STAMP.dump")" -gt 10000
+
+      - name: Teste de restauração (Postgres temporário)
+        run: |
+          export PGPASSWORD=restore
+          # roles que o dump referencia nos GRANTs/políticas do Supabase
+          psql -h localhost -p 5433 -U postgres -c "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE supabase_auth_admin;" || true
+          /usr/lib/postgresql/17/bin/pg_restore -h localhost -p 5433 -U postgres -d postgres \
+            --no-owner --no-privileges --exit-on-error=false "wacrm-$STAMP.dump" 2>restore.log || true
+          TABELAS=$(psql -h localhost -p 5433 -U postgres -Atc "select count(*) from information_schema.tables where table_schema='public'")
+          MENSAGENS=$(psql -h localhost -p 5433 -U postgres -Atc "select count(*) from public.messages")
+          echo "tabelas restauradas: $TABELAS | mensagens: $MENSAGENS"
+          test "$TABELAS" -ge 20
+          test "$MENSAGENS" -gt 0
+
+      - name: Enviar para o R2
+        run: |
+          aws s3 cp "wacrm-$STAMP.dump" "s3://wacrm-backups/diario/wacrm-$STAMP.dump" --endpoint-url "$R2_ENDPOINT"
+
+      - name: Apagar backups com mais de 30 dias
+        run: |
+          LIMITE=$(date -u -d '30 days ago' +%Y%m%d)
+          aws s3 ls "s3://wacrm-backups/diario/" --endpoint-url "$R2_ENDPOINT" | awk '{print $4}' | while read -r f; do
+            d=$(echo "$f" | sed -E 's/wacrm-([0-9]{8})-.*/\1/')
+            if [ -n "$d" ] && [ "$d" -lt "$LIMITE" ]; then
+              aws s3 rm "s3://wacrm-backups/diario/$f" --endpoint-url "$R2_ENDPOINT"
+            fi
+          done
