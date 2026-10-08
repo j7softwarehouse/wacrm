@@ -217,4 +217,49 @@ describe('recoverMessages', () => {
     // nunca chamou /chat/find — prova que pulou a listagem geral.
     expect(client.post).toHaveBeenCalledTimes(1);
   });
+  it('ingest devolvendo null (grupo desabilitado etc.) conta como skipped_not_ingested, NÃO como inserted', async () => {
+    const client = fakeUazapiClient({
+      '/chat/find': [{ chats: [{ wa_chatid: 'a@s.whatsapp.net', wa_lastMsgTimestamp: 1_700_001_000_000 }] }],
+      '/message/find': [
+        { messages: [{ messageid: 'MSG_NULL', messageTimestamp: 1_700_001_000_000, messageType: 'conversation', sender_pn: '5511999999999@s.whatsapp.net', text: 'oi' }] },
+      ],
+    });
+    const { db } = fakeDb();
+    const ingestInboundMessage = vi.fn(async () => null);
+
+    const result = await recoverMessages(db, client, fakeProvider(), CHANNEL, WINDOW, { ingestInboundMessage });
+
+    expect(result.inserted).toBe(0);
+    expect(result.skippedNotIngested).toBe(1);
+  });
+
+  it('grupo desabilitado: não baixa a mídia', async () => {
+    const client = fakeUazapiClient({
+      '/chat/find': [{ chats: [{ wa_chatid: '120363000000000000@g.us', wa_isGroup: true, wa_lastMsgTimestamp: 1_700_001_000_000 }] }],
+      '/message/find': [
+        {
+          messages: [
+            {
+              messageid: 'MSG_IMG_GRUPO',
+              messageTimestamp: 1_700_001_000_000,
+              messageType: 'imageMessage',
+              isGroup: true,
+              chatid: '120363000000000000@g.us',
+              sender_pn: '5511999999999@s.whatsapp.net',
+              content: { URL: 'https://cdn/encrypted.enc', mediaKey: 'abc123', mimetype: 'image/jpeg' },
+            },
+          ],
+        },
+      ],
+    });
+    const { db, ingestInboundMessage } = fakeDb();
+    const resolveInboundMediaUrl = vi.fn(async () => 'https://storage/x.jpg');
+
+    await recoverMessages(db, client, fakeProvider(resolveInboundMediaUrl), CHANNEL, WINDOW, {
+      ingestInboundMessage,
+      isGroupEnabled: async () => false,
+    });
+
+    expect(resolveInboundMediaUrl).not.toHaveBeenCalled();
+  });
 });

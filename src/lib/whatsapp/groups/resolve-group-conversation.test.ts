@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { resolveGroupConversation } from './resolve-group-conversation';
+import { isGroupEnabled, resolveGroupConversation } from './resolve-group-conversation';
 
 const GROUP = {
   groupJid: '120363000000000000@g.us',
@@ -453,5 +453,35 @@ describe('resolveGroupConversation — cura de grupo órfão (canal recriado)', 
     expect(r).not.toBeNull();
     expect(r!.groupId).toBe('grp-1');
     expect(db.tables['whatsapp_groups']).toHaveLength(1);
+  });
+});
+
+describe('isGroupEnabled — consulta leve, sem efeitos colaterais', () => {
+  const JID = '120363000000000000@g.us';
+  const db = (rows: Row[]) => {
+    const d = new FakeDb();
+    d.tables['whatsapp_groups'] = rows;
+    return d as unknown as SupabaseClient;
+  };
+
+  it('true quando o grupo do canal está habilitado', async () => {
+    const d = db([{ id: 'g1', account_id: 'acct-1', channel_id: 'ch-1', group_jid: JID, enabled: true }]);
+    expect(await isGroupEnabled(d, 'acct-1', 'ch-1', JID)).toBe(true);
+  });
+
+  it('false quando o grupo existe desabilitado', async () => {
+    const d = db([{ id: 'g1', account_id: 'acct-1', channel_id: 'ch-1', group_jid: JID, enabled: false }]);
+    expect(await isGroupEnabled(d, 'acct-1', 'ch-1', JID)).toBe(false);
+  });
+
+  it('false quando o grupo ainda não existe — e NÃO cria nada (quem registra é resolveGroupConversation)', async () => {
+    const fake = new FakeDb();
+    expect(await isGroupEnabled(fake as unknown as SupabaseClient, 'acct-1', 'ch-1', JID)).toBe(false);
+    expect(fake.tables['whatsapp_groups'] ?? []).toHaveLength(0);
+  });
+
+  it('linha órfã (canal recriado) habilitada vale como habilitado — mesma regra do resolver', async () => {
+    const d = db([{ id: 'g1', account_id: 'acct-1', channel_id: null, group_jid: JID, enabled: true }]);
+    expect(await isGroupEnabled(d, 'acct-1', 'ch-1', JID)).toBe(true);
   });
 });

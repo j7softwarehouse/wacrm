@@ -12,6 +12,7 @@ import {
   extractMessageData,
   normalizeUazapiEvent,
 } from "@/lib/whatsapp/uazapi/normalize";
+import { isGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import type { WhatsAppChannel } from "@/types";
 
@@ -444,7 +445,21 @@ export async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   // mensagem inteira (texto incluído), não só a mídia. Por isso o
   // erro é contido localmente e a mídia degrada para undefined.
   let content = normalized.content;
-  if (content.mediaUrl) {
+  // Mensagem de grupo NÃO habilitado é descartada pelo ingest de qualquer
+  // jeito (o grupo só é registrado, pra aparecer na tela de seleção) —
+  // baixar e descriptografar a mídia antes disso gastava CPU à toa e
+  // deixava arquivo órfão no Storage. A mensagem ainda segue pro ingest.
+  const skipMedia =
+    !!normalized.group &&
+    !(await isGroupEnabled(
+      supabaseAdmin(),
+      channel.account_id,
+      channel.id,
+      normalized.group.groupJid,
+    ));
+  if (content.mediaUrl && skipMedia) {
+    content = { ...content, mediaUrl: undefined };
+  } else if (content.mediaUrl) {
     try {
       const provider = await getProviderForChannel(supabaseAdmin(), channel.id);
       const stored = await provider.resolveInboundMediaUrl(content.mediaUrl);
