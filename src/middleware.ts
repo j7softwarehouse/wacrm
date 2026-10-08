@@ -95,8 +95,20 @@ export async function middleware(request: NextRequest) {
   return supabaseResponse
 }
 
+// Cada execução do middleware conta no CPU da Vercel e faz uma consulta
+// ao Supabase (getUser). Ficam FORA do matcher as rotas que não usam
+// sessão de usuário e já se autenticam sozinhas: webhooks (assinatura/
+// segredo do canal), crons (CRON_SECRET), API pública (chave de API) e o
+// ícone. Pré-carregamento de link (prefetch) também sai: só busca dados
+// da página, a navegação de verdade ainda passa pelo middleware.
+// Testado em middleware.matcher.test.ts — config precisa ser literal
+// estático (o Next lê sem executar o arquivo), então fica inline.
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    {
+      source:
+        '/((?!_next/static|_next/image|favicon\\.ico|icon$|api/whatsapp/webhook$|api/whatsapp/uazapi/webhook(?:/|$)|api/whatsapp/groups/sync-cron$|api/automations/cron$|api/flows/cron$|api/media/cron$|api/v1(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+      missing: [{ type: 'header', key: 'next-router-prefetch' }],
+    },
   ],
 }
