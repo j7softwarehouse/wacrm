@@ -107,7 +107,7 @@ export const config = {
   matcher: [
     {
       source:
-        '/((?!_next/static|_next/image|favicon\\.ico|icon$|api/whatsapp/webhook$|api/whatsapp/uazapi/webhook(?:/|$)|api/whatsapp/groups/sync-cron$|api/automations/cron$|api/flows/cron$|api/media/cron$|api/v1(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        '/((?!_next/static|_next/image|favicon\\.ico|icon$|api/whatsapp/webhook$|api/whatsapp/uazapi/webhook(?:/|$)|api/whatsapp/groups/sync-cron$|api/automations/cron$|api/flows/cron$|api/media/cron$|api/health$|api/v1(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
       missing: [{ type: 'header', key: 'next-router-prefetch' }],
     },
   ],

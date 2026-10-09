@@ -20,6 +20,7 @@ describe("middleware matcher — não roda onde não adiciona nada", () => {
     "/api/automations/cron",
     "/api/flows/cron",
     "/api/media/cron",
+    "/api/health",
     "/api/v1/messages",
     "/icon",
   ])("%s NÃO passa pelo middleware", (url) => {
