@@ -28,6 +28,7 @@ import {
   loadResponseTime,
   summarizePending,
 } from '@/lib/dashboard/queries'
+import { AWAITING_REPLY_FETCH_MS } from '@/lib/inbox/awaiting-reply'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -142,11 +143,12 @@ export default function DashboardPage() {
         .finally(() => setAwaitingReplyLoading(false))
     }
 
+    // Mesma cadência da Inbox (ver awaiting-reply.ts): a RPC devolve uma
+    // linha por conversa aberta e era o maior gasto de egress do Supabase.
     fetchAwaitingReply(false)
-    const AWAITING_REPLY_REFRESH_MS = 60_000
     const interval = setInterval(
       () => fetchAwaitingReply(true),
-      AWAITING_REPLY_REFRESH_MS,
+      AWAITING_REPLY_FETCH_MS,
     )
     return () => clearInterval(interval)
   }, [accountId])

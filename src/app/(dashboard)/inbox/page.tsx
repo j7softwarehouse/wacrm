@@ -11,6 +11,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
 import { reconcileIncomingMessage } from "@/lib/inbox/message-reconcile";
+import { shouldResyncOnVisible } from "@/lib/inbox/resync-on-visible";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -428,16 +429,24 @@ function InboxPageInner() {
   }, [isConnected]);
 
   /**
-   * Refetch when the tab regains focus. Background tabs may have their
-   * WS throttled by the browser even without a full disconnect, so a
-   * visibilitychange → visible is a reliable signal that we may have
-   * missed events. Cheap to fire; the children dedupe on their own.
+   * Refetch when the tab regains focus — but only after it stayed hidden
+   * long enough for the browser to throttle it (ver resync-on-visible.ts).
+   * Cada recarga baixa a lista de conversas inteira (~1,1 MB); recarregar
+   * a cada troca de aba era um dos maiores gastos de egress do Supabase.
+   * Reconexão do canal continua disparando a recarga pelo efeito acima.
    */
   useEffect(() => {
+    let hiddenAt: number | null =
+      document.visibilityState === "hidden" ? Date.now() : null;
     const onVisibility = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (shouldResyncOnVisible(hiddenAt, Date.now())) {
         setResyncToken((n) => n + 1);
       }
+      hiddenAt = null;
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

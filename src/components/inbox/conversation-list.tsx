@@ -27,7 +27,12 @@ import {
   type SearchableGroup,
 } from "@/lib/inbox/group-search";
 import { openConversationForGroup } from "@/lib/whatsapp/groups/open-conversation";
-import { isAwaitingReply, type AwaitingReplyRow } from "@/lib/dashboard/business-hours";
+import {
+  AWAITING_REPLY_FETCH_MS,
+  AWAITING_REPLY_RECOMPUTE_MS,
+  buildAwaitingReplyMap,
+  type AwaitingReplyItem,
+} from "@/lib/inbox/awaiting-reply";
 import type { Conversation, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { Search, ChevronDown, Smartphone, X, Clock } from "lucide-react";
@@ -70,10 +75,6 @@ interface ConversationListProps {
    */
   initialFilter?: InboxFilter;
 }
-
-/** Linha da RPC conversations_awaiting_reply, já com o id da conversa
- *  (a RPC devolve conversation_id + os dois campos de AwaitingReplyRow). */
-type AwaitingReplyItem = AwaitingReplyRow & { conversation_id: string };
 
 export function ConversationList({
   activeConversationId,
@@ -132,10 +133,11 @@ export function ConversationList({
   // Última mensagem de cada conversa ABERTA da conta, para o filtro
   // "sem resposta +30min" — mesma RPC do cartão do Dashboard
   // (loadAwaitingReply), então os dois nunca podem discordar sobre
-  // quantas conversas estão pendentes. Repolling a cada 60s (mesmo
-  // intervalo do Dashboard): o estado "sem resposta" muda só com o
-  // tempo passando, não com nenhum evento de realtime desta lista.
+  // quantas conversas estão pendentes. Busca espaçada (ver
+  // awaiting-reply.ts) — o selo é recalculado localmente a cada minuto
+  // via `awaitingReplyNow`, sem rede.
   const [awaitingReplyRows, setAwaitingReplyRows] = useState<AwaitingReplyItem[]>([]);
+  const [awaitingReplyNow, setAwaitingReplyNow] = useState(() => new Date());
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -285,13 +287,19 @@ export function ConversationList({
     };
 
     fetchAwaitingReply();
-    const AWAITING_REPLY_REFRESH_MS = 60_000;
-    const interval = setInterval(fetchAwaitingReply, AWAITING_REPLY_REFRESH_MS);
+    const interval = setInterval(fetchAwaitingReply, AWAITING_REPLY_FETCH_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [accountId]);
+
+  // Relógio do selo "+30 min": o estado muda com o tempo passando, então
+  // avança a cada minuto — só recalcula em memória, não vai ao banco.
+  useEffect(() => {
+    const tick = setInterval(() => setAwaitingReplyNow(new Date()), AWAITING_REPLY_RECOMPUTE_MS);
+    return () => clearInterval(tick);
+  }, []);
 
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
@@ -313,17 +321,14 @@ export function ConversationList({
 
   // Mapa (não Set) porque o selo de tempo na linha da conversa também
   // precisa do `last_message_at` — não só saber se está "sem resposta".
-  // Recalcula quando a RPC repolla (a cada 60s) ou o relógio muda de
-  // minuto o bastante pra empurrar alguma conversa pelo limiar; 60s de
-  // granularidade já é a mesma do cartão do Dashboard.
+  // Recalcula quando a RPC é buscada de novo, a cada minuto do relógio
+  // e quando a lista (tempo real) recebe mensagem nova — esta última é o
+  // que tira o selo na hora em que a conversa é respondida, sem esperar
+  // a próxima busca da RPC.
   const awaitingReplyByConversation = useMemo(() => {
-    const now = new Date();
-    const map = new Map<string, AwaitingReplyItem>();
-    for (const row of awaitingReplyRows) {
-      if (isAwaitingReply(row, now)) map.set(row.conversation_id, row);
-    }
-    return map;
-  }, [awaitingReplyRows]);
+    const lastMessageAtById = new Map(conversations.map((c) => [c.id, c.last_message_at]));
+    return buildAwaitingReplyMap(awaitingReplyRows, lastMessageAtById, awaitingReplyNow);
+  }, [awaitingReplyRows, conversations, awaitingReplyNow]);
 
   const filtered = useMemo(() => {
     let result = conversations;
