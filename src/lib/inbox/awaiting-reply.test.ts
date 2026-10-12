@@ -62,8 +62,10 @@ describe("buildAwaitingReplyMap", () => {
 });
 
 describe("cadência", () => {
-  it("busca no banco a cada 5 minutos e recalcula localmente a cada minuto", () => {
-    expect(AWAITING_REPLY_FETCH_MS).toBe(5 * 60_000);
+  // 15 min aprovado pelo usuário em 12/10/2026: o selo e o filtro podem
+  // demorar até isso para mostrar uma pendência nova.
+  it("busca no banco a cada 15 minutos e recalcula localmente a cada minuto", () => {
+    expect(AWAITING_REPLY_FETCH_MS).toBe(15 * 60_000);
     expect(AWAITING_REPLY_RECOMPUTE_MS).toBe(60_000);
   });
 });
