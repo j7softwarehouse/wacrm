@@ -8,9 +8,11 @@ export type AwaitingReplyItem = AwaitingReplyRow & { conversation_id: string };
  * produção, 124 KB por chamada) — buscada a cada 60 s em toda Inbox e
  * Dashboard abertos, era o maior gasto de egress do Supabase (plano
  * grátis, 5 GB/mês). A busca fica espaçada; o selo "+30 min" muda com o
- * tempo passando e é recalculado localmente, sem rede.
+ * tempo passando e é recalculado localmente, sem rede. 15 min aprovado
+ * pelo usuário: uma pendência nova pode levar até isso para aparecer
+ * (resposta tira o selo na hora — ver buildAwaitingReplyMap).
  */
-export const AWAITING_REPLY_FETCH_MS = 5 * 60_000;
+export const AWAITING_REPLY_FETCH_MS = 15 * 60_000;
 export const AWAITING_REPLY_RECOMPUTE_MS = 60_000;
 
 /**
