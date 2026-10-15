@@ -12,6 +12,7 @@ import {
 import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
 import { reconcileIncomingMessage } from "@/lib/inbox/message-reconcile";
 import { shouldResyncOnVisible } from "@/lib/inbox/resync-on-visible";
+import { applyMessageUpdate } from "@/lib/inbox/message-update";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -323,9 +324,10 @@ function InboxPageInner() {
 
       if (event.eventType === "UPDATE") {
         // Update message status
-        setMessages((prev) =>
-          prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
-        );
+        // O canal escuta UPDATE de todas as mensagens da conta; só
+        // troca o array quando a mensagem é da conversa aberta e mudou
+        // algo — ver message-update.ts.
+        setMessages((prev) => applyMessageUpdate(prev, newMsg));
       }
     },
     [activeConversation, hydrateConversation]
