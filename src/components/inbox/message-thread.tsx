@@ -25,6 +25,7 @@ import type {
   InteractiveMessagePayload,
 } from "@/types";
 import { markerChipText } from "@/lib/inbox/message-markers";
+import { isNearBottom } from "@/lib/inbox/scroll-stick";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
@@ -740,11 +741,26 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
+  // Acompanha o fim da conversa só quando a pessoa já está perto dele.
+  // Antes, TODA mudança na lista de mensagens (inclusive tique de
+  // entrega de outra conversa) puxava a tela para o fim — arrancando
+  // quem lia o histórico ou tinha pulado até uma mensagem marcada
+  // (relato do Paulo, 15/10/2026). Abrir uma conversa começa no fim.
+  const stickToBottomRef = useRef(true);
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [conversationId]);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
+    const el = scrollRef.current;
+    if (!el) return;
+    // Bolha otimista = eu acabei de enviar: sempre mostra, mesmo que
+    // estivesse lendo mais acima.
+    const sentByMe = messages[messages.length - 1]?.id.startsWith("temp-") ?? false;
+    if (stickToBottomRef.current || sentByMe) {
       el.scrollTop = el.scrollHeight;
+      stickToBottomRef.current = true;
     }
   }, [messages]);
 
@@ -1856,7 +1872,13 @@ export function MessageThread({
       )}
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          stickToBottomRef.current = isNearBottom(e.currentTarget);
+        }}
+        className="flex-1 overflow-y-auto px-4 py-4"
+      >
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
