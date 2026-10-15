@@ -26,6 +26,7 @@ import type {
 } from "@/types";
 import { markerChipText } from "@/lib/inbox/message-markers";
 import { isNearBottom } from "@/lib/inbox/scroll-stick";
+import { shouldShowThreadSpinner } from "@/lib/inbox/thread-loading";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
@@ -223,6 +224,9 @@ export function MessageThread({
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Conversa cujas mensagens já foram carregadas ao menos uma vez — ver
+  // shouldShowThreadSpinner.
+  const loadedForConversationRef = useRef<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
@@ -490,13 +494,21 @@ export function MessageThread({
   // arriving while the thread is open don't trigger a full refetch —
   // they only flip hasUnread, which only the reset effect listens to.
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId) {
+      // Conversa fechada: a próxima abertura começa do zero (com spinner).
+      loadedForConversationRef.current = null;
+      return;
+    }
 
     const supabase = createClient();
     let cancelled = false;
 
     (async () => {
-      setLoading(true);
+      // Spinner só na 1ª carga da conversa; recarga da mesma conversa
+      // é silenciosa para não derrubar a posição de leitura.
+      if (shouldShowThreadSpinner(loadedForConversationRef.current, conversationId)) {
+        setLoading(true);
+      }
 
       const { data, error } = await supabase
         .from("messages")
@@ -510,6 +522,7 @@ export function MessageThread({
         console.error("Failed to fetch messages:", error);
       } else {
         onMessagesLoadedRef.current(data ?? []);
+        loadedForConversationRef.current = conversationId;
       }
 
       if (!cancelled) setLoading(false);
