@@ -1767,6 +1767,8 @@
       "notAdminHint": "연결된 번호가 이 그룹의 관리자가 아닙니다 — 나가기만 가능합니다.",
       "notAccountAdminHint": "계정 관리자만 이 그룹을 관리할 수 있습니다.",
       "createGroup": "그룹 만들기",
+      "searchPlaceholder": "이름으로 그룹 검색",
+      "searchEmpty": "검색과 일치하는 그룹이 없습니다.",
       "createDialogTitle": "그룹 만들기",
       "createNameLabel": "그룹 이름",
       "createChannelLabel": "생성할 채널",

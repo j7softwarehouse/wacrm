@@ -1826,6 +1826,8 @@
       "notAdminHint": "The connected number is not an admin of this group — only leaving is available.",
       "notAccountAdminHint": "Only account admins can manage this group.",
       "createGroup": "Create group",
+      "searchPlaceholder": "Search groups by name",
+      "searchEmpty": "No groups match your search.",
       "createDialogTitle": "Create group",
       "createNameLabel": "Group name",
       "createChannelLabel": "Create from channel",

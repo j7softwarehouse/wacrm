@@ -1826,6 +1826,8 @@
       "notAdminHint": "O número conectado não é admin deste grupo — apenas sair está disponível.",
       "notAccountAdminHint": "Apenas administradores da conta podem gerenciar este grupo.",
       "createGroup": "Criar grupo",
+      "searchPlaceholder": "Buscar grupo pelo nome",
+      "searchEmpty": "Nenhum grupo corresponde à busca.",
       "createDialogTitle": "Criar grupo",
       "createNameLabel": "Nome do grupo",
       "createChannelLabel": "Criar pelo canal",

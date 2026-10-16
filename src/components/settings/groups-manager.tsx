@@ -29,15 +29,16 @@
 // non-admins, with a hint explaining why.
 // ============================================================
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ImageOff, Loader2, MessageCircle, Plus, RefreshCw, Settings, Users } from 'lucide-react';
+import { ImageOff, Loader2, MessageCircle, Plus, RefreshCw, Search, Settings, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
 import { openConversationForGroup } from '@/lib/whatsapp/groups/open-conversation';
+import { filterGroupsByName } from '@/lib/whatsapp/groups/filter-groups';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -391,6 +392,9 @@ export function GroupsManager() {
   // de Contatos (openingConvContactId).
   const [openingConvId, setOpeningConvId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // Busca pelo nome — a lista tem dezenas de grupos.
+  const [search, setSearch] = useState('');
+  const visibleGroups = useMemo(() => filterGroupsByName(groups, search), [groups, search]);
 
   function openManage(group: WhatsAppGroup) {
     setManageGroup(group);
@@ -548,10 +552,30 @@ export function GroupsManager() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <div className="relative">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('searchPlaceholder')}
+            aria-label={t('searchPlaceholder')}
+            className="pl-9"
+          />
+        </div>
+        {visibleGroups.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+              <Search className="text-muted-foreground size-6" />
+              <p className="text-muted-foreground mt-2 text-sm">{t('searchEmpty')}</p>
+            </CardContent>
+          </Card>
+        ) : (
         <Card>
           <CardContent className="p-0">
             <ul className="divide-border divide-y">
-              {groups.map((group) => (
+              {visibleGroups.map((group) => (
                 <li
                   key={group.id}
                   className="flex items-center gap-3 px-4 py-3"
@@ -633,6 +657,8 @@ export function GroupsManager() {
             </ul>
           </CardContent>
         </Card>
+        )}
+        </>
       )}
 
       {manageGroup && (
