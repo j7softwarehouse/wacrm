@@ -7,7 +7,6 @@ import { sanitizePhoneForMeta } from "@/lib/whatsapp/phone-utils";
 import {
   ChannelNotFoundError,
   getProviderForChannel,
-  resolveDefaultChannelId,
 } from "@/lib/whatsapp/providers/resolve";
 import {
   ProviderError,
@@ -176,6 +175,8 @@ const MAX_GROUP_PARTICIPANTS = 50;
 interface PostBody {
   name?: string;
   contactIds?: string[];
+  /** Canal que cria o grupo. Obrigatório quando a conta tem 2+ canais. */
+  channelId?: string;
 }
 
 export async function POST(request: Request) {
@@ -265,10 +266,40 @@ export async function POST(request: Request) {
       );
     }
 
-    const channelId = await resolveDefaultChannelId(supabase, profile.accountId);
-    if (!channelId) {
+    // O canal que cria o grupo é escolhido por quem cria. Com 2+ canais
+    // na conta a escolha é obrigatória: antes a rota usava sempre o canal
+    // mais antigo, e os grupos nasciam no número errado (relato de
+    // 16/10/2026). Com um canal só, ele é usado sem precisar escolher.
+    const { data: channelRows, error: channelsErr } = await supabase
+      .from("whatsapp_channels")
+      .select("id")
+      .eq("account_id", profile.accountId);
+    if (channelsErr) {
+      console.error("[POST /api/whatsapp/groups] channels fetch error:", channelsErr.message);
+      return NextResponse.json({ error: "Failed to resolve channels" }, { status: 500 });
+    }
+    const accountChannelIds = (channelRows ?? []).map((c) => c.id as string);
+    if (accountChannelIds.length === 0) {
       return NextResponse.json(
         { error: "No WhatsApp channel configured for this account." },
+        { status: 400 },
+      );
+    }
+
+    let channelId: string;
+    if (body.channelId) {
+      if (!accountChannelIds.includes(body.channelId)) {
+        return NextResponse.json(
+          { error: "Channel not found in your account." },
+          { status: 400 },
+        );
+      }
+      channelId = body.channelId;
+    } else if (accountChannelIds.length === 1) {
+      channelId = accountChannelIds[0];
+    } else {
+      return NextResponse.json(
+        { error: "Choose which WhatsApp channel will create the group." },
         { status: 400 },
       );
     }

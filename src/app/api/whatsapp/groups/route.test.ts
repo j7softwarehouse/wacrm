@@ -3,7 +3,6 @@
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getProviderForChannel: vi.fn(),
-  resolveDefaultChannelId: vi.fn(),
 }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }));
 vi.mock('@/lib/whatsapp/providers/resolve', async (importOriginal) => {
@@ -12,7 +11,6 @@ vi.mock('@/lib/whatsapp/providers/resolve', async (importOriginal) => {
   return {
     ...actual,
     getProviderForChannel: mocks.getProviderForChannel,
-    resolveDefaultChannelId: mocks.resolveDefaultChannelId,
   };
 });
 
@@ -413,7 +411,6 @@ describe('PATCH /api/whatsapp/groups', () => {
 describe('POST /api/whatsapp/groups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.resolveDefaultChannelId.mockResolvedValue('chan-1');
     mocks.getProviderForChannel.mockResolvedValue({
       createGroup: async () => ({
         groupJid: 'novo@g.us',
@@ -432,12 +429,15 @@ describe('POST /api/whatsapp/groups', () => {
   function comSessaoCreate(options: {
     role?: string;
     contacts?: Array<{ id: string; phone: string | null }>;
+    /** Canais da conta — a rota lê `whatsapp_channels` filtrando por conta. */
+    channels?: Array<{ id: string }>;
     insertResult?: { data: unknown; error: unknown };
     insertSpy?: (payload: Record<string, unknown>) => void;
   } = {}) {
     const {
       role = 'admin',
       contacts = [{ id: 'c-1', phone: '5511999999999' }],
+      channels = [{ id: 'chan-1' }],
       insertResult = {
         data: {
           id: 'g-new',
@@ -472,6 +472,13 @@ describe('POST /api/whatsapp/groups', () => {
               in: () => ({
                 eq: async () => ({ data: contacts, error: null }),
               }),
+            }),
+          };
+        }
+        if (table === 'whatsapp_channels') {
+          return {
+            select: () => ({
+              eq: async () => ({ data: channels, error: null }),
             }),
           };
         }
@@ -575,15 +582,14 @@ describe('POST /api/whatsapp/groups', () => {
   });
 
   it('devolve 400 quando a conta nao tem canal de WhatsApp configurado', async () => {
-    mocks.createClient.mockResolvedValue(comSessaoCreate());
-    mocks.resolveDefaultChannelId.mockResolvedValue(null);
+    mocks.createClient.mockResolvedValue(comSessaoCreate({ channels: [] }));
 
     const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
 
     expect(res.status).toBe(400);
   });
 
-  it('devolve 400 quando o canal padrao nao suporta criar grupo (Meta)', async () => {
+  it('devolve 400 quando o canal escolhido nao suporta criar grupo (Meta)', async () => {
     mocks.createClient.mockResolvedValue(comSessaoCreate());
     const { ProviderUnsupportedError } = await import('@/lib/whatsapp/providers/types');
     mocks.getProviderForChannel.mockResolvedValue({
@@ -642,5 +648,63 @@ describe('POST /api/whatsapp/groups', () => {
         enabled: true,
       }),
     );
+  });
+
+  // Relato 16/10/2026: grupos só nasciam no "Conta de Captação" — a rota
+  // sempre usava o canal MAIS ANTIGO da conta e o diálogo não deixava
+  // escolher. Agora o canal vem do corpo e, com 2+ canais, a escolha é
+  // obrigatória (nunca cai em silêncio num canal que ninguém escolheu).
+  describe('escolha do canal', () => {
+    it('cria o grupo no canal escolhido (provider e channel_id gravado)', async () => {
+      const insertSpy = vi.fn();
+      mocks.createClient.mockResolvedValue(
+        comSessaoCreate({ channels: [{ id: 'chan-1' }, { id: 'chan-2' }], insertSpy }),
+      );
+
+      const res = await POST(
+        request({ name: 'Turma 2026', contactIds: ['c-1'], channelId: 'chan-2' }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(mocks.getProviderForChannel).toHaveBeenCalledWith(expect.anything(), 'chan-2');
+      expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ channel_id: 'chan-2' }));
+    });
+
+    it('devolve 400 e NAO chama o provider quando o canal nao e da conta do chamador', async () => {
+      mocks.createClient.mockResolvedValue(
+        comSessaoCreate({ channels: [{ id: 'chan-1' }, { id: 'chan-2' }] }),
+      );
+
+      const res = await POST(
+        request({ name: 'Turma', contactIds: ['c-1'], channelId: 'canal-de-outra-conta' }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(mocks.getProviderForChannel).not.toHaveBeenCalled();
+    });
+
+    it('devolve 400 e NAO chama o provider quando a conta tem 2+ canais e nenhum foi escolhido', async () => {
+      mocks.createClient.mockResolvedValue(
+        comSessaoCreate({ channels: [{ id: 'chan-1' }, { id: 'chan-2' }] }),
+      );
+
+      const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+      expect(res.status).toBe(400);
+      expect(mocks.getProviderForChannel).not.toHaveBeenCalled();
+    });
+
+    it('usa o unico canal da conta quando nenhum foi informado', async () => {
+      const insertSpy = vi.fn();
+      mocks.createClient.mockResolvedValue(
+        comSessaoCreate({ channels: [{ id: 'chan-unico' }], insertSpy }),
+      );
+
+      const res = await POST(request({ name: 'Turma', contactIds: ['c-1'] }));
+
+      expect(res.status).toBe(200);
+      expect(mocks.getProviderForChannel).toHaveBeenCalledWith(expect.anything(), 'chan-unico');
+      expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ channel_id: 'chan-unico' }));
+    });
   });
 });
