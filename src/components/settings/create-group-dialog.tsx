@@ -27,6 +27,12 @@ import { toast } from 'sonner';
 
 import { createClient } from '@/lib/supabase/client';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import {
+  channelsForGroupCreation,
+  defaultGroupChannelId,
+  type GroupChannelOption,
+} from '@/lib/whatsapp/group-channels';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -123,6 +129,32 @@ export function CreateGroupDialog({
   const [selected, setSelected] = useState<Map<string, PickedContact>>(new Map());
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Canal que vai criar o grupo. Com 2+ canais a pessoa precisa escolher
+  // (ver defaultGroupChannelId) — antes o servidor usava sempre o mais
+  // antigo e os grupos nasciam no número errado.
+  const [channelOptions, setChannelOptions] = useState<GroupChannelOption[]>([]);
+  const [channelId, setChannelId] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/whatsapp/channels');
+        const data = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok || !Array.isArray(data?.channels)) return;
+        const options = channelsForGroupCreation(data.channels);
+        setChannelOptions(options);
+        setChannelId(defaultGroupChannelId(options));
+      } catch {
+        // Sem a lista, o diálogo funciona como antes: o servidor aceita
+        // conta de canal único e recusa com mensagem se houver 2+.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -202,7 +234,11 @@ export function CreateGroupDialog({
       const res = await fetch('/api/whatsapp/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), contactIds: Array.from(selected.keys()) }),
+        body: JSON.stringify({
+          name: name.trim(),
+          contactIds: Array.from(selected.keys()),
+          ...(channelId ? { channelId } : {}),
+        }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -226,8 +262,13 @@ export function CreateGroupDialog({
   }
 
   const trimmedName = name.trim();
+  const needsChannelChoice = channelOptions.filter((o) => o.selectable).length > 1;
   const canSubmit =
-    !submitting && trimmedName.length > 0 && trimmedName.length <= 100 && selected.size > 0;
+    !submitting &&
+    trimmedName.length > 0 &&
+    trimmedName.length <= 100 &&
+    selected.size > 0 &&
+    (!needsChannelChoice || channelId !== '');
 
   return (
     <Dialog open={open} onOpenChange={(next) => !submitting && onOpenChange(next)}>
@@ -251,6 +292,41 @@ export function CreateGroupDialog({
               disabled={submitting}
             />
           </div>
+
+          {needsChannelChoice ? (
+            <div className="space-y-1.5">
+              <Label id="create-group-channel-label">{t('createChannelLabel')}</Label>
+              <div
+                role="radiogroup"
+                aria-labelledby="create-group-channel-label"
+                className="flex flex-wrap gap-2"
+              >
+                {channelOptions.map((option) => {
+                  const active = channelId === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={submitting || !option.selectable}
+                      onClick={() => setChannelId(option.id)}
+                      className={cn(
+                        'rounded-md border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                        active
+                          ? 'border-primary bg-primary/10 font-medium text-foreground'
+                          : 'border-border text-muted-foreground hover:bg-muted',
+                      )}
+                    >
+                      {option.label}
+                      {!option.selectable ? ` ${t('createChannelDisconnected')}` : ''}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-muted-foreground text-xs">{t('createChannelHint')}</p>
+            </div>
+          ) : null}
 
           {selected.size > 0 ? (
             <div className="flex flex-wrap gap-1.5">
