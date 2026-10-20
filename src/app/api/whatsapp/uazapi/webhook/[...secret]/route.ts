@@ -7,6 +7,7 @@ import {
   mapUazapiMessageStatus,
   type CrmMessageStatus,
 } from "@/lib/whatsapp/uazapi/connection";
+import { statusesThatMayAdvanceTo } from "@/lib/whatsapp/uazapi/message-status";
 import {
   extractEventType,
   extractMessageData,
@@ -168,13 +169,19 @@ async function applyMessageStatus(
   const rows = await findOwnedMessages(channel, messageIds);
   if (rows.length === 0) return;
 
+  // O status só AVANÇA (sent → delivered → read): os eventos chegam em
+  // paralelo e fora de ordem, e um "entregue" gravado depois de um
+  // "lido" voltava o balão para cinza (relato de 20/10/2026). O filtro
+  // por status anterior vai no próprio UPDATE, então a corrida entre
+  // dois eventos simultâneos também é resolvida pelo banco.
   const { error: updateError } = await supabaseAdmin()
     .from("messages")
     .update({ status })
     .in(
       "id",
       rows.map((r) => r.id),
-    );
+    )
+    .in("status", statusesThatMayAdvanceTo(status));
 
   if (updateError) {
     console.error(

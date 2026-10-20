@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { statusTickClass } from "@/lib/inbox/status-tick";
 import { splitHighlight } from "@/lib/inbox/message-search";
 import { canRemoveMarker, markerChipText } from "@/lib/inbox/message-markers";
 import type { Message, MessageMarker, MessageReaction } from "@/types";
@@ -57,17 +58,20 @@ interface MessageBubbleProps {
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
+  // Tamanho e traço maiores que o ícone de texto comum: os tiques ficam
+  // sobre o fundo primário do balão e precisam ser vistos de relance.
+  const base = "h-3.5 w-3.5";
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className={cn(base, statusTickClass("sending"))} />;
     case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
+      return <Check strokeWidth={2.5} className={cn(base, statusTickClass("sent"))} />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck strokeWidth={2.5} className={cn(base, statusTickClass("delivered"))} />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      return <CheckCheck strokeWidth={3} className={cn(base, statusTickClass("read"))} />;
     case "failed":
-      return <XCircle className="h-3 w-3 text-red-400" />;
+      return <XCircle className={cn(base, statusTickClass("failed"))} />;
     default:
       return null;
   }
