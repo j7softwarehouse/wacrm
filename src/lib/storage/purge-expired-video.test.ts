@@ -4,6 +4,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   chatMediaPathFromPublicUrl,
   purgeExpiredChatVideos,
+  purgeExpiredOtherChatMedia,
+  OTHER_MEDIA_RETENTION_HOURS,
 } from './purge-expired-video';
 
 const BASE = 'https://abc123.supabase.co/storage/v1/object/public';
@@ -59,6 +61,7 @@ function fakeAdmin(opts: {
   const chain = {
     select: () => chain,
     eq: () => chain,
+    in: () => chain,
     not: () => chain,
     like: () => chain,
     lt: () => chain,
@@ -142,5 +145,31 @@ describe('purgeExpiredChatVideos', () => {
 
     expect(removed).toEqual([]);
     expect(result).toEqual({ purged: 0, failed: 1 });
+  });
+});
+
+// Urgência real de produção (20/10/2026): Storage Size em 124% do 1 GB do
+// plano grátis no 3º dia do ciclo. Só vídeo tinha retenção (48h) — foto,
+// PDF e áudio ficavam PARA SEMPRE, e eram a maior parte do 1,33 GB
+// acumulado desde 29/07 (587 MB de PDF + 426 MB de foto + 136 MB de
+// áudio, contra só 63 MB de vídeo). Usuário aprovou 14 dias pra essas
+// (mais folga que o vídeo, mas ainda limpa quase tudo que já existe).
+describe('purgeExpiredOtherChatMedia', () => {
+  const IMG_URL = `${BASE}/chat-media/account-abc/1-foto.jpeg`;
+
+  it('remove o objeto do storage e zera o media_url, igual ao vídeo', async () => {
+    const { admin, removed, updated } = fakeAdmin({
+      rows: [{ id: 'msg-2', media_url: IMG_URL }],
+    });
+
+    const result = await purgeExpiredOtherChatMedia(admin);
+
+    expect(removed).toEqual([['account-abc/1-foto.jpeg']]);
+    expect(updated).toEqual([{ id: 'msg-2', patch: { media_url: null } }]);
+    expect(result).toEqual({ purged: 1, failed: 0 });
+  });
+
+  it('janela de retenção é de 14 dias (336h) — bem maior que o vídeo', () => {
+    expect(OTHER_MEDIA_RETENTION_HOURS).toBe(14 * 24);
   });
 });

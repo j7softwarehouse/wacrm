@@ -1,20 +1,24 @@
 // ============================================================
-// Retenção de vídeo do chat: 48h.
+// Retenção de mídia do chat.
 //
-// Vídeo é a única mídia que chega a dezenas de MB, e o plano free do
-// Supabase dá 1 GB de storage no total — a ~30 MB por arquivo, algumas
-// dezenas de vídeos enchem a cota e o upload de TODA mídia passa a
-// falhar. Esta varredura apaga o objeto do bucket `chat-media` depois
-// de 48h e zera o `media_url` da mensagem.
+// Urgência real de produção (20/10/2026): Storage Size em 124% do 1 GB
+// do plano grátis do Supabase, no 3º dia do ciclo. Só vídeo tinha
+// retenção (48h, criada quando ele era visto como o único risco — até
+// 30 MB por arquivo). Na prática, foto/PDF/áudio nunca eram apagados e
+// eram a maior parte do 1,33 GB acumulado desde 29/07 (587 MB de PDF +
+// 426 MB de foto + 136 MB de áudio, contra só 63 MB de vídeo — a
+// retenção do vídeo sempre funcionou). Usuário aprovou 14 dias pra
+// essas (mais folga que o vídeo, mas ainda limpa quase tudo que já
+// existe hoje).
 //
 // O contato não perde nada: o WhatsApp guarda a própria cópia
 // criptografada da mídia entregue, então apagar o nosso arquivo não
 // afeta o que ele recebeu — só a reprodução dentro do CRM. A bolha
-// passa a renderizar "Vídeo indisponível" (`MediaUnavailable`), que já
-// existe para mídia ausente; nenhuma mudança de UI é necessária.
+// passa a renderizar "indisponível" (`MediaUnavailable`), que já existe
+// para mídia ausente; nenhuma mudança de UI é necessária.
 //
-// O bucket `flow-media` fica DE FORA de propósito: vídeo configurado
-// num Fluxo é ativo permanente, reutilizado a cada execução, e apagá-lo
+// O bucket `flow-media` fica DE FORA de propósito: mídia configurada
+// num Fluxo é ativa permanente, reutilizada a cada execução, e apagá-la
 // quebraria o fluxo. Por isso a varredura filtra pelo caminho do
 // `chat-media` em vez de confiar só no tipo da mensagem.
 // ============================================================
@@ -25,6 +29,14 @@ const BUCKET = 'chat-media';
 
 /** Janela de retenção do vídeo no nosso storage, em horas. */
 export const VIDEO_RETENTION_HOURS = 48;
+
+/** Janela de retenção de foto/PDF/áudio/documento, em horas (14 dias). */
+export const OTHER_MEDIA_RETENTION_HOURS = 14 * 24;
+
+/** Tipos cobertos por `purgeExpiredOtherChatMedia` — tudo que carrega
+ *  `media_url` no `chat-media`, exceto vídeo (janela própria, mais
+ *  curta) e texto/localização/template/interativo (sem arquivo). */
+const OTHER_MEDIA_CONTENT_TYPES = ['image', 'document', 'audio'];
 
 /**
  * Teto por execução. A varredura roda uma vez ao dia; o limite existe
@@ -80,14 +92,39 @@ export async function purgeExpiredChatVideos(
   admin: SupabaseClient,
   now: Date = new Date(),
 ): Promise<PurgeResult> {
+  return purgeExpiredByContentTypes(admin, ['video'], VIDEO_RETENTION_HOURS, now);
+}
+
+/**
+ * Mesma varredura acima, para foto/PDF/áudio/documento — janela de
+ * `OTHER_MEDIA_RETENTION_HOURS` (14 dias) em vez das 48h do vídeo.
+ */
+export async function purgeExpiredOtherChatMedia(
+  admin: SupabaseClient,
+  now: Date = new Date(),
+): Promise<PurgeResult> {
+  return purgeExpiredByContentTypes(
+    admin,
+    OTHER_MEDIA_CONTENT_TYPES,
+    OTHER_MEDIA_RETENTION_HOURS,
+    now,
+  );
+}
+
+async function purgeExpiredByContentTypes(
+  admin: SupabaseClient,
+  contentTypes: string[],
+  retentionHours: number,
+  now: Date,
+): Promise<PurgeResult> {
   const cutoff = new Date(
-    now.getTime() - VIDEO_RETENTION_HOURS * 60 * 60 * 1000,
+    now.getTime() - retentionHours * 60 * 60 * 1000,
   ).toISOString();
 
   const { data: expired, error } = await admin
     .from('messages')
     .select('id, media_url')
-    .eq('content_type', 'video')
+    .in('content_type', contentTypes)
     .not('media_url', 'is', null)
     // Restringe já na consulta ao nosso bucket, para uma URL externa não
     // voltar em toda execução sem nunca poder ser tratada.
