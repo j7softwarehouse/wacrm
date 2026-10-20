@@ -57,11 +57,15 @@ function fakeAdmin(opts: {
 }) {
   const removed: string[][] = [];
   const updated: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const inCalls: unknown[][] = [];
 
   const chain = {
     select: () => chain,
     eq: () => chain,
-    in: () => chain,
+    in: (_col: string, vals: unknown[]) => {
+      inCalls.push(vals);
+      return chain;
+    },
     not: () => chain,
     like: () => chain,
     lt: () => chain,
@@ -92,7 +96,7 @@ function fakeAdmin(opts: {
     },
   } as unknown as SupabaseClient;
 
-  return { admin, removed, updated };
+  return { admin, removed, updated, inCalls };
 }
 
 const CHAT_URL = `${BASE}/chat-media/account-abc/1-clip.mp4`;
@@ -150,10 +154,10 @@ describe('purgeExpiredChatVideos', () => {
 
 // Urgência real de produção (20/10/2026): Storage Size em 124% do 1 GB do
 // plano grátis no 3º dia do ciclo. Só vídeo tinha retenção (48h) — foto,
-// PDF e áudio ficavam PARA SEMPRE, e eram a maior parte do 1,33 GB
-// acumulado desde 29/07 (587 MB de PDF + 426 MB de foto + 136 MB de
-// áudio, contra só 63 MB de vídeo). Usuário aprovou 14 dias pra essas
-// (mais folga que o vídeo, mas ainda limpa quase tudo que já existe).
+// PDF e áudio ficavam PARA SEMPRE. Usuário decidiu (após ver os números
+// reais) manter o ÁUDIO fora da limpeza — só PDF, foto e documento
+// entram, com 14 dias de prazo (30 dias não reduzia o bastante: a
+// maior parte do volume é recente, não só acúmulo antigo de 29/07).
 describe('purgeExpiredOtherChatMedia', () => {
   const IMG_URL = `${BASE}/chat-media/account-abc/1-foto.jpeg`;
 
@@ -171,5 +175,15 @@ describe('purgeExpiredOtherChatMedia', () => {
 
   it('janela de retenção é de 14 dias (336h) — bem maior que o vídeo', () => {
     expect(OTHER_MEDIA_RETENTION_HOURS).toBe(14 * 24);
+  });
+
+  it('NÃO inclui áudio na consulta — decisão do usuário (20/10/2026), só PDF/foto/documento', async () => {
+    const { admin, inCalls } = fakeAdmin({ rows: [] });
+
+    await purgeExpiredOtherChatMedia(admin);
+
+    expect(inCalls).toHaveLength(1);
+    expect(inCalls[0]).not.toContain('audio');
+    expect(inCalls[0]).toEqual(['image', 'document']);
   });
 });
