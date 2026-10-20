@@ -86,6 +86,17 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // Busca no banco só 400ms depois que a pessoa para de digitar — sem
+  // isso, CADA tecla disparava uma consulta nova (.or() com 3 ILIKE sem
+  // índice, mais count exato), e vários atendentes buscando ao mesmo
+  // tempo derrubavam o Postgres do plano grátis por timeout (8s,
+  // código 57014) — queda real em produção, 20/10/2026. Mesmo padrão
+  // já usado em create-group-dialog.tsx.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
@@ -166,7 +177,7 @@ export default function ContactsPage() {
 
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
-    const term = search.trim();
+    const term = debouncedSearch.trim();
 
     let contactRows: Contact[];
     let count: number;
@@ -259,7 +270,7 @@ export default function ContactsPage() {
   }, [
     supabase,
     page,
-    search,
+    debouncedSearch,
     selectedTagIds,
     unidentifiedOnly,
     sortColumn,
