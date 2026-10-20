@@ -11,9 +11,10 @@ import {
 /**
  * Retenção de mídia do chat: apaga do bucket `chat-media` o que passou
  * da janela de cada tipo e zera o `media_url` da mensagem — vídeo em
- * 48h, foto/PDF/áudio/documento em 14 dias (ver purge-expired-video.ts
- * para o porquê: Storage Size estourou o 1 GB do plano grátis em
- * 20/10/2026 porque só vídeo tinha retenção).
+ * 48h, foto/PDF/documento em 14 dias; áudio fica de fora, por decisão
+ * do usuário (ver purge-expired-video.ts para o porquê: Storage Size
+ * estourou o 1 GB do plano grátis em 20/10/2026 porque só vídeo tinha
+ * retenção).
  *
  * O contato não perde nada — o WhatsApp guarda a própria cópia da mídia
  * entregue. Some apenas a reprodução dentro do CRM, que passa a exibir

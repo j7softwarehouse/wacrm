@@ -4,12 +4,13 @@
 // Urgência real de produção (20/10/2026): Storage Size em 124% do 1 GB
 // do plano grátis do Supabase, no 3º dia do ciclo. Só vídeo tinha
 // retenção (48h, criada quando ele era visto como o único risco — até
-// 30 MB por arquivo). Na prática, foto/PDF/áudio nunca eram apagados e
-// eram a maior parte do 1,33 GB acumulado desde 29/07 (587 MB de PDF +
-// 426 MB de foto + 136 MB de áudio, contra só 63 MB de vídeo — a
-// retenção do vídeo sempre funcionou). Usuário aprovou 14 dias pra
-// essas (mais folga que o vídeo, mas ainda limpa quase tudo que já
-// existe hoje).
+// 30 MB por arquivo). Na prática, foto/PDF/áudio nunca eram apagados —
+// 1,33 GB acumulado desde 29/07 (587 MB de PDF + 426 MB de foto + 136
+// MB de áudio, contra só 63 MB de vídeo — a retenção do vídeo sempre
+// funcionou). Usuário decidiu manter ÁUDIO fora da limpeza (só ~10% do
+// total) e aprovou 14 dias para PDF/foto/documento — 30 dias só nesses
+// dois tipos não reduzia o bastante, porque boa parte do volume é
+// recente, não só acúmulo antigo.
 //
 // O contato não perde nada: o WhatsApp guarda a própria cópia
 // criptografada da mídia entregue, então apagar o nosso arquivo não
@@ -33,10 +34,14 @@ export const VIDEO_RETENTION_HOURS = 48;
 /** Janela de retenção de foto/PDF/áudio/documento, em horas (14 dias). */
 export const OTHER_MEDIA_RETENTION_HOURS = 14 * 24;
 
-/** Tipos cobertos por `purgeExpiredOtherChatMedia` — tudo que carrega
- *  `media_url` no `chat-media`, exceto vídeo (janela própria, mais
- *  curta) e texto/localização/template/interativo (sem arquivo). */
-const OTHER_MEDIA_CONTENT_TYPES = ['image', 'document', 'audio'];
+/** Tipos cobertos por `purgeExpiredOtherChatMedia`. Vídeo tem janela
+ *  própria (mais curta); texto/localização/template/interativo não têm
+ *  arquivo. Áudio fica FORA de propósito — decisão do usuário
+ *  (20/10/2026) depois de ver que é só 10% do total acumulado; 30 dias
+ *  só nesses dois tipos não reduzia o bastante (a maior parte do
+ *  volume é recente, não só acúmulo antigo), por isso a janela
+ *  continua em `OTHER_MEDIA_RETENTION_HOURS` (14 dias). */
+const OTHER_MEDIA_CONTENT_TYPES = ['image', 'document'];
 
 /**
  * Teto por execução. A varredura roda uma vez ao dia; o limite existe
