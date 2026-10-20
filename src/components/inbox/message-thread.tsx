@@ -27,6 +27,12 @@ import type {
 import { markerChipText } from "@/lib/inbox/message-markers";
 import { isNearBottom } from "@/lib/inbox/scroll-stick";
 import { shouldShowThreadSpinner } from "@/lib/inbox/thread-loading";
+import { pickMessageIdsToMarkRead } from "@/lib/inbox/mark-read";
+import {
+  MARK_READ_DWELL_MS,
+  MARK_READ_DEBOUNCE_MS,
+  isMarkReadEligible,
+} from "@/lib/inbox/mark-read-trigger";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
 import {
   MessageSquare,
@@ -763,6 +769,83 @@ export function MessageThread({
   useEffect(() => {
     stickToBottomRef.current = true;
   }, [conversationId]);
+
+  // Avisa o WhatsApp que as mensagens recebidas foram lidas — acende o
+  // "✓✓" azul pra quem enviou. O CRM nunca mandava esse aviso, então o
+  // contato nunca via confirmação de leitura mesmo com o atendente já
+  // tendo lido aqui (relato de 20/10/2026). Só dispara depois de
+  // MARK_READ_DWELL_MS com a conversa aberta E a aba visível — passar o
+  // olho rápido pela lista não pode marcar como lida; mensagens novas
+  // chegando depois disso são agrupadas (debounce) pra não martelar a
+  // API a cada uma. Só canal uazapi, conversa individual, e só quem
+  // pode responder (gate real é no servidor; aqui evita chamada à toa).
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  const markReadDwelledRef = useRef(false);
+  useEffect(() => {
+    markReadDwelledRef.current = false;
+  }, [conversationId]);
+
+  const markReadEligible = isMarkReadEligible({
+    conversationId,
+    channelProvider: threadChannel?.provider,
+    isGroup: !!conversation?.group,
+    canSendMessages,
+  });
+
+  useEffect(() => {
+    if (!markReadEligible || !conversationId) return;
+
+    const callMarkRead = () => {
+      if (pickMessageIdsToMarkRead(messagesRef.current).length === 0) return;
+      fetch(`/api/whatsapp/conversations/${conversationId}/mark-read`, {
+        method: "POST",
+      }).catch(() => {
+        // Melhor esforço — a próxima mensagem nova ou reabrir a
+        // conversa tenta de novo; não há UI de erro pra isto.
+      });
+    };
+
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+    const armDwell = () => {
+      if (markReadDwelledRef.current || document.visibilityState !== "visible") return;
+      dwellTimer = setTimeout(() => {
+        markReadDwelledRef.current = true;
+        callMarkRead();
+      }, MARK_READ_DWELL_MS);
+    };
+    armDwell();
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        armDwell();
+      } else if (dwellTimer) {
+        clearTimeout(dwellTimer);
+        dwellTimer = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (dwellTimer) clearTimeout(dwellTimer);
+    };
+  }, [conversationId, markReadEligible]);
+
+  useEffect(() => {
+    if (!markReadEligible || !conversationId) return;
+    if (!markReadDwelledRef.current || document.visibilityState !== "visible") return;
+    if (pickMessageIdsToMarkRead(messages).length === 0) return;
+
+    const timer = setTimeout(() => {
+      fetch(`/api/whatsapp/conversations/${conversationId}/mark-read`, {
+        method: "POST",
+      }).catch(() => {});
+    }, MARK_READ_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [messages, conversationId, markReadEligible]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {

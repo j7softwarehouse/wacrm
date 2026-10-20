@@ -157,6 +157,10 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       throw new ProviderUnsupportedError("meta", "deleteMessage");
     },
 
+    async markAsRead(): Promise<void> {
+      throw new ProviderUnsupportedError("meta", "markAsRead");
+    },
+
     async requestMessageRecovery(): Promise<void> {
       // Reenvio sob demanda de mensagem é um conceito de sessão
       // multiaparelho (WhatsApp Web/app), exclusivo da conexão por QR
