@@ -95,6 +95,9 @@ export function createFakeProvider(
     async deleteMessage(args: { messageId: string }) {
       calls.push({ method: "deleteMessage", args });
     },
+    async markAsRead(args: { messageIds: string[] }) {
+      calls.push({ method: "markAsRead", args });
+    },
     async requestMessageRecovery(args: { messageId: string; chatId: string }) {
       calls.push({ method: "requestMessageRecovery", args });
     },

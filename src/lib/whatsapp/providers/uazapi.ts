@@ -183,6 +183,11 @@ export function createUazapiProvider(
       await client.post("/message/delete", { id: args.messageId });
     },
 
+    async markAsRead(args: { messageIds: string[] }): Promise<void> {
+      if (args.messageIds.length === 0) return;
+      await client.post("/message/markread", { id: args.messageIds });
+    },
+
     async requestMessageRecovery(args: { messageId: string; chatId: string }): Promise<void> {
       await client.post("/message/history-sync", {
         mode: "exact",

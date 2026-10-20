@@ -213,6 +213,11 @@ export interface WhatsAppProvider {
    *  participantes. Lança se o provedor não suportar (Meta) ou se o
    *  WhatsApp recusar. */
   deleteMessage(args: { messageId: string }): Promise<void>;
+  /** Avisa o WhatsApp que a(s) mensagem(ns) RECEBIDA(s) foram lidas —
+   *  é o que acende o "✓✓" azul no app de quem mandou. Lança se o
+   *  provedor não suportar (Meta: a leitura só é confirmável via
+   *  webhook de status, não por chamada do CRM). */
+  markAsRead(args: { messageIds: string[] }): Promise<void>;
   /** Pede ao WhatsApp que reenvie uma mensagem RECEBIDA cujo conteúdo
    *  não pôde ser lido (ex.: criptografia multiaparelho dessincronizada
    *  — "[Undecryptable]"). Experimental do lado da uazapi (modo "exact"
