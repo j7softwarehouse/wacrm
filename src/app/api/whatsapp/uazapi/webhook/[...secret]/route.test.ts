@@ -412,6 +412,63 @@ describe("handleEvent — status de entrega (compatibilidade com o formato antig
   });
 });
 
+describe("handleEvent — status de entrega nunca regride (relato 20/10/2026)", () => {
+  // Formato real: EventType "messages_update", corpo em `event`, Type com
+  // o estado e MessageIDs em lista.
+  const evento = (type: string, id = "WAMID-9") => ({
+    EventType: "messages_update",
+    event: { Chat: "5511999999999@s.whatsapp.net", MessageIDs: [id], Type: type },
+  });
+  const msg = (status: string) => ({
+    id: "msg-9",
+    message_id: "WAMID-9",
+    conversation_id: "conv-1",
+    content_text: "oi",
+    status,
+    sender_type: "agent",
+  });
+
+  it("'entregue' chegando DEPOIS de 'lido' não volta o balão para cinza", async () => {
+    messagesTable = [msg("read")];
+
+    await handleEvent(CHANNEL, evento("Delivered"));
+
+    expect(messagesTable[0].status).toBe("read");
+  });
+
+  it("'enviado' atrasado não regride uma mensagem já entregue", async () => {
+    messagesTable = [msg("delivered")];
+
+    await handleEvent(CHANNEL, evento("Sent"));
+
+    expect(messagesTable[0].status).toBe("delivered");
+  });
+
+  it("'lido' avança uma mensagem entregue", async () => {
+    messagesTable = [msg("delivered")];
+
+    await handleEvent(CHANNEL, evento("Read"));
+
+    expect(messagesTable[0].status).toBe("read");
+  });
+
+  it("'lido' avança direto de 'enviado' quando o 'entregue' se perdeu", async () => {
+    messagesTable = [msg("sent")];
+
+    await handleEvent(CHANNEL, evento("Read"));
+
+    expect(messagesTable[0].status).toBe("read");
+  });
+
+  it("'tocado' (áudio ouvido) também vira lido", async () => {
+    messagesTable = [msg("delivered")];
+
+    await handleEvent(CHANNEL, evento("Played"));
+
+    expect(messagesTable[0].status).toBe("read");
+  });
+});
+
 describe("handleEvent — evento 'history' (recuperação de mensagem, formato ainda não confirmado)", () => {
   // A uazapi documenta que a mensagem recuperada via
   // /message/history-sync (mode=exact) volta "via webhook/SSE em
