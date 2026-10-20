@@ -326,8 +326,13 @@ export function ConversationList({
   // que tira o selo na hora em que a conversa é respondida, sem esperar
   // a próxima busca da RPC.
   const awaitingReplyByConversation = useMemo(() => {
-    const lastMessageAtById = new Map(conversations.map((c) => [c.id, c.last_message_at]));
-    return buildAwaitingReplyMap(awaitingReplyRows, lastMessageAtById, awaitingReplyNow);
+    const lastMessageById = new Map(
+      conversations.map((c) => [
+        c.id,
+        { at: c.last_message_at, senderType: c.last_message_sender_type },
+      ]),
+    );
+    return buildAwaitingReplyMap(awaitingReplyRows, lastMessageById, awaitingReplyNow);
   }, [awaitingReplyRows, conversations, awaitingReplyNow]);
 
   const filtered = useMemo(() => {

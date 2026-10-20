@@ -202,6 +202,16 @@ export interface Conversation {
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
+  /**
+   * Quem mandou a mensagem mais recente — SÓ EM MEMÓRIA, não é coluna
+   * do banco (`conversations` não guarda isso). Preenchido pelo
+   * handler de INSERT em `messages` no realtime (inbox/page.tsx), que
+   * já sabe o `sender_type` da mensagem que chegou. `undefined` na
+   * carga inicial da página, até o primeiro evento de tempo real desta
+   * conversa — ver `buildAwaitingReplyMap` (awaiting-reply.ts), que
+   * trata "desconhecido" como "não excluir" por segurança.
+   */
+  last_message_sender_type?: "customer" | "agent" | "bot";
   unread_count: number;
   created_at: string;
   updated_at: string;
