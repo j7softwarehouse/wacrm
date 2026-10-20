@@ -15,30 +15,44 @@ export type AwaitingReplyItem = AwaitingReplyRow & { conversation_id: string };
 export const AWAITING_REPLY_FETCH_MS = 15 * 60_000;
 export const AWAITING_REPLY_RECOMPUTE_MS = 60_000;
 
+/** O que a lista de conversas (tempo real) sabe sobre a mensagem mais
+ *  recente de uma conversa. `senderType` só existe depois que um evento
+ *  de tempo real passa por ela nesta sessão — na carga inicial da
+ *  página é `undefined`, e aí não dá pra confiar na exclusão abaixo. */
+export interface LastMessageInfo {
+  at: string | null | undefined;
+  senderType?: "customer" | "agent" | "bot";
+}
+
 /**
  * Conversas "sem resposta +30 min", indexadas pelo id.
  *
- * `lastMessageAtById` vem da lista de conversas, que o tempo real mantém
- * atualizada entre uma busca da RPC e outra. Se ela já tem mensagem mais
- * nova que a última vista pela RPC, a conversa sai do mapa: ou o
- * atendente respondeu, ou o cliente mandou outra mensagem — e aí o
- * relógio dos 30 minutos recomeça dela (a RPC olha a ÚLTIMA mensagem),
- * então também não está pendente agora. Nos dois casos o resultado é o
- * mesmo que a RPC daria se fosse consultada de novo.
+ * `lastMessageById` vem da lista de conversas, que o tempo real mantém
+ * atualizada entre uma busca da RPC e outra. Uma conversa só sai do mapa
+ * quando a mensagem mais nova que a da RPC é do ATENDENTE ou do BOT —
+ * aí sim ela foi respondida. Bug real de produção (20/10/2026): a
+ * versão anterior excluía por qualquer mensagem mais nova, sem saber
+ * quem mandou — um novo "oi" do CLIENTE também tirava a conversa da
+ * lista, escondendo justamente quem mais precisava de resposta (e
+ * fazia o filtro da Inbox mostrar menos conversas que o card do
+ * Dashboard). Sem saber o remetente (carga inicial, sem evento de
+ * tempo real ainda) a exclusão não acontece — confia na RPC.
  */
 export function buildAwaitingReplyMap(
   rows: readonly AwaitingReplyItem[],
-  lastMessageAtById: ReadonlyMap<string, string | null | undefined>,
+  lastMessageById: ReadonlyMap<string, LastMessageInfo>,
   now: Date,
 ): Map<string, AwaitingReplyItem> {
   const map = new Map<string, AwaitingReplyItem>();
   for (const row of rows) {
     if (!isAwaitingReply(row, now)) continue;
-    const current = lastMessageAtById.get(row.conversation_id);
+    const current = lastMessageById.get(row.conversation_id);
+    const respondedByUs = current?.senderType === "agent" || current?.senderType === "bot";
     if (
-      current &&
+      respondedByUs &&
+      current?.at &&
       row.last_message_at &&
-      Date.parse(current) > Date.parse(row.last_message_at)
+      Date.parse(current.at) > Date.parse(row.last_message_at)
     ) {
       continue;
     }

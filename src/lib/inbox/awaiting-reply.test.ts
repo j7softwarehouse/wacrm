@@ -5,6 +5,7 @@ import {
   AWAITING_REPLY_RECOMPUTE_MS,
   buildAwaitingReplyMap,
   type AwaitingReplyItem,
+  type LastMessageInfo,
 } from "./awaiting-reply";
 
 // A RPC conversations_awaiting_reply devolve uma linha por conversa
@@ -38,20 +39,53 @@ describe("buildAwaitingReplyMap", () => {
     expect(map.size).toBe(0);
   });
 
-  it("exclui quando a lista em tempo real já tem mensagem mais nova que a da RPC (respondida ou relógio reiniciado)", () => {
-    const lastMessageAt = new Map([["c1", "2026-10-13T14:59:00.000Z"]]);
+  // Bug real de produção (20/10/2026): a versão anterior excluía só por
+  // DATA mais nova, sem saber QUEM mandou — um novo "oi" do CLIENTE
+  // também tirava a conversa da lista de pendentes, escondendo quem
+  // mais precisava de resposta. A exclusão só pode valer quando a
+  // mensagem mais nova é do ATENDENTE/bot.
+  it("exclui quando o tempo real mostra resposta do ATENDENTE depois da RPC", () => {
+    const lastMessageAt = new Map<string, LastMessageInfo>([
+      ["c1", { at: "2026-10-13T14:59:00.000Z", senderType: "agent" }],
+    ]);
     const map = buildAwaitingReplyMap([row()], lastMessageAt, NOW);
     expect(map.size).toBe(0);
   });
 
+  it("exclui também quando quem respondeu foi o bot", () => {
+    const lastMessageAt = new Map<string, LastMessageInfo>([
+      ["c1", { at: "2026-10-13T14:59:00.000Z", senderType: "bot" }],
+    ]);
+    const map = buildAwaitingReplyMap([row()], lastMessageAt, NOW);
+    expect(map.size).toBe(0);
+  });
+
+  it("NÃO exclui quando a mensagem mais nova é OUTRA do CLIENTE — continua aguardando resposta", () => {
+    const lastMessageAt = new Map<string, LastMessageInfo>([
+      ["c1", { at: "2026-10-13T14:59:00.000Z", senderType: "customer" }],
+    ]);
+    const map = buildAwaitingReplyMap([row()], lastMessageAt, NOW);
+    expect(map.has("c1")).toBe(true);
+  });
+
+  it("NÃO exclui quando o remetente da mensagem mais nova é desconhecido (carga inicial, sem evento de tempo real ainda) — confia na RPC", () => {
+    const lastMessageAt = new Map<string, LastMessageInfo>([
+      ["c1", { at: "2026-10-13T14:59:00.000Z" }],
+    ]);
+    const map = buildAwaitingReplyMap([row()], lastMessageAt, NOW);
+    expect(map.has("c1")).toBe(true);
+  });
+
   it("mantém quando a lista tem o MESMO instante da RPC (é a própria mensagem do cliente)", () => {
-    const lastMessageAt = new Map([["c1", OLD]]);
+    const lastMessageAt = new Map<string, LastMessageInfo>([
+      ["c1", { at: OLD, senderType: "customer" }],
+    ]);
     const map = buildAwaitingReplyMap([row()], lastMessageAt, NOW);
     expect(map.has("c1")).toBe(true);
   });
 
   it("mantém quando a conversa não está na lista carregada ou não tem last_message_at", () => {
-    const lastMessageAt = new Map<string, string | null>([["c2", null]]);
+    const lastMessageAt = new Map<string, LastMessageInfo>([["c2", { at: null }]]);
     const map = buildAwaitingReplyMap(
       [row(), row({ conversation_id: "c2" })],
       lastMessageAt,
