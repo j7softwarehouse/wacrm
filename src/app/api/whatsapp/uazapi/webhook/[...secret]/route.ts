@@ -266,24 +266,30 @@ async function applyMessageEdit(
 
 /**
  * Aplica, sobre o placeholder "[Undecryptable]" correspondente, uma
- * mensagem recuperada via `/message/history-sync` (sempre `mode=exact`
- * — ver `requestMessageRecovery` em `providers/uazapi.ts` — nunca
- * `mode=history`, que este CRM não dispara). Casa pelo `messageid`: a
- * uazapi devolve o MESMO id da mensagem original ao recuperá-la
- * (confirmado ao vivo em 2026-10-26, testando contra uma instância
- * real). O objeto de cada item de `messages[]` tem exatamente os
- * mesmos campos de um evento `messages` comum (`messageid`, `chatid`,
- * `content`, `text`, `messageType`, `sender_pn`, etc.) — por isso passa
- * direto por `normalizeUazapiEvent`, sem parser paralelo.
+ * mensagem recuperada via `/message/history-sync`. Casa pelo
+ * `messageid`: a uazapi devolve o id real de cada mensagem no lote, e
+ * no caso de recuperação (ver `requestMessageRecovery` em
+ * `providers/uazapi.ts`) um dos itens do lote é exatamente a mensagem
+ * pedida. O objeto de cada item de `messages[]` tem os mesmos campos de
+ * um evento `messages` comum (`messageid`, `chatid`, `content`, `text`,
+ * `messageType`, `sender_pn`, etc.) — por isso passa direto por
+ * `normalizeUazapiEvent`, sem parser paralelo.
  *
- * Dois guards impedem usar isto pra importar histórico não pedido: (1)
- * só atualiza mensagem que já existe E pertence a este canal/conta
+ * Por que `mode=history`, não `exact`: testado ao vivo em 27/10/2026 —
+ * `exact` é aceito pela uazapi mas não entregou o webhook em 5/5
+ * tentativas reais (a doc da uazapi já avisa que esse modo "está em
+ * teste"); `history`, ancorado na mensagem seguinte à que queremos (ver
+ * a rota de recuperação), entregou de forma confiável. A consequência é
+ * que CADA pedido de recuperação devolve um LOTE de até `count`
+ * mensagens (a âncora + vizinhas), não só a desejada — por isso os dois
+ * guards abaixo são essenciais, não só defensivos: (1) só atualiza
+ * mensagem que já existe E pertence a este canal/conta
  * (`findOwnedMessages`); (2) só quando o `content_text` atual ainda é
- * um placeholder `[Undecryptable]` — nunca sobrescreve uma mensagem
- * comum, mesmo que algum `messageid` bata por coincidência. Sem isso,
- * um evento de `mode=history` (que a uazapi pode emitir na sincronização
- * de QR/reconexão) importaria mensagens antigas do WhatsApp sem o
- * usuário ter pedido.
+ * um placeholder `[Undecryptable]` — nunca sobrescreve mensagem comum,
+ * e ignora silenciosamente qualquer mensagem do lote que não seja um
+ * placeholder pendente nosso. Sem isso, um lote de `history` importaria
+ * mensagens antigas do WhatsApp sem o usuário ter pedido para aquelas
+ * especificamente.
  */
 async function applyHistoryRecovery(
   channel: WhatsAppChannel,

@@ -188,11 +188,23 @@ export function createUazapiProvider(
       await client.post("/message/markread", { id: args.messageIds });
     },
 
-    async requestMessageRecovery(args: { messageId: string; chatId: string }): Promise<void> {
+    async requestMessageRecovery(args: {
+      messageId: string;
+      chatId: string;
+      anchorMessageId: string;
+    }): Promise<void> {
+      // mode=history, não exact — ver comentário da assinatura em
+      // providers/types.ts. count=5 (a doc recomenda 1 quando a âncora é
+      // exatamente a mensagem seguinte; usamos uma margem pequena porque
+      // o "próximo" resolvido do nosso banco pode não ser o literal
+      // próximo do WhatsApp, caso alguma mensagem intermediária nunca
+      // tenha sido ingerida — handleEvent só aplica o que casar com um
+      // placeholder pendente, então o excedente é ignorado sem efeito).
       await client.post("/message/history-sync", {
-        mode: "exact",
-        messageid: args.messageId,
+        mode: "history",
+        messageid: args.anchorMessageId,
         number: args.chatId,
+        count: 5,
       });
     },
 

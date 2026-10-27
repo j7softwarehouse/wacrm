@@ -220,11 +220,24 @@ export interface WhatsAppProvider {
   markAsRead(args: { messageIds: string[] }): Promise<void>;
   /** Pede ao WhatsApp que reenvie uma mensagem RECEBIDA cujo conteúdo
    *  não pôde ser lido (ex.: criptografia multiaparelho dessincronizada
-   *  — "[Undecryptable]"). Experimental do lado da uazapi (modo "exact"
-   *  declarado em teste pela própria doc); pode não funcionar,
-   *  principalmente se o celular do número estiver offline. A mensagem
-   *  recuperada chega depois por um evento de webhook separado, nunca
-   *  como retorno desta chamada — esta só confirma que o PEDIDO foi
-   *  aceito. Lança se o provedor não suportar (Meta).*/
-  requestMessageRecovery(args: { messageId: string; chatId: string }): Promise<void>;
+   *  — "[Undecryptable]"). Usa `mode=history` da uazapi (não `exact`):
+   *  testado ao vivo em 27/10/2026 — `exact` é aceito pela uazapi mas
+   *  NUNCA entregou o evento de volta em 5/5 tentativas reais (a doc da
+   *  uazapi já avisa que `exact` "está em teste"); `history` entregou de
+   *  forma confiável em todas as tentativas. A doc da uazapi documenta
+   *  exatamente esse uso: para recuperar uma mensagem específica X,
+   *  ancorar em `messageid` = a mensagem seguinte a X na mesma conversa
+   *  (busca histórico PARA TRÁS a partir da âncora) — por isso
+   *  `anchorMessageId` é obrigatório aqui, resolvido pelo chamador a
+   *  partir do banco (ver .../messages/[id]/request-recovery/route.ts).
+   *  Pode não funcionar se o celular do número estiver offline, ou se
+   *  ainda não existir mensagem mais recente nessa conversa pra ancorar.
+   *  A mensagem recuperada chega depois por um evento de webhook
+   *  separado, nunca como retorno desta chamada — esta só confirma que
+   *  o PEDIDO foi aceito. Lança se o provedor não suportar (Meta).*/
+  requestMessageRecovery(args: {
+    messageId: string;
+    chatId: string;
+    anchorMessageId: string;
+  }): Promise<void>;
 }
