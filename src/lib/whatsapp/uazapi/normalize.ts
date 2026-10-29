@@ -32,7 +32,7 @@ export interface EncryptedMediaReference {
   mimetype: string;
 }
 
-const FILE_BEARING_TYPES: readonly string[] = [
+export const FILE_BEARING_TYPES: readonly string[] = [
   "image",
   "video",
   "audio",

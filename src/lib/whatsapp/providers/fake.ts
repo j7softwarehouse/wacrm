@@ -102,6 +102,8 @@ export function createFakeProvider(
       messageId: string;
       chatId: string;
       anchorMessageId: string;
+      anchorTimestampMs?: number;
+      anchorFromMe?: boolean;
     }) {
       calls.push({ method: "requestMessageRecovery", args });
     },
