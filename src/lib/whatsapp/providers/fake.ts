@@ -98,7 +98,11 @@ export function createFakeProvider(
     async markAsRead(args: { messageIds: string[] }) {
       calls.push({ method: "markAsRead", args });
     },
-    async requestMessageRecovery(args: { messageId: string; chatId: string }) {
+    async requestMessageRecovery(args: {
+      messageId: string;
+      chatId: string;
+      anchorMessageId: string;
+    }) {
       calls.push({ method: "requestMessageRecovery", args });
     },
   };

@@ -16,9 +16,19 @@ import { ProviderError, ProviderUnsupportedError } from '@/lib/whatsapp/provider
 // pôde ser lido (uma mensagem "[Undecryptable]" — criptografia
 // multiaparelho dessincronizada, falha conhecida do próprio WhatsApp
 // multiaparelho, confirmada em produção em 15+ casos desde 15/09, não
-// bug deste CRM). Usa /message/history-sync em mode=exact, que a
-// própria doc da uazapi marca como "em teste" — pode não funcionar,
-// principalmente se o celular do número estiver offline.
+// bug deste CRM).
+//
+// Usa /message/history-sync em mode=history (NÃO exact) — testado ao
+// vivo em 27/10/2026: exact é aceito pela uazapi mas não entregou em
+// 5/5 tentativas reais (a doc da uazapi já avisa que esse modo "está em
+// teste"); history entregou de forma confiável em todas as tentativas.
+// A doc da uazapi documenta exatamente essa técnica: pra recuperar uma
+// mensagem específica X, ancorar em `messageid` = a mensagem SEGUINTE a
+// X na mesma conversa (history busca pra trás a partir da âncora) — é
+// por isso que esta rota busca no banco qual foi a próxima mensagem
+// dessa conversa antes de chamar o provider. Se ainda não existir
+// mensagem mais recente nessa conversa, não há como ancorar — a rota
+// devolve 400 nesse caso (nada a fazer até chegar mensagem nova).
 //
 // A mensagem recuperada (se vier) chega depois por um evento de
 // webhook `history` separado — esta rota só confirma que o PEDIDO foi
@@ -88,7 +98,7 @@ export async function POST(
 
     const { data: message, error: msgError } = await supabase
       .from('messages')
-      .select('id, conversation_id, sender_type, message_id')
+      .select('id, conversation_id, sender_type, message_id, created_at')
       .eq('id', id)
       .maybeSingle();
 
@@ -146,6 +156,33 @@ export async function POST(
       );
     }
 
+    // Âncora obrigatória pro mode=history (ver comentário no topo do
+    // arquivo): a próxima mensagem desta mesma conversa, de qualquer
+    // remetente, contanto que tenha message_id real (exclui otimistas/
+    // que falharam no envio). Sem isso ainda não há como pedir a
+    // recuperação — não é erro do usuário, só não existe mensagem mais
+    // nova ainda nessa conversa.
+    const { data: nextMessage, error: nextError } = await supabase
+      .from('messages')
+      .select('message_id')
+      .eq('conversation_id', message.conversation_id)
+      .gt('created_at', message.created_at)
+      .not('message_id', 'is', null)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (nextError || !nextMessage?.message_id) {
+      return NextResponse.json(
+        {
+          error:
+            'Ainda não há mensagem mais recente nesta conversa para ancorar a recuperação. Tente novamente depois que chegar uma mensagem nova.',
+        },
+        { status: 400 },
+      );
+    }
+    const anchorMessageId = nextMessage.message_id as string;
+
     let provider;
     try {
       provider = await getProviderForConversation(
@@ -161,7 +198,11 @@ export async function POST(
     }
 
     try {
-      await provider.requestMessageRecovery({ messageId: message.message_id, chatId });
+      await provider.requestMessageRecovery({
+        messageId: message.message_id,
+        chatId,
+        anchorMessageId,
+      });
     } catch (err) {
       if (err instanceof ProviderUnsupportedError) {
         return NextResponse.json(

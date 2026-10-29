@@ -15,6 +15,7 @@ import {
 } from "@/lib/whatsapp/uazapi/normalize";
 import { isGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
+import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
 import type { WhatsAppChannel } from "@/types";
 
 export const maxDuration = 60;
@@ -264,6 +265,84 @@ async function applyMessageEdit(
 }
 
 /**
+ * Aplica, sobre o placeholder "[Undecryptable]" correspondente, uma
+ * mensagem recuperada via `/message/history-sync`. Casa pelo
+ * `messageid`: a uazapi devolve o id real de cada mensagem no lote, e
+ * no caso de recuperação (ver `requestMessageRecovery` em
+ * `providers/uazapi.ts`) um dos itens do lote é exatamente a mensagem
+ * pedida. O objeto de cada item de `messages[]` tem os mesmos campos de
+ * um evento `messages` comum (`messageid`, `chatid`, `content`, `text`,
+ * `messageType`, `sender_pn`, etc.) — por isso passa direto por
+ * `normalizeUazapiEvent`, sem parser paralelo.
+ *
+ * Por que `mode=history`, não `exact`: testado ao vivo em 27/10/2026 —
+ * `exact` é aceito pela uazapi mas não entregou o webhook em 5/5
+ * tentativas reais (a doc da uazapi já avisa que esse modo "está em
+ * teste"); `history`, ancorado na mensagem seguinte à que queremos (ver
+ * a rota de recuperação), entregou de forma confiável. A consequência é
+ * que CADA pedido de recuperação devolve um LOTE de até `count`
+ * mensagens (a âncora + vizinhas), não só a desejada — por isso os dois
+ * guards abaixo são essenciais, não só defensivos: (1) só atualiza
+ * mensagem que já existe E pertence a este canal/conta
+ * (`findOwnedMessages`); (2) só quando o `content_text` atual ainda é
+ * um placeholder `[Undecryptable]` — nunca sobrescreve mensagem comum,
+ * e ignora silenciosamente qualquer mensagem do lote que não seja um
+ * placeholder pendente nosso. Sem isso, um lote de `history` importaria
+ * mensagens antigas do WhatsApp sem o usuário ter pedido para aquelas
+ * especificamente.
+ */
+async function applyHistoryRecovery(
+  channel: WhatsAppChannel,
+  recovered: Record<string, unknown>,
+): Promise<void> {
+  const providerMessageId =
+    typeof recovered.messageid === "string" ? recovered.messageid : null;
+  if (!providerMessageId) return;
+
+  const rows = await findOwnedMessages(channel, [providerMessageId]);
+  const row = rows[0];
+  if (!row) return;
+  if (!isUndecryptablePlaceholder(row.content_text)) return;
+
+  const normalized = normalizeUazapiEvent({
+    EventType: "messages",
+    message: recovered,
+  });
+  if (!normalized) return;
+
+  let mediaUrl: string | undefined;
+  if (normalized.content.mediaUrl) {
+    try {
+      const provider = await getProviderForChannel(supabaseAdmin(), channel.id);
+      mediaUrl =
+        (await provider.resolveInboundMediaUrl(normalized.content.mediaUrl)) ??
+        undefined;
+    } catch (err) {
+      console.error(
+        "[uazapi/webhook] falha ao resolver mídia recuperada:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  const { error: updateError } = await supabaseAdmin()
+    .from("messages")
+    .update({
+      content_type: normalized.content.type,
+      content_text: normalized.content.text ?? null,
+      media_url: mediaUrl ?? null,
+    })
+    .eq("id", row.id);
+
+  if (updateError) {
+    console.error(
+      "[uazapi/webhook] falha ao aplicar recuperação:",
+      updateError.message,
+    );
+  }
+}
+
+/**
  * IDs alvo de um evento `messages_update`. Confirmado ao vivo
  * (2026-09-11): a uazapi manda `MessageIDs` (PascalCase, sempre lista,
  * mesmo pra 1 mensagem) dentro de `event` — não `messageid` (singular)
@@ -400,17 +479,23 @@ export async function handleEvent(channel: WhatsAppChannel, body: unknown) {
     }
   }
 
-  // DIAGNÓSTICO TEMPORÁRIO: a doc da uazapi diz que a mensagem
-  // recuperada via /message/history-sync (mode=exact) volta "via
-  // webhook/SSE em eventos do tipo history", mas não publica o formato
-  // do payload. Mesma regra de todo evento deste arquivo (ver
-  // "messages_update"/edição acima): nada é tratado sem antes ver o
-  // formato real ao vivo. Loga o corpo cru pra inspecionar nos logs da
-  // Vercel assim que um pedido de recuperação disparar um de verdade;
-  // escrever o tratamento definitivo fica pra depois de confirmar o
-  // formato (ver .../messages/[id]/request-recovery/route.ts).
+  // Formato confirmado ao vivo em 2026-10-26 (instância de teste, ver
+  // nota de applyHistoryRecovery): um pedido de recuperação gera VÁRIOS
+  // webhooks `history` em sequência, todos com o mesmo `request_id`,
+  // cada um com um `event` interno diferente — "status" (progresso/
+  // conclusão do lote), "chats" (metadados do chat) e "messages" (as
+  // mensagens em si, o único que nos interessa). `envelope.event` aqui
+  // é uma STRING (não objeto): o `payload` computado acima não serve
+  // para este evento, por isso lemos `envelope` direto.
   if (eventName === "history") {
-    console.error("[uazapi webhook] evento 'history' recebido (payload cru):", envelope);
+    const subEvent = typeof envelope.event === "string" ? envelope.event : undefined;
+    if (subEvent === "messages" && Array.isArray(envelope.messages)) {
+      for (const m of envelope.messages) {
+        if (m && typeof m === "object") {
+          await applyHistoryRecovery(channel, m as Record<string, unknown>);
+        }
+      }
+    }
     return;
   }
 

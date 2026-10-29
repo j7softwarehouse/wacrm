@@ -54,3 +54,16 @@ public/*.xlsx
 public/*.xls
 public/*.csv
 public/~$*
+
+# grafo gerado pelo graphify (local, regeneravel)
+/graphify-out/
+
+# config local do Claude Code: a allowlist de permissoes grava o
+# comando literal aprovado, e algum comando passado ja levou token/
+# segredo embutido na string (ex.: curl com "Authorization: Bearer
+# sbp_...") - achado por engano num commit em 27/10/2026, antes de
+# chegar no remoto. Nunca versionar.
+.claude/settings.json
+.claude/settings.json.graphify-bak
+.claude/settings.local.json
+.claude/worktrees/

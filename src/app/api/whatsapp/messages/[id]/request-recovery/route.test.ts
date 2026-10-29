@@ -32,6 +32,28 @@ function tabelaSimples(linhas: Record<string, unknown> | null) {
   return chain;
 }
 
+/**
+ * A rota consulta `messages` DUAS vezes: a mensagem alvo (match por
+ * `id`) e, depois, a mensagem seguinte da mesma conversa pra ancorar o
+ * mode=history (match por `conversation_id`/`gt(created_at)`/etc. —
+ * filtros que `tabelaSimples` não sabe simular). Como as duas chamadas
+ * têm formas de query diferentes, diferenciamos pela ORDEM: a primeira
+ * chamada a `.from('messages')` é sempre a busca da mensagem alvo; a
+ * segunda é sempre a busca da âncora.
+ */
+function proximaMensagemChain(linha: Record<string, unknown> | null) {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    gt: () => chain,
+    not: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    maybeSingle: async () => ({ data: linha, error: null }),
+  };
+  return chain;
+}
+
 function comSessao(opts: {
   userId?: string;
   role: string;
@@ -39,15 +61,33 @@ function comSessao(opts: {
   conversa?: Record<string, unknown> | null;
   grupo?: Record<string, unknown> | null;
   contato?: Record<string, unknown> | null;
+  /** `{ message_id: '...' }` da próxima mensagem da conversa, ou `null`
+   *  quando ainda não existe mensagem mais recente (caso que a rota
+   *  recusa com 400). Default: há âncora disponível. */
+  proximaMensagem?: Record<string, unknown> | null;
 }) {
-  const { userId = 'user-1', role, mensagem, conversa, grupo, contato } = opts;
+  const {
+    userId = 'user-1',
+    role,
+    mensagem,
+    conversa,
+    grupo,
+    contato,
+    proximaMensagem = { message_id: 'MSG_SEGUINTE' },
+  } = opts;
+  let messagesCallCount = 0;
   return {
     auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
     from: (table: string) => {
       if (table === 'profiles') {
         return tabelaSimples({ user_id: userId, account_id: 'acct-1', account_role: role });
       }
-      if (table === 'messages') return tabelaSimples(mensagem);
+      if (table === 'messages') {
+        messagesCallCount += 1;
+        return messagesCallCount === 1
+          ? tabelaSimples(mensagem)
+          : proximaMensagemChain(proximaMensagem);
+      }
       if (table === 'conversations') return tabelaSimples(conversa ?? null);
       if (table === 'whatsapp_groups') return tabelaSimples(grupo ?? null);
       if (table === 'contacts') return tabelaSimples(contato ?? null);
@@ -68,6 +108,7 @@ const MSG_GRUPO = {
   conversation_id: 'conv-1',
   sender_type: 'customer',
   message_id: 'ACCC77F755B74CF9ED9C6C78B3031333',
+  created_at: '2026-10-20T10:00:00Z',
 };
 const CONV_GRUPO = {
   id: 'conv-1',
@@ -150,7 +191,23 @@ describe('POST /api/whatsapp/messages/[id]/request-recovery', () => {
     expect(requestMessageRecovery).toHaveBeenCalledWith({
       messageId: 'ACCC77F755B74CF9ED9C6C78B3031333',
       chatId: '120363429748080632@g.us',
+      anchorMessageId: 'MSG_SEGUINTE',
     });
+  });
+
+  it('devolve 400 quando ainda não existe mensagem mais recente na conversa pra ancorar', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        role: 'admin',
+        mensagem: MSG_GRUPO,
+        conversa: CONV_GRUPO,
+        grupo: GRUPO,
+        proximaMensagem: null,
+      }),
+    );
+    const res = await POST(request(), { params });
+    expect(res.status).toBe(400);
+    expect(mocks.getProviderForConversation).not.toHaveBeenCalled();
   });
 
   it('resolve o chatId pelo telefone do contato quando é conversa 1:1', async () => {
@@ -171,6 +228,7 @@ describe('POST /api/whatsapp/messages/[id]/request-recovery', () => {
     expect(requestMessageRecovery).toHaveBeenCalledWith({
       messageId: 'ACCC77F755B74CF9ED9C6C78B3031333',
       chatId: '553199999999',
+      anchorMessageId: 'MSG_SEGUINTE',
     });
   });
 

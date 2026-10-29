@@ -469,27 +469,172 @@ describe("handleEvent — status de entrega nunca regride (relato 20/10/2026)", 
   });
 });
 
-describe("handleEvent — evento 'history' (recuperação de mensagem, formato ainda não confirmado)", () => {
-  // A uazapi documenta que a mensagem recuperada via
-  // /message/history-sync (mode=exact) volta "via webhook/SSE em
-  // eventos do tipo history", mas não publica o formato do payload.
-  // Mesma regra de todo evento deste arquivo: nada é tratado sem antes
-  // ver o formato real ao vivo. Por ora, só loga o corpo cru pra
-  // conseguirmos inspecionar nos logs quando um pedido de recuperação
-  // (request-recovery) disparar um de verdade — tratar de fato fica
-  // pra depois de confirmar o formato.
-  it("loga o payload cru e não tenta ingerir (formato desconhecido)", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const payload = { EventType: "history", algumCampoQualquer: "valor" };
+describe("handleEvent — evento 'history' (recuperação de mensagem Undecryptable)", () => {
+  // Formato confirmado ao vivo em 27/10/2026 contra uma instância real
+  // (ver comentário de applyHistoryRecovery em route.ts): um pedido de
+  // recuperação (mode=history, ancorado na mensagem seguinte — ver
+  // request-recovery/route.ts) devolve vários webhooks `history` em
+  // sequência, cada um com um `event` interno diferente ("status",
+  // "chats", "messages"); só "messages" nos interessa, e cada item do
+  // lote tem os mesmos campos de um evento `messages` comum.
+  const historyMessagesEvent = (messages: Record<string, unknown>[]) => ({
+    EventType: "history",
+    event: "messages",
+    messages,
+  });
 
-    await handleEvent(CHANNEL, payload);
+  const UNDECRYPTABLE_TEXT =
+    "[Undecryptable] [media] [image] Não foi possível descriptografar a mensagem. Abra o WhatsApp no seu celular para visualizá-la.";
 
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("history"),
-      expect.anything(),
+  it("ignora sub-eventos 'status' e 'chats' sem tentar atualizar nada", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB01ED0A5F3963604E3",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: UNDECRYPTABLE_TEXT,
+        sender_type: "customer",
+      },
+    ];
+
+    await handleEvent(CHANNEL, { EventType: "history", event: "status", status: "completed" });
+    await handleEvent(CHANNEL, { EventType: "history", event: "chats", chats: [{ id: "x" }] });
+
+    expect(messagesTable[0].content_text).toBe(UNDECRYPTABLE_TEXT);
+  });
+
+  it("mensagem de TEXTO recuperada substitui o placeholder (casando por messageid)", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB01ED0A5F3963604E3",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: UNDECRYPTABLE_TEXT,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB01ED0A5F3963604E3",
+        chatid: "553183839660@s.whatsapp.net",
+        content: "Oi, chegou?",
+        text: "Oi, chegou?",
+        messageType: "Conversation",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(messagesTable[0].content_type).toBe("text");
+    expect(messagesTable[0].content_text).toBe("Oi, chegou?");
+    expect(messagesTable[0].media_url).toBeNull();
+  });
+
+  it("mensagem de MÍDIA recuperada resolve a URL e limpa o content_text", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB07838F9DC22042F9508",
+        conversation_id: "conv-1",
+        content_type: "image",
+        content_text: UNDECRYPTABLE_TEXT,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB07838F9DC22042F9508",
+        chatid: "553183839660@s.whatsapp.net",
+        content: {
+          URL: "https://mmg.whatsapp.net/x.enc",
+          mediaKey: "chave-base64",
+          mimetype: "image/jpeg",
+          fileName: "foto.jpg",
+        },
+        text: "",
+        messageType: "ImageMessage",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).toHaveBeenCalledTimes(1);
+    expect(messagesTable[0].content_type).toBe("image");
+    expect(messagesTable[0].media_url).toBe("https://storage/x.jpg");
+    expect(messagesTable[0].content_text).toBeNull();
+  });
+
+  it("messageid sem placeholder correspondente: ignora, não cria nem altera nada", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "OUTRO-ID-QUALQUER",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: "mensagem comum, sem relação",
+        sender_type: "customer",
+      },
+    ];
+    const antes = JSON.parse(JSON.stringify(messagesTable));
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0NAOCADASTRADO",
+        chatid: "553183839660@s.whatsapp.net",
+        content: "mensagem antiga não relacionada",
+        text: "mensagem antiga não relacionada",
+        messageType: "Conversation",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(messagesTable).toEqual(antes);
+  });
+
+  it("messageid bate, mas a linha já não é mais um placeholder: NUNCA sobrescreve mensagem comum", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB01ED0A5F3963604E3",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: "mensagem normal do cliente, nada a ver",
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB01ED0A5F3963604E3",
+        chatid: "553183839660@s.whatsapp.net",
+        content: "conteúdo recuperado por coincidência de id",
+        text: "conteúdo recuperado por coincidência de id",
+        messageType: "Conversation",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(messagesTable[0].content_text).toBe(
+      "mensagem normal do cliente, nada a ver",
     );
-    expect(mocks.ingestInboundMessage).not.toHaveBeenCalled();
-    spy.mockRestore();
   });
 });
 
