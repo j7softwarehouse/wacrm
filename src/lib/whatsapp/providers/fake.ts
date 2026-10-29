@@ -12,6 +12,7 @@ import type {
   SendInteractiveButtonsArgs,
   SendInteractiveListArgs,
   SendMediaArgs,
+  SendPollArgs,
   SendReactionArgs,
   SendResult,
   SendTemplateArgs,
@@ -58,6 +59,7 @@ export function createFakeProvider(
       record("sendInteractiveButtons", args),
     sendInteractiveList: (args: SendInteractiveListArgs) =>
       record("sendInteractiveList", args),
+    sendPoll: (args: SendPollArgs) => record("sendPoll", args),
     sendReaction: (args: SendReactionArgs) => record("sendReaction", args),
     sendTemplate: (args: SendTemplateArgs) => record("sendTemplate", args),
     async resolveInboundMediaUrl(ref: string) {

@@ -68,9 +68,38 @@ export interface InteractiveListPayload {
   sections: InteractiveListSection[]
 }
 
+/**
+ * Enquete (WhatsApp poll). Only the UAZAPI provider can send it — Meta's
+ * Cloud API has no poll message, so the composer hides the option there.
+ */
+export interface InteractivePollPayload {
+  kind: 'poll'
+  /** The poll question — shown as the bubble's bold title (≤ 255 chars). */
+  body: string
+  /** 2–12 answer options. */
+  options: string[]
+  /** How many options a voter may pick. 1 = single choice. */
+  selectable_count: number
+}
+
 export type InteractiveMessagePayload =
   | InteractiveButtonsPayload
   | InteractiveListPayload
+  | InteractivePollPayload
+
+/**
+ * The kinds the button/list builder edits. A poll has its own dialog and
+ * no header, footer or sections, so the builder's state never holds one.
+ */
+export type InteractiveBuilderPayload =
+  | InteractiveButtonsPayload
+  | InteractiveListPayload
+
+const POLL_LIMITS = {
+  questionMaxLength: 255,
+  maxOptions: 12,
+  optionMaxLength: 100,
+} as const
 
 export type InteractiveValidation =
   | { ok: true }
@@ -115,7 +144,13 @@ export function validateInteractivePayload(
   if (!payload || typeof payload !== 'object') {
     return fail('Interactive message payload is required.')
   }
-  const p = payload as Partial<InteractiveMessagePayload>
+  // Only the fields every kind shares are read before narrowing on `kind`.
+  const p = payload as {
+    kind?: string
+    body?: unknown
+    header?: string
+    footer?: string
+  }
 
   if (typeof p.body !== 'string' || p.body.trim() === '') {
     return fail('Interactive message body text is required.')
@@ -223,7 +258,72 @@ export function validateInteractivePayload(
     return ok()
   }
 
-  return fail('Interactive message must be reply buttons or a list.')
+  if (p.kind === 'poll') {
+    const poll = p as InteractivePollPayload
+    if (poll.body.length > POLL_LIMITS.questionMaxLength) {
+      return fail(
+        `The poll question exceeds the ${POLL_LIMITS.questionMaxLength}-character limit.`,
+      )
+    }
+    if (!Array.isArray(poll.options) || poll.options.length < 2) {
+      return fail('A poll needs at least 2 options.')
+    }
+    if (poll.options.length > POLL_LIMITS.maxOptions) {
+      return fail(`A poll allows at most ${POLL_LIMITS.maxOptions} options.`)
+    }
+    const seen = new Set<string>()
+    for (const option of poll.options) {
+      if (typeof option !== 'string' || option.trim() === '') {
+        return fail('Every poll option needs text.')
+      }
+      if (option.length > POLL_LIMITS.optionMaxLength) {
+        return fail(
+          `Poll option "${option}" exceeds the ${POLL_LIMITS.optionMaxLength}-character limit.`,
+        )
+      }
+      const key = option.trim().toLowerCase()
+      if (seen.has(key)) {
+        return fail(`Duplicate poll option "${option}".`)
+      }
+      seen.add(key)
+    }
+    if (
+      !Number.isInteger(poll.selectable_count) ||
+      poll.selectable_count < 1 ||
+      poll.selectable_count > poll.options.length
+    ) {
+      return fail('Choose how many options a voter can pick (at least 1).')
+    }
+    return ok()
+  }
+
+  return fail('Interactive message must be reply buttons, a list or a poll.')
+}
+
+/**
+ * Validation for payloads that are stored and reopened in the button/list
+ * builder (quick replies, automation steps). A poll is sent from its own
+ * dialog and is never saved as a reusable snippet.
+ */
+export function validateBuilderPayload(payload: unknown): InteractiveValidation {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    (payload as { kind?: unknown }).kind === 'poll'
+  ) {
+    return fail('Polls cannot be saved as quick replies or automation steps.')
+  }
+  return validateInteractivePayload(payload)
+}
+
+/**
+ * Narrow a stored payload for the button/list builder. Only call it on a
+ * payload that passed `validateBuilderPayload`.
+ */
+export function asBuilderPayload(
+  payload: InteractiveMessagePayload,
+): InteractiveBuilderPayload {
+  return payload as InteractiveBuilderPayload
 }
 
 /**
@@ -235,5 +335,6 @@ export function interactivePayloadPreviewText(
 ): string {
   const body = payload.body?.trim()
   if (body) return body
+  if (payload.kind === 'poll') return '[poll]'
   return payload.kind === 'buttons' ? '[buttons]' : '[list]'
 }

@@ -23,7 +23,7 @@ import { conversationStatusPatch } from '@/lib/inbox/conversation-status'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './send'
-import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { asBuilderPayload, validateBuilderPayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 // ------------------------------------------------------------
@@ -375,7 +375,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       // Validate against Meta's limits before the network call so a bad
       // payload surfaces as a clear failed-step detail rather than a raw
       // Meta 400 mid-conversation.
-      const check = validateInteractivePayload(payload)
+      const check = validateBuilderPayload(payload)
       if (!check.ok) throw new Error(check.error)
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendInteractive({
@@ -383,7 +383,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         userId: args.automation.user_id,
         conversationId,
         contactId: args.contactId,
-        payload,
+        payload: asBuilderPayload(payload),
       })
       return `interactive sent via Meta (${whatsapp_message_id})`
     }

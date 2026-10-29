@@ -21,6 +21,7 @@ import {
   Sparkles,
   Plus,
   MessageSquareDashed,
+  Vote,
   Zap,
   AlertTriangle,
   CalendarDays,
@@ -57,7 +58,13 @@ import {
   InteractiveBuilder,
   blankButtonsPayload,
 } from "@/components/interactive/interactive-builder";
-import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
+import { PollDialog } from "@/components/interactive/poll-dialog";
+import {
+  validateInteractivePayload,
+  asBuilderPayload,
+  type InteractiveBuilderPayload,
+  type InteractivePollPayload,
+} from "@/lib/whatsapp/interactive";
 import { buildEventWhatsAppMessage, buildGoogleCalendarLink } from "@/lib/inbox/event-link";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
@@ -130,6 +137,11 @@ interface MessageComposerProps {
    */
   templatesSupported?: boolean;
   /**
+   * True only on UAZAPI channels: Meta's Cloud API has no poll message, so
+   * the "Enquete" item is hidden there. Defaults to false.
+   */
+  pollsSupported?: boolean;
+  /**
    * True when the conversation's WhatsApp channel can't send right now —
    * either it's not `connected`, or `channel_id` is null because the
    * channel was removed from Settings. The parent tells us which case it
@@ -194,6 +206,7 @@ export function MessageComposer({
   conversationId,
   sessionExpired,
   templatesSupported = true,
+  pollsSupported = false,
   channelUnavailable,
   channelWarning,
   isGroup = false,
@@ -225,8 +238,9 @@ export function MessageComposer({
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
   const [interactivePayload, setInteractivePayload] =
-    useState<InteractiveMessagePayload>(blankButtonsPayload);
+    useState<InteractiveBuilderPayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
 
@@ -465,7 +479,7 @@ export function MessageComposer({
   // ---- Interactive message + quick replies --------------------------
 
   const openInteractiveBuilder = useCallback(
-    (seed?: InteractiveMessagePayload) => {
+    (seed?: InteractiveBuilderPayload) => {
       setInteractivePayload(seed ?? blankButtonsPayload());
       setInteractiveOpen(true);
     },
@@ -482,6 +496,15 @@ export function MessageComposer({
     setInteractiveOpen(false);
     onClearReply?.();
   }, [interactivePayload, onSendInteractive, replyTo?.id, onClearReply]);
+
+  // The poll dialog validates before it calls back, so this only forwards.
+  const sendPoll = useCallback(
+    (payload: InteractivePollPayload) => {
+      onSendInteractive(payload, replyTo?.id);
+      onClearReply?.();
+    },
+    [onSendInteractive, replyTo?.id, onClearReply],
+  );
 
   // Persist the current builder payload as a reusable interactive snippet.
   const saveAsQuickReply = useCallback(async () => {
@@ -524,7 +547,7 @@ export function MessageComposer({
     (qr: QuickReply) => {
       setQuickReplyOpen(false);
       if (qr.kind === "interactive" && qr.interactive_payload) {
-        openInteractiveBuilder(qr.interactive_payload);
+        openInteractiveBuilder(asBuilderPayload(qr.interactive_payload));
         return;
       }
       const body = qr.content_text ?? "";
@@ -1039,6 +1062,12 @@ export function MessageComposer({
                   {t("interactiveMessage")}
                 </DropdownMenuItem>
               )}
+              {pollsSupported && (
+                <DropdownMenuItem onClick={() => setPollOpen(true)}>
+                  <Vote className="mr-2 h-4 w-4" />
+                  {t("poll")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -1180,6 +1209,10 @@ export function MessageComposer({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {pollsSupported && (
+        <PollDialog open={pollOpen} onOpenChange={setPollOpen} onSend={sendPoll} />
+      )}
 
       {/* Diálogo de evento -- link do Google Agenda + aviso opcional. */}
       <Dialog open={eventOpen} onOpenChange={setEventOpen}>

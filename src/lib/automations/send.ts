@@ -1,4 +1,4 @@
-import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import type { InteractiveBuilderPayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -65,7 +65,7 @@ interface SendInteractiveArgs {
   userId: string
   conversationId: string
   contactId: string
-  payload: InteractiveMessagePayload
+  payload: InteractiveBuilderPayload
 }
 
 /**

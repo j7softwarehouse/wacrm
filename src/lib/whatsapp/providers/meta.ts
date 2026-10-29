@@ -92,6 +92,10 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       });
     },
 
+    async sendPoll(): Promise<SendResult> {
+      throw new ProviderUnsupportedError("meta", "sendPoll");
+    },
+
     async sendReaction(args: SendReactionArgs): Promise<SendResult> {
       return sendReactionMessage({
         ...creds,

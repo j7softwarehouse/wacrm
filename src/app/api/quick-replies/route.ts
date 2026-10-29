@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { validateBuilderPayload } from '@/lib/whatsapp/interactive'
 
 // Quick replies — reusable snippets (plain text or a saved interactive
 // message) shared across the account. GET lists; POST creates. Mirrors
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   let interactive_payload: unknown = null
 
   if (kind === 'interactive') {
-    const result = validateInteractivePayload(body.interactive_payload)
+    const result = validateBuilderPayload(body.interactive_payload)
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }

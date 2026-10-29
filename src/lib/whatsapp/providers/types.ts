@@ -126,6 +126,15 @@ export interface SendInteractiveListArgs {
   contextMessageId?: string;
 }
 
+export interface SendPollArgs {
+  to: string;
+  question: string;
+  options: string[];
+  /** How many options the voter may pick (1 = single choice). */
+  selectableCount: number;
+  contextMessageId?: string;
+}
+
 export interface SendReactionArgs {
   to: string;
   targetMessageId: string;
@@ -179,6 +188,8 @@ export interface WhatsAppProvider {
   sendMedia(args: SendMediaArgs): Promise<SendResult>;
   sendInteractiveButtons(args: SendInteractiveButtonsArgs): Promise<SendResult>;
   sendInteractiveList(args: SendInteractiveListArgs): Promise<SendResult>;
+  /** Enquete. Lança ProviderUnsupportedError onde o canal não tem enquete (Meta). */
+  sendPoll(args: SendPollArgs): Promise<SendResult>;
   sendReaction(args: SendReactionArgs): Promise<SendResult>;
   sendTemplate(args: SendTemplateArgs): Promise<SendResult>;
   /**

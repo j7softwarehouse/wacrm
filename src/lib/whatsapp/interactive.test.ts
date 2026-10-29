@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   validateInteractivePayload,
+  validateBuilderPayload,
   interactivePayloadPreviewText,
   type InteractiveButtonsPayload,
   type InteractiveListPayload,
@@ -138,5 +139,42 @@ describe('interactivePayloadPreviewText', () => {
   it('falls back when body is blank', () => {
     expect(interactivePayloadPreviewText({ ...validButtons, body: '   ' })).toBe('[buttons]')
     expect(interactivePayloadPreviewText({ ...validList, body: '' })).toBe('[list]')
+  })
+})
+
+describe('poll payload', () => {
+  const validPoll = {
+    kind: 'poll' as const,
+    body: 'Qual horário?',
+    options: ['Manhã', 'Tarde'],
+    selectable_count: 1,
+  }
+
+  it('accepts a 2-option single-choice poll', () => {
+    expect(validateInteractivePayload(validPoll).ok).toBe(true)
+  })
+  it('needs at least 2 options and at most 12', () => {
+    expect(validateInteractivePayload({ ...validPoll, options: ['Só uma'] }).ok).toBe(false)
+    const thirteen = Array.from({ length: 13 }, (_, i) => `op${i}`)
+    expect(validateInteractivePayload({ ...validPoll, options: thirteen }).ok).toBe(false)
+  })
+  it('rejects duplicate options ignoring case and spaces', () => {
+    const res = validateInteractivePayload({ ...validPoll, options: ['Sim', ' sim '] })
+    expect(res.ok).toBe(false)
+  })
+  it('keeps selectable_count between 1 and the number of options', () => {
+    expect(validateInteractivePayload({ ...validPoll, selectable_count: 0 }).ok).toBe(false)
+    expect(validateInteractivePayload({ ...validPoll, selectable_count: 3 }).ok).toBe(false)
+    expect(validateInteractivePayload({ ...validPoll, selectable_count: 2 }).ok).toBe(true)
+  })
+  it('caps the question at 255 chars', () => {
+    expect(validateInteractivePayload({ ...validPoll, body: 'x'.repeat(256) }).ok).toBe(false)
+  })
+  it('is refused as a saved quick reply or automation step', () => {
+    expect(validateBuilderPayload(validPoll).ok).toBe(false)
+    expect(validateBuilderPayload(validButtons).ok).toBe(true)
+  })
+  it('previews as [poll] when the question is blank', () => {
+    expect(interactivePayloadPreviewText({ ...validPoll, body: '' })).toBe('[poll]')
   })
 })

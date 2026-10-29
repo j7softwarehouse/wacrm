@@ -1,16 +1,16 @@
 "use client";
 
-import { List, Reply } from "lucide-react";
+import { List, ListChecks, Reply } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 
 /**
  * WhatsApp-style read-only render of an interactive message. Used both
  * in the builder's live preview and by the inbox message bubble so a
- * sent buttons/list message shows the same way it does on the phone.
+ * sent buttons/list/poll message shows the same way it does on the phone.
  *
- * Purely presentational — the buttons/rows are not clickable here (the
- * customer taps them on their own device). Kept namespace-free (plain
+ * Purely presentational — the buttons/rows/options are not clickable here
+ * (the customer taps them on their own device). Kept namespace-free (plain
  * English) so it can be dropped into the composer, the automation
  * builder, and the quick-replies manager without namespace coupling.
  */
@@ -21,6 +21,47 @@ export function InteractivePreview({
   payload: InteractiveMessagePayload;
   className?: string;
 }) {
+  if (payload.kind === "poll") {
+    const multiple = payload.selectable_count > 1;
+    return (
+      <div
+        className={cn(
+          "w-full max-w-[260px] overflow-hidden rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border",
+          className,
+        )}
+      >
+        <div className="px-3 pb-1 pt-2">
+          <p className="whitespace-pre-wrap break-words text-sm font-semibold">
+            {payload.body || (
+              <span className="font-normal text-muted-foreground">Poll question…</span>
+            )}
+          </p>
+          <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <ListChecks className="h-3 w-3" />
+            {multiple ? "Select one or more options" : "Select one option"}
+          </p>
+        </div>
+        <ul className="flex flex-col py-1">
+          {payload.options.map((option, i) => (
+            <li
+              key={i}
+              className="flex items-center gap-2.5 px-3 py-1.5 text-sm"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-4 w-4 shrink-0 border-2 border-muted-foreground",
+                  multiple ? "rounded-sm" : "rounded-full",
+                )}
+              />
+              <span className="break-words">{option || "Option"}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(

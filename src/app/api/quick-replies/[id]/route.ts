@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { validateBuilderPayload } from '@/lib/whatsapp/interactive'
 
 // Update / delete a single quick reply. Quick replies are account-
 // shared, so every mutation is scoped by `account_id` (the service-role
@@ -39,7 +39,7 @@ export async function PATCH(
     }
     update.kind = body.kind
     if (body.kind === 'interactive') {
-      const result = validateInteractivePayload(body.interactive_payload)
+      const result = validateBuilderPayload(body.interactive_payload)
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
       update.interactive_payload = body.interactive_payload
       update.content_text = null
@@ -59,7 +59,7 @@ export async function PATCH(
     if ('content_text' in body) update.content_text = body.content_text ?? null
     if ('interactive_payload' in body) {
       if (body.interactive_payload != null) {
-        const result = validateInteractivePayload(body.interactive_payload)
+        const result = validateBuilderPayload(body.interactive_payload)
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 })
         }

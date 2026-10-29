@@ -13,7 +13,7 @@ import {
   validateInteractivePayload,
   type InteractiveButtonsPayload,
   type InteractiveListPayload,
-  type InteractiveMessagePayload,
+  type InteractiveBuilderPayload,
 } from "@/lib/whatsapp/interactive";
 import { InteractivePreview } from "./interactive-preview";
 
@@ -53,8 +53,8 @@ export function blankListPayload(): InteractiveListPayload {
 }
 
 interface InteractiveBuilderProps {
-  value: InteractiveMessagePayload;
-  onChange: (payload: InteractiveMessagePayload) => void;
+  value: InteractiveBuilderPayload;
+  onChange: (payload: InteractiveBuilderPayload) => void;
   /** Show the live WhatsApp-style preview beside the form. Default true. */
   showPreview?: boolean;
 }
@@ -74,8 +74,8 @@ export function InteractiveBuilder({
   const [advanced, setAdvanced] = useState(false);
   const validation = validateInteractivePayload(value);
 
-  const setField = (patch: Partial<InteractiveMessagePayload>) =>
-    onChange({ ...value, ...patch } as InteractiveMessagePayload);
+  const setField = (patch: Partial<InteractiveBuilderPayload>) =>
+    onChange({ ...value, ...patch } as InteractiveBuilderPayload);
 
   const switchKind = (kind: "buttons" | "list") => {
     if (kind === value.kind) return;
@@ -184,7 +184,7 @@ function ButtonsEditor({
   advanced,
 }: {
   value: InteractiveButtonsPayload;
-  onChange: (p: InteractiveMessagePayload) => void;
+  onChange: (p: InteractiveBuilderPayload) => void;
   advanced: boolean;
 }) {
   const buttons = value.buttons;
@@ -266,7 +266,7 @@ function ListEditor({
   advanced,
 }: {
   value: InteractiveListPayload;
-  onChange: (p: InteractiveMessagePayload) => void;
+  onChange: (p: InteractiveBuilderPayload) => void;
   advanced: boolean;
 }) {
   const sections = value.sections;
