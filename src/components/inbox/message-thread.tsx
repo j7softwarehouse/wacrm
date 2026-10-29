@@ -2158,6 +2158,7 @@ export function MessageThread({
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         templatesSupported={templatesSupported}
+        pollsSupported={threadChannel?.provider === "uazapi"}
         channelUnavailable={channelUnavailable}
         channelWarning={channelWarning}
         isGroup={!!conversation.group_id}

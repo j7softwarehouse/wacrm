@@ -125,6 +125,23 @@ describe("createUazapiProvider", () => {
     });
   });
 
+  it("envia enquete como menu type=poll com selectableCount", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.sendPoll({
+      to: "55119",
+      question: "Qual horário?",
+      options: ["Manhã", "Tarde"],
+      selectableCount: 2,
+    });
+    expect(post).toHaveBeenCalledWith("/send/menu", {
+      number: "55119",
+      type: "poll",
+      text: "Qual horário?",
+      choices: ["Manhã", "Tarde"],
+      selectableCount: 2,
+    });
+  });
+
   it("envia reação com o emoji no campo text", async () => {
     // Nomenclatura contra-intuitiva da UAZAPI: `text` é o emoji e
     // `id` é a mensagem-alvo.

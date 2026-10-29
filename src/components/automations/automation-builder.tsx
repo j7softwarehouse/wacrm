@@ -60,7 +60,10 @@ import {
   blankButtonsPayload,
   blankListPayload,
 } from "@/components/interactive/interactive-builder"
-import { interactivePayloadPreviewText } from "@/lib/whatsapp/interactive"
+import {
+  interactivePayloadPreviewText,
+  type InteractiveBuilderPayload,
+} from "@/lib/whatsapp/interactive"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
@@ -157,8 +160,8 @@ function cid(): string {
 function toStepConfig(p: InteractiveMessagePayload): Record<string, unknown> {
   return p as unknown as Record<string, unknown>
 }
-function asInteractive(cfg: Record<string, unknown>): InteractiveMessagePayload {
-  return cfg as unknown as InteractiveMessagePayload
+function asInteractive(cfg: Record<string, unknown>): InteractiveBuilderPayload {
+  return cfg as unknown as InteractiveBuilderPayload
 }
 
 function blankConfig(type: AutomationStepType): Record<string, unknown> {

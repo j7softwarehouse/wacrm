@@ -277,14 +277,16 @@ export async function sendMessageToConversation(
         400
       );
     }
-    // Interativo (botões/listas) e template ficam fora de escopo em grupo
-    // por decisão de produto (uazapi suportaria tecnicamente) — botão em
-    // grupo tem semântica confusa, qualquer participante pode clicar. A UI
-    // já esconde os dois caminhos que levariam aqui ("Mensagem interativa"
-    // e "Respostas rápidas" do tipo interativo), mas a trava real precisa
-    // estar aqui: nenhum outro caminho (ex.: chamada direta à API) pode
-    // contornar a decisão de produto.
-    if (messageType === 'interactive' || messageType === 'template') {
+    // Botões/listas e template ficam fora de escopo em grupo por decisão
+    // de produto — botão em grupo tem semântica confusa, qualquer
+    // participante pode clicar. Enquete é a exceção: votar é justamente
+    // para todos os membros. A UI esconde os caminhos que levariam aqui
+    // ("Mensagem interativa" e "Respostas rápidas" do tipo interativo),
+    // mas a trava real precisa estar aqui: nenhum outro caminho (ex.:
+    // chamada direta à API) pode contornar a decisão de produto.
+    const isPoll =
+      messageType === 'interactive' && interactivePayload?.kind === 'poll';
+    if ((messageType === 'interactive' && !isPoll) || messageType === 'template') {
       throw new SendMessageError(
         'bad_request',
         `${messageType} messages are not supported in group conversations`,
@@ -431,6 +433,16 @@ export async function sendMessageToConversation(
     }
     if (messageType === 'interactive') {
       const p = interactivePayload!;
+      if (p.kind === 'poll') {
+        const result = await provider.sendPoll({
+          to: phone,
+          question: p.body,
+          options: p.options,
+          selectableCount: p.selectable_count,
+          contextMessageId,
+        });
+        return result.messageId;
+      }
       if (p.kind === 'buttons') {
         const result = await provider.sendInteractiveButtons({
           to: phone,

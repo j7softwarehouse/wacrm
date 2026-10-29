@@ -20,6 +20,7 @@ import {
   blankButtonsPayload,
 } from "@/components/interactive/interactive-builder";
 import {
+  asBuilderPayload,
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from "@/lib/whatsapp/interactive";
@@ -219,7 +220,7 @@ export function QuickRepliesManager() {
                 />
               ) : (
                 <InteractiveBuilder
-                  value={draft.interactive_payload}
+                  value={asBuilderPayload(draft.interactive_payload)}
                   onChange={(p) => setDraft({ ...draft, interactive_payload: p })}
                 />
               )}

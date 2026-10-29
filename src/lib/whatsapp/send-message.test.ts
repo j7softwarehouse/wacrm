@@ -647,6 +647,31 @@ describe('sendMessageToConversation — conversa de grupo', () => {
     expect(sendInteractiveButtons).not.toHaveBeenCalled();
   });
 
+  it('envia enquete para o JID do grupo (votar é para todos os membros)', async () => {
+    const sendPoll = vi.fn(async () => ({ messageId: 'wamid-poll-grupo' }));
+    mocks.getProviderForConversation.mockResolvedValue({
+      sendText: async () => ({ messageId: 'wamid-x' }),
+      sendPoll,
+    });
+    const capture = { rows: [] as Record<string, unknown>[], tables: [] as string[] };
+
+    await sendMessageToConversation(groupDb(capture), 'acct-1', {
+      conversationId: 'cv-grupo',
+      messageType: 'interactive',
+      senderUserId: 'user-1',
+      interactivePayload: {
+        kind: 'poll',
+        body: 'Qual dia?',
+        options: ['Segunda', 'Terça'],
+        selectable_count: 1,
+      },
+    });
+
+    expect(sendPoll).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '120363000000000000@g.us', question: 'Qual dia?' }),
+    );
+  });
+
   it('recusa mensagem de template em conversa de grupo, sem chamar o provider', async () => {
     const sendTemplate = vi.fn(async () => ({ messageId: 'wamid-x' }));
     mocks.getProviderForConversation.mockResolvedValue({

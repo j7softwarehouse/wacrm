@@ -23,6 +23,7 @@ import {
   type SendInteractiveButtonsArgs,
   type SendInteractiveListArgs,
   type SendMediaArgs,
+  type SendPollArgs,
   type SendReactionArgs,
   type SendResult,
   type SendTextArgs,
@@ -161,6 +162,18 @@ export function createUazapiProvider(
         choices,
       };
       if (args.footerText) body.footerText = args.footerText;
+      if (args.contextMessageId) body.replyid = args.contextMessageId;
+      return toSendResult(await client.post<UazapiSendResponse>("/send/menu", body));
+    },
+
+    async sendPoll(args: SendPollArgs): Promise<SendResult> {
+      const body: Record<string, unknown> = {
+        number: args.to,
+        type: "poll",
+        text: args.question,
+        choices: args.options,
+        selectableCount: args.selectableCount,
+      };
       if (args.contextMessageId) body.replyid = args.contextMessageId;
       return toSendResult(await client.post<UazapiSendResponse>("/send/menu", body));
     },
