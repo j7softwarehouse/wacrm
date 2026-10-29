@@ -192,19 +192,28 @@ export function createUazapiProvider(
       messageId: string;
       chatId: string;
       anchorMessageId: string;
+      anchorTimestampMs?: number;
+      anchorFromMe?: boolean;
     }): Promise<void> {
       // mode=history, não exact — ver comentário da assinatura em
       // providers/types.ts. count=5 (a doc recomenda 1 quando a âncora é
       // exatamente a mensagem seguinte; usamos uma margem pequena porque
       // o "próximo" resolvido do nosso banco pode não ser o literal
       // próximo do WhatsApp, caso alguma mensagem intermediária nunca
-      // tenha sido ingerida — handleEvent só aplica o que casar com um
-      // placeholder pendente, então o excedente é ignorado sem efeito).
+      // tenha sido ingerida — applyHistoryRecovery só aplica o que casar
+      // com um placeholder ou com mídia sem arquivo, então o excedente é
+      // ignorado sem efeito).
+      // timestamp e fromMe são exigidos pela uazapi quando a âncora já saiu
+      // do armazenamento dela (cerca de 7 dias) — sem eles a resposta é
+      // "timestamp is required". `undefined` some no JSON, então é seguro
+      // mandar sempre.
       await client.post("/message/history-sync", {
         mode: "history",
         messageid: args.anchorMessageId,
         number: args.chatId,
         count: 5,
+        timestamp: args.anchorTimestampMs,
+        fromMe: args.anchorFromMe,
       });
     },
 

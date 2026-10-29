@@ -73,7 +73,11 @@ function comSessao(opts: {
     conversa,
     grupo,
     contato,
-    proximaMensagem = { message_id: 'MSG_SEGUINTE' },
+    proximaMensagem = {
+      message_id: 'MSG_SEGUINTE',
+      created_at: '2026-10-20T10:05:00Z',
+      sender_type: 'customer',
+    },
   } = opts;
   let messagesCallCount = 0;
   return {
@@ -192,6 +196,8 @@ describe('POST /api/whatsapp/messages/[id]/request-recovery', () => {
       messageId: 'ACCC77F755B74CF9ED9C6C78B3031333',
       chatId: '120363429748080632@g.us',
       anchorMessageId: 'MSG_SEGUINTE',
+      anchorTimestampMs: Date.parse('2026-10-20T10:05:00Z'),
+      anchorFromMe: false,
     });
   });
 
@@ -229,7 +235,33 @@ describe('POST /api/whatsapp/messages/[id]/request-recovery', () => {
       messageId: 'ACCC77F755B74CF9ED9C6C78B3031333',
       chatId: '553199999999',
       anchorMessageId: 'MSG_SEGUINTE',
+      anchorTimestampMs: Date.parse('2026-10-20T10:05:00Z'),
+      anchorFromMe: false,
     });
+  });
+
+  it('marca fromMe quando a âncora foi enviada pelo CRM (agente)', async () => {
+    mocks.createClient.mockResolvedValue(
+      comSessao({
+        role: 'admin',
+        mensagem: MSG_GRUPO,
+        conversa: CONV_GRUPO,
+        grupo: GRUPO,
+        proximaMensagem: {
+          message_id: 'MSG_SEGUINTE',
+          created_at: '2026-10-20T10:05:00Z',
+          sender_type: 'agent',
+        },
+      }),
+    );
+    const requestMessageRecovery = vi.fn(async () => {});
+    mocks.getProviderForConversation.mockResolvedValue({ requestMessageRecovery });
+
+    await POST(request(), { params });
+
+    expect(requestMessageRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorFromMe: true }),
+    );
   });
 
   it('devolve 400 quando o canal é Meta (provider recusa com ProviderUnsupportedError)', async () => {

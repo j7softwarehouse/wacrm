@@ -230,6 +230,9 @@ export interface WhatsAppProvider {
    *  (busca histórico PARA TRÁS a partir da âncora) — por isso
    *  `anchorMessageId` é obrigatório aqui, resolvido pelo chamador a
    *  partir do banco (ver .../messages/[id]/request-recovery/route.ts).
+   *  `anchorTimestampMs` e `anchorFromMe` vêm da própria âncora: a uazapi
+   *  só a localiza sozinha enquanto ela ainda estiver guardada lá (cerca
+   *  de 7 dias); depois disso exige o timestamp e o fromMe.
    *  Pode não funcionar se o celular do número estiver offline, ou se
    *  ainda não existir mensagem mais recente nessa conversa pra ancorar.
    *  A mensagem recuperada chega depois por um evento de webhook
@@ -239,5 +242,7 @@ export interface WhatsAppProvider {
     messageId: string;
     chatId: string;
     anchorMessageId: string;
+    anchorTimestampMs?: number;
+    anchorFromMe?: boolean;
   }): Promise<void>;
 }

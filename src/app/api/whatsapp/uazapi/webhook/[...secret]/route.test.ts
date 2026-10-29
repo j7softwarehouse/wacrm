@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     ok: true,
   })),
   isGroupEnabled: vi.fn(async () => true),
-  resolveInboundMediaUrl: vi.fn(async (_ref: string) => "https://storage/x.jpg"),
+  resolveInboundMediaUrl: vi.fn(
+    async (_ref: string): Promise<string | null> => "https://storage/x.jpg",
+  ),
 }));
 
 vi.mock("@/lib/whatsapp/groups/resolve-group-conversation", () => ({
@@ -63,6 +65,12 @@ class FakeChain implements PromiseLike<{ data: any; error: any }> {
   }
   in(col: string, vals: unknown[]) {
     this.conds.push((r) => vals.includes(r[col]));
+    return this;
+  }
+  is(col: string, val: unknown) {
+    this.conds.push((r) =>
+      val === null ? r[col] === null || r[col] === undefined : r[col] === val,
+    );
     return this;
   }
 
@@ -635,6 +643,186 @@ describe("handleEvent — evento 'history' (recuperação de mensagem Undecrypta
     expect(messagesTable[0].content_text).toBe(
       "mensagem normal do cliente, nada a ver",
     );
+  });
+
+  it("mídia recebida SEM arquivo recebe o arquivo recuperado e não toca no texto nem no tipo", async () => {
+    messagesTable = [
+      {
+        id: "msg-2",
+        message_id: "3EB0SEMARQUIVO0001",
+        conversation_id: "conv-1",
+        content_type: "image",
+        content_text: "legenda que o cliente escreveu",
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0SEMARQUIVO0001",
+        chatid: "553183839660@s.whatsapp.net",
+        content: {
+          URL: "https://mmg.whatsapp.net/y.enc",
+          mediaKey: "chave-base64",
+          mimetype: "image/jpeg",
+        },
+        text: "",
+        messageType: "ImageMessage",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).toHaveBeenCalledTimes(1);
+    expect(messagesTable[0].media_url).toBe("https://storage/x.jpg");
+    expect(messagesTable[0].content_type).toBe("image");
+    expect(messagesTable[0].content_text).toBe("legenda que o cliente escreveu");
+  });
+
+  it("mídia que já tem arquivo não é baixada de novo nem sobrescrita", async () => {
+    messagesTable = [
+      {
+        id: "msg-3",
+        message_id: "3EB0JATEMARQUIVO01",
+        conversation_id: "conv-1",
+        content_type: "image",
+        content_text: null,
+        media_url: "https://storage/original.jpg",
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0JATEMARQUIVO01",
+        chatid: "553183839660@s.whatsapp.net",
+        content: {
+          URL: "https://mmg.whatsapp.net/z.enc",
+          mediaKey: "chave-base64",
+          mimetype: "image/jpeg",
+        },
+        text: "",
+        messageType: "ImageMessage",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).not.toHaveBeenCalled();
+    expect(messagesTable[0].media_url).toBe("https://storage/original.jpg");
+  });
+
+  it("arquivo recuperado de tipo diferente do registrado não é aplicado", async () => {
+    messagesTable = [
+      {
+        id: "msg-4",
+        message_id: "3EB0TIPODIFERENTE01",
+        conversation_id: "conv-1",
+        content_type: "image",
+        content_text: null,
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0TIPODIFERENTE01",
+        chatid: "553183839660@s.whatsapp.net",
+        content: {
+          URL: "https://mmg.whatsapp.net/w.enc",
+          mediaKey: "chave-base64",
+          mimetype: "application/pdf",
+        },
+        text: "",
+        messageType: "DocumentMessage",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).not.toHaveBeenCalled();
+    expect(messagesTable[0].media_url).toBeNull();
+  });
+
+  it("se o WhatsApp já não tem o arquivo, a linha fica como estava", async () => {
+    mocks.resolveInboundMediaUrl.mockResolvedValueOnce(null);
+    messagesTable = [
+      {
+        id: "msg-5",
+        message_id: "3EB0CDNEXPIROU0001",
+        conversation_id: "conv-1",
+        content_type: "image",
+        content_text: "legenda",
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0CDNEXPIROU0001",
+        chatid: "553183839660@s.whatsapp.net",
+        content: {
+          URL: "https://mmg.whatsapp.net/v.enc",
+          mediaKey: "chave-base64",
+          mimetype: "image/jpeg",
+        },
+        text: "",
+        messageType: "ImageMessage",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).toHaveBeenCalledTimes(1);
+    expect(messagesTable[0].media_url).toBeNull();
+    expect(messagesTable[0].content_text).toBe("legenda");
+  });
+
+  it("mensagem de TEXTO sem arquivo não entra na recuperação de mídia", async () => {
+    messagesTable = [
+      {
+        id: "msg-6",
+        message_id: "3EB0TEXTOSEMARQ0001",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: "texto antigo",
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0TEXTOSEMARQ0001",
+        chatid: "553183839660@s.whatsapp.net",
+        content: "texto recuperado",
+        text: "texto recuperado",
+        messageType: "Conversation",
+        fromMe: false,
+        isGroup: false,
+        sender_pn: "553183839660@s.whatsapp.net",
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.resolveInboundMediaUrl).not.toHaveBeenCalled();
+    expect(messagesTable[0].content_text).toBe("texto antigo");
   });
 });
 

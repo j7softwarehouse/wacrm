@@ -494,18 +494,22 @@ describe("createUazapiProvider", () => {
     expect(post).toHaveBeenCalledWith("/message/delete", { id: "MSG123" });
   });
 
-  it("pede recuperação via /message/history-sync em mode=history, ancorado na mensagem seguinte", async () => {
+  it("pede recuperação via /message/history-sync em mode=history, ancorado na mensagem seguinte, com timestamp e fromMe da âncora", async () => {
     const provider = createUazapiProvider(config);
     await provider.requestMessageRecovery({
       messageId: "MSG123",
       chatId: "120363429748080632@g.us",
       anchorMessageId: "MSG124",
+      anchorTimestampMs: 1793000000000,
+      anchorFromMe: false,
     });
     expect(post).toHaveBeenCalledWith("/message/history-sync", {
       mode: "history",
       messageid: "MSG124",
       number: "120363429748080632@g.us",
       count: 5,
+      timestamp: 1793000000000,
+      fromMe: false,
     });
   });
 });

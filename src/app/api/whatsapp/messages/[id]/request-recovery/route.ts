@@ -164,7 +164,7 @@ export async function POST(
     // nova ainda nessa conversa.
     const { data: nextMessage, error: nextError } = await supabase
       .from('messages')
-      .select('message_id')
+      .select('message_id, created_at, sender_type')
       .eq('conversation_id', message.conversation_id)
       .gt('created_at', message.created_at)
       .not('message_id', 'is', null)
@@ -198,10 +198,15 @@ export async function POST(
     }
 
     try {
+      // A âncora pode já ter saído do armazenamento da uazapi (cerca de 7
+      // dias). Nesse caso ela só é localizada com o timestamp e o fromMe
+      // dela, que vêm da própria linha do banco.
       await provider.requestMessageRecovery({
         messageId: message.message_id,
         chatId,
         anchorMessageId,
+        anchorTimestampMs: new Date(nextMessage.created_at as string).getTime(),
+        anchorFromMe: nextMessage.sender_type !== 'customer',
       });
     } catch (err) {
       if (err instanceof ProviderUnsupportedError) {

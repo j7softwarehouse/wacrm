@@ -11,6 +11,7 @@ import { statusesThatMayAdvanceTo } from "@/lib/whatsapp/uazapi/message-status";
 import {
   extractEventType,
   extractMessageData,
+  FILE_BEARING_TYPES,
   normalizeUazapiEvent,
 } from "@/lib/whatsapp/uazapi/normalize";
 import { isGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
@@ -89,8 +90,10 @@ export async function POST(
 interface OwnedMessageRow {
   id: string;
   conversation_id: string | null;
+  content_type: string | null;
   content_text: string | null;
   original_content_text: string | null;
+  media_url: string | null;
 }
 
 /**
@@ -119,7 +122,9 @@ async function findOwnedMessages(
 
   const { data: messages, error: findError } = await db
     .from("messages")
-    .select("id, conversation_id, content_text, original_content_text")
+    .select(
+      "id, conversation_id, content_type, content_text, original_content_text, media_url",
+    )
     .in("message_id", providerMessageIds);
 
   if (findError) {
@@ -284,12 +289,12 @@ async function applyMessageEdit(
  * mensagens (a âncora + vizinhas), não só a desejada — por isso os dois
  * guards abaixo são essenciais, não só defensivos: (1) só atualiza
  * mensagem que já existe E pertence a este canal/conta
- * (`findOwnedMessages`); (2) só quando o `content_text` atual ainda é
- * um placeholder `[Undecryptable]` — nunca sobrescreve mensagem comum,
- * e ignora silenciosamente qualquer mensagem do lote que não seja um
- * placeholder pendente nosso. Sem isso, um lote de `history` importaria
- * mensagens antigas do WhatsApp sem o usuário ter pedido para aquelas
- * especificamente.
+ * (`findOwnedMessages`); (2) só mexe em placeholder `[Undecryptable]`
+ * (troca o texto inteiro) ou em mídia recebida SEM arquivo (preenche só
+ * o `media_url`, e só se ele ainda estiver nulo — texto e tipo ficam
+ * como estão). Mensagem comum nunca é sobrescrita, e o resto do lote é
+ * ignorado. Sem isso, um lote de `history` importaria mensagens antigas
+ * do WhatsApp sem o usuário ter pedido para aquelas especificamente.
  */
 async function applyHistoryRecovery(
   channel: WhatsAppChannel,
@@ -302,13 +307,22 @@ async function applyHistoryRecovery(
   const rows = await findOwnedMessages(channel, [providerMessageId]);
   const row = rows[0];
   if (!row) return;
-  if (!isUndecryptablePlaceholder(row.content_text)) return;
+
+  const isPlaceholder = isUndecryptablePlaceholder(row.content_text);
+  const isMissingFile =
+    !row.media_url &&
+    !!row.content_type &&
+    FILE_BEARING_TYPES.includes(row.content_type);
+  if (!isPlaceholder && !isMissingFile) return;
 
   const normalized = normalizeUazapiEvent({
     EventType: "messages",
     message: recovered,
   });
   if (!normalized) return;
+  // Arquivo de outro tipo não cabe na bolha que já existe (um PDF numa
+  // bolha de imagem, por exemplo), então só preenche quando o tipo bate.
+  if (!isPlaceholder && normalized.content.type !== row.content_type) return;
 
   let mediaUrl: string | undefined;
   if (normalized.content.mediaUrl) {
@@ -323,6 +337,24 @@ async function applyHistoryRecovery(
         err instanceof Error ? err.message : err,
       );
     }
+  }
+
+  if (!isPlaceholder) {
+    // `.is(null)` na escrita: se outro caminho já tiver preenchido o
+    // arquivo enquanto a mídia era baixada, esta recuperação não sobrescreve.
+    if (!mediaUrl) return;
+    const { error: fileError } = await supabaseAdmin()
+      .from("messages")
+      .update({ media_url: mediaUrl })
+      .eq("id", row.id)
+      .is("media_url", null);
+    if (fileError) {
+      console.error(
+        "[uazapi/webhook] falha ao aplicar arquivo recuperado:",
+        fileError.message,
+      );
+    }
+    return;
   }
 
   const { error: updateError } = await supabaseAdmin()
