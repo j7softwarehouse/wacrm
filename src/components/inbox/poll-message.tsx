@@ -74,6 +74,9 @@ export function PollMessage({ message }: { message: Message }) {
   return (
     <div className="flex w-full max-w-[260px] flex-col gap-1">
       <InteractivePreview payload={payload} pollResults={message.poll_results} />
+      {/* Votar só em enquete recebida de outra pessoa. Em enquete enviada pelo
+          CRM o WhatsApp não exibe o voto da própria conta (ver CLAUDE.md). */}
+      {message.sender_type === "customer" ? (
       <div className="flex flex-col gap-1">
         {payload.options.map((option, i) => (
           <button
@@ -87,6 +90,7 @@ export function PollMessage({ message }: { message: Message }) {
           </button>
         ))}
       </div>
+      ) : null}
       <button
         type="button"
         onClick={() => {
