@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllPages } from "@/lib/supabase/paginate";
+
+/** Mensagem ao cliente em falha técnica: sem nome de fornecedor, aponta a J7. */
+const CONVERSATIONS_LOAD_ERROR =
+  "Não foi possível carregar as conversas. Atualize a página; se continuar, fale com a J7 Software House.";
 import { useAuth } from "@/hooks/use-auth";
 import {
   CONVERSATION_SELECT,
@@ -35,7 +40,7 @@ import {
 } from "@/lib/inbox/awaiting-reply";
 import type { Conversation, Tag } from "@/types";
 import type { PublicChannel } from "@/app/api/whatsapp/channels/route";
-import { Search, ChevronDown, Smartphone, X, Clock } from "lucide-react";
+import { Search, ChevronDown, Smartphone, X, Clock, MoreVertical } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -51,6 +56,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface ConversationListProps {
   activeConversationId: string | null;
   onSelect: (conversation: Conversation) => void;
+  /** Marca a conversa como não lida (ação do menu da linha). */
+  onMarkUnread?: (conversation: Conversation) => void;
   conversations: Conversation[];
   onConversationsLoaded: (conversations: Conversation[]) => void;
   /**
@@ -79,6 +86,7 @@ interface ConversationListProps {
 export function ConversationList({
   activeConversationId,
   onSelect,
+  onMarkUnread,
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
@@ -168,14 +176,32 @@ export function ConversationList({
       await reopenStaleClosedConversations(supabase);
       if (cancelled) return;
 
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+      // Em páginas: a API corta em 1000 linhas por resposta, e as conversas
+      // mais antigas sumiam da lista (e da busca). `id` desempata a ordem
+      // para uma linha não repetir nem pular entre páginas.
+      const result = await fetchAllPages((from, to) =>
+        supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          .order("last_message_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to),
+      ).catch((err: unknown) => {
+        // Teto de páginas estourado: falha explícita, nunca lista parcial.
+        console.error("Failed to fetch conversations:", err);
+        return null;
+      });
 
       if (cancelled) return;
+      if (!result) {
+        setLoading(false);
+        toast.error(CONVERSATIONS_LOAD_ERROR);
+        return;
+      }
+      const { data, error } = result;
 
       if (error) {
+        toast.error(CONVERSATIONS_LOAD_ERROR);
         // Supabase errors have non-enumerable properties — log fields explicitly
         console.error("Failed to fetch conversations:", {
           message: error.message,
@@ -686,6 +712,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                onMarkUnread={onMarkUnread}
                 // Sem canal próprio (conversa órfã — canal removido de
                 // Configurações): cai no canal mais antigo da conta,
                 // MESMO fallback que a thread já aplica pra liberar
@@ -715,6 +742,7 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  onMarkUnread?: (conversation: Conversation) => void;
   /**
    * The channel this conversation belongs to, already looked up by the
    * parent from `channelsById`. `undefined` when `channel_id` is null
@@ -738,6 +766,7 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  onMarkUnread,
   channel,
   multiChannel,
   allPhones,
@@ -786,6 +815,7 @@ function ConversationItem({
     : null;
 
   return (
+    <div className="group relative">
     <button
       onClick={handleClick}
       className={cn(
@@ -872,5 +902,22 @@ function ConversationItem({
         </div>
       </div>
     </button>
+    {onMarkUnread && (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Opções da conversa"
+          className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-background text-muted-foreground opacity-100 shadow-sm hover:text-foreground md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onMarkUnread(conversation)}>
+            Marcar como não lida
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )}
+    </div>
   );
 }

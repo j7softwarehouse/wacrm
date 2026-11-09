@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
+import { formatContactPhone } from '@/lib/whatsapp/phone-key';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
 import { formatCurrency } from '@/lib/currency';
@@ -217,7 +218,7 @@ export function ContactDetailView({
     const trimmedName = editName.trim() || null;
     const patch: Record<string, unknown> = {
       name: trimmedName,
-      phone: editPhone.trim(),
+      phone: formatContactPhone(editPhone),
       email: editEmail.trim() || null,
       company: editCompany.trim() || null,
       updated_at: new Date().toISOString(),

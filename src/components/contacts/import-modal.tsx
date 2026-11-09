@@ -19,6 +19,7 @@ import {
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
+import { formatContactPhone } from '@/lib/whatsapp/phone-key';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -382,7 +383,7 @@ export function ImportModal({
         const rows = chunk.map((row) => ({
           user_id: user.id,
           account_id: accountId,
-          phone: row.phone,
+          phone: formatContactPhone(row.phone),
           name: row.name || null,
           email: row.email || null,
           company: row.company || null,

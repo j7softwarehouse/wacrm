@@ -283,6 +283,16 @@ class FakeDb {
   clock = 1_700_000_000_000;
 
   constructor(seed: Record<string, Row[]> = {}) {
+    // Espelha a coluna gerada `contacts.phone_normalized` (só dígitos) do
+    // banco real, para que a busca por telefone funcione igual à produção.
+    const contacts = seed.contacts;
+    if (contacts) {
+      for (const c of contacts) {
+        if (c.phone_normalized === undefined && typeof c.phone === "string") {
+          c.phone_normalized = c.phone.replace(/\D/g, "");
+        }
+      }
+    }
     this.tables = seed;
   }
 

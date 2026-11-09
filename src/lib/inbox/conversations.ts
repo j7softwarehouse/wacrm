@@ -148,7 +148,12 @@ export function matchesSearch(conversation: Conversation, query: string): boolea
   const name = conversationDisplayName(conversation)?.toLowerCase() ?? "";
   const phone = conversation.contact?.phone?.toLowerCase() ?? "";
   const lastMsg = conversation.last_message_text?.toLowerCase() ?? "";
-  return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+  // Telefone salvo formatado (+55 31 8640-5178): a busca por dígitos
+  // ("86405178") precisa comparar só os dígitos do número.
+  const qDigits = q.replace(/\D/g, "");
+  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneDigitsMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+  return name.includes(q) || phone.includes(q) || phoneDigitsMatch || lastMsg.includes(q);
 }
 
 /**

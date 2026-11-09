@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { formatContactPhone } from '@/lib/whatsapp/phone-key';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 import { resolveDefaultChannelId } from '@/lib/whatsapp/providers/resolve';
@@ -113,7 +114,8 @@ export async function resolveConversationByPhone(
       .insert({
         account_id: accountId,
         user_id: ownerUserId,
-        phone: sanitized,
+        // Salva no padrão único (+55 DD XXXX-XXXX) para não duplicar.
+        phone: formatContactPhone(sanitized),
         name: name || sanitized,
         // Criação via API pública é manual pelo mesmo critério de
         // lib/api/v1/contacts.ts: alguém (a integração) sabia quem era

@@ -218,7 +218,12 @@ export default function ContactsPage() {
 
       if (term) {
         const like = `%${term}%`;
-        query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        // Telefone é salvo formatado (+55 31 8640-5178): buscar só em `phone`
+        // não acha "86405178". Quando a busca tem dígitos, procura também nos
+        // dígitos (`phone_normalized`).
+        const digits = term.replace(/\D/g, '');
+        const phoneDigits = digits ? `,phone_normalized.ilike.%${digits}%` : '';
+        query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}${phoneDigits}`);
       }
 
       if (unidentifiedOnly) {

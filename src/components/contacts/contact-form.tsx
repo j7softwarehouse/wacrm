@@ -13,6 +13,7 @@ import {
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
+import { formatContactPhone } from '@/lib/whatsapp/phone-key';
 import {
   Dialog,
   DialogContent,
@@ -154,7 +155,7 @@ export function ContactForm({
         const trimmedName = name.trim() || null;
         const patch: Record<string, unknown> = {
           name: trimmedName,
-          phone: phone.trim(),
+          phone: formatContactPhone(phone),
           email: email.trim() || null,
           company: company.trim() || null,
           updated_at: new Date().toISOString(),
@@ -178,7 +179,7 @@ export function ContactForm({
             user_id: user.id,
             account_id: accountId,
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: formatContactPhone(phone),
             email: email.trim() || null,
             company: company.trim() || null,
             // Cadastro manual já nasce identificado — alguém sabia quem
