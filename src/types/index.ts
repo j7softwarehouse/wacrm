@@ -313,6 +313,11 @@ export interface Message {
    */
   interactive_payload?: InteractiveMessagePayload;
   /**
+   * Contagem atual de uma enquete que enviamos (votos por opção). Mantida
+   * pelo webhook a cada voto. Migration 20261109000001.
+   */
+  poll_results?: { total: number; counts: Record<string, number> } | null;
+  /**
    * True when the AI auto-reply bot generated + sent this message (as
    * opposed to a human agent or a deterministic Flow/automation send,
    * which all share `sender_type='bot'`/`'agent'`). Drives the "AI"

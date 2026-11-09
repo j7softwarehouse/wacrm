@@ -54,6 +54,24 @@ export interface InboundContent {
    * semântica no seu campo `reaction`).
    */
   reaction?: { targetProviderMessageId: string; emoji: string };
+  /**
+   * Preenchido quando alguém criou uma enquete no grupo/conversa. `text` é a
+   * pergunta; as opções e quantas podem ser marcadas vêm aqui.
+   */
+  poll?: { options: string[]; selectableCount: number };
+}
+
+/** Payload de enquete (`interactive_payload`) para uma mensagem recebida. */
+export function inboundPollPayload(content: InboundContent): Record<string, unknown> {
+  if (!content.poll) return {};
+  return {
+    interactive_payload: {
+      kind: "poll",
+      body: content.text ?? "",
+      options: content.poll.options,
+      selectable_count: content.poll.selectableCount,
+    },
+  };
 }
 
 export interface IngestParams {
@@ -536,6 +554,7 @@ async function ingestGroupMessage(
       content_type: toDbContentType(params.content.type),
       content_text: params.content.text ?? null,
       media_url: params.content.mediaUrl ?? null,
+      ...inboundPollPayload(params.content),
       message_id: params.providerMessageId,
       // 'received' nunca existiu na CHECK constraint de messages.status
       // (só 'sending'|'sent'|'delivered'|'read'|'failed' — schema
@@ -740,6 +759,7 @@ export async function ingestInboundMessage(
       content_type: contentType,
       content_text: contentText,
       media_url: content.mediaUrl ?? null,
+      ...inboundPollPayload(content),
       message_id: providerMessageId,
       status: "delivered",
       created_at: new Date(params.timestamp * 1000).toISOString(),

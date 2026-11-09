@@ -17,12 +17,16 @@ import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 export function InteractivePreview({
   payload,
   className,
+  pollResults,
 }: {
   payload: InteractiveMessagePayload;
   className?: string;
+  /** Votos atuais de uma enquete enviada. Ausente = sem contagem ainda. */
+  pollResults?: { total: number; counts: Record<string, number> } | null;
 }) {
   if (payload.kind === "poll") {
     const multiple = payload.selectable_count > 1;
+    const total = pollResults?.total ?? 0;
     return (
       <div
         className={cn(
@@ -42,21 +46,37 @@ export function InteractivePreview({
           </p>
         </div>
         <ul className="flex flex-col py-1">
-          {payload.options.map((option, i) => (
-            <li
-              key={i}
-              className="flex items-center gap-2.5 px-3 py-1.5 text-sm"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "h-4 w-4 shrink-0 border-2 border-muted-foreground",
-                  multiple ? "rounded-sm" : "rounded-full",
-                )}
-              />
-              <span className="break-words">{option || "Option"}</span>
-            </li>
-          ))}
+          {payload.options.map((option, i) => {
+            const count = pollResults?.counts[option] ?? 0;
+            const percent = total > 0 ? (count / total) * 100 : 0;
+            return (
+              <li key={i} className="px-3 py-1.5 text-sm">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "h-4 w-4 shrink-0 border-2 border-muted-foreground",
+                      multiple ? "rounded-sm" : "rounded-full",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 break-words">{option || "Option"}</span>
+                  {pollResults ? (
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {count}
+                    </span>
+                  ) : null}
+                </div>
+                {pollResults ? (
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       </div>
     );
