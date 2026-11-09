@@ -214,3 +214,32 @@ describe("findExistingContact", () => {
     expect(await findExistingContact(db, "acct", "   ")).toBeNull();
   });
 });
+
+describe("findExistingContact — número formatado no cadastro", () => {
+  // Stub que aplica o LIKE de verdade na coluna pedida (ao contrário do stub
+  // acima, que ignora a coluna). Reproduz o bug: contato salvo como
+  // "31 98640-5178" não casava quando a busca filtrava pela coluna `phone`.
+  function likeDb(rows: Array<Record<string, string>>) {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            like: (col: string, pattern: string) =>
+              Promise.resolve({
+                data: rows.filter((r) => r[col]?.endsWith(pattern.slice(1))),
+                error: null,
+              }),
+          }),
+        }),
+      }),
+    } as any;
+  }
+
+  it("acha o cadastro formatado (com espaço e hífen) quando chega a forma só com dígitos", async () => {
+    const db = likeDb([
+      { id: "manual", phone: "31 98640-5178", phone_normalized: "31986405178" },
+    ]);
+    const hit = await findExistingContact(db, "acct", "553186405178");
+    expect(hit?.id).toBe("manual");
+  });
+});

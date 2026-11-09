@@ -311,3 +311,21 @@ describe("isInboxFilter", () => {
     expect(isInboxFilter(undefined)).toBe(false);
   });
 });
+
+describe("matchesSearch — telefone formatado", () => {
+  const conv = {
+    id: "c1",
+    contact: { name: "Arthur", phone: "+55 31 8640-5178" },
+    group: null,
+    last_message_text: "oi",
+  } as unknown as Conversation;
+
+  it("acha pelos dígitos do número mesmo com o telefone formatado", () => {
+    expect(matchesSearch(conv, "86405178")).toBe(true);
+    expect(matchesSearch(conv, "8640-5178")).toBe(true);
+  });
+
+  it("não acha número que não bate", () => {
+    expect(matchesSearch(conv, "99999999")).toBe(false);
+  });
+});

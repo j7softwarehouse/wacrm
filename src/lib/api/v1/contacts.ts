@@ -18,6 +18,7 @@ import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { CONTACT_SOURCE } from '@/lib/contacts/source';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { formatContactPhone } from '@/lib/whatsapp/phone-key';
 
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
@@ -168,7 +169,8 @@ export async function findOrCreateContact(
     .insert({
       account_id: accountId,
       user_id: auditUserId,
-      phone: sanitized,
+      // Salva no padrão único (+55 DD XXXX-XXXX) para não duplicar.
+      phone: formatContactPhone(sanitized),
       name: input.name ?? sanitized,
       email: input.email ?? null,
       company: input.company ?? null,

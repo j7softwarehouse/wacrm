@@ -10,6 +10,7 @@ import {
   normalizeConversation,
 } from "@/lib/inbox/conversations";
 import { resolveDeepLinkAction } from "@/lib/inbox/resolve-deep-link";
+import { unreadCountSinceLastReply } from "@/lib/inbox/mark-unread";
 import { reconcileIncomingMessage } from "@/lib/inbox/message-reconcile";
 import { shouldResyncOnVisible } from "@/lib/inbox/resync-on-visible";
 import { applyMessageUpdate } from "@/lib/inbox/message-update";
@@ -597,6 +598,42 @@ function InboxPageInner() {
     router.replace("/inbox", { scroll: false });
   }, [router]);
 
+  // Marca a conversa como não lida (menu da linha). O contador vem das
+  // mensagens recentes: clientes desde a última resposta da equipe. Se a
+  // conversa estiver aberta, fecha antes: a thread zera o contador sozinha
+  // enquanto está aberta, o que desfaria a marcação.
+  const handleMarkUnread = useCallback(
+    async (conv: Conversation) => {
+      const supabase = createClient();
+      const { data: recent, error: readErr } = await supabase
+        .from("messages")
+        .select("sender_type, created_at")
+        .eq("conversation_id", conv.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (readErr) {
+        toast.error("Não foi possível marcar a conversa. Tente novamente.");
+        return;
+      }
+      const count = unreadCountSinceLastReply(recent ?? []);
+      const { error: upErr } = await supabase
+        .from("conversations")
+        .update({ unread_count: count })
+        .eq("id", conv.id);
+      if (upErr) {
+        toast.error("Não foi possível marcar a conversa. Tente novamente.");
+        return;
+      }
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conv.id ? { ...c, unread_count: count } : c)),
+      );
+      if (activeConversation?.id === conv.id) {
+        handleCloseConversation();
+      }
+    },
+    [activeConversation?.id, handleCloseConversation],
+  );
+
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
@@ -683,6 +720,7 @@ function InboxPageInner() {
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
+            onMarkUnread={handleMarkUnread}
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}

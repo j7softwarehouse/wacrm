@@ -43,11 +43,16 @@ export async function findExistingContact(
 
   const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
 
+  // Pré-filtro na coluna `phone_normalized` (só dígitos). Antes era na
+  // `phone`, que guarda o número formatado ("31 98640-5178"): o `%suffixo`
+  // não casava quando havia espaço ou hífen, e o webhook criava um contato
+  // novo em vez de achar o cadastro manual/importado. Causa dos duplicados
+  // de 2026-09 a 2026-11. Ver [[wacrm-corte-1000-linhas]].
   const { data, error } = await db
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .like("phone_normalized", `%${suffix}`);
 
   if (error || !data) return null;
 
