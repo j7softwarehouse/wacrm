@@ -13,6 +13,7 @@ import type {
   SendInteractiveListArgs,
   SendMediaArgs,
   SendPollArgs,
+  VotePollArgs,
   SendReactionArgs,
   SendResult,
   SendTemplateArgs,
@@ -60,6 +61,7 @@ export function createFakeProvider(
     sendInteractiveList: (args: SendInteractiveListArgs) =>
       record("sendInteractiveList", args),
     sendPoll: (args: SendPollArgs) => record("sendPoll", args),
+    votePoll: (args: VotePollArgs) => record("votePoll", args),
     sendReaction: (args: SendReactionArgs) => record("sendReaction", args),
     sendTemplate: (args: SendTemplateArgs) => record("sendTemplate", args),
     async resolveInboundMediaUrl(ref: string) {

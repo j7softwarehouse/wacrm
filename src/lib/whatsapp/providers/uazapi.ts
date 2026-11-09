@@ -24,6 +24,7 @@ import {
   type SendInteractiveListArgs,
   type SendMediaArgs,
   type SendPollArgs,
+  type VotePollArgs,
   type SendReactionArgs,
   type SendResult,
   type SendTextArgs,
@@ -176,6 +177,18 @@ export function createUazapiProvider(
       };
       if (args.contextMessageId) body.replyid = args.contextMessageId;
       return toSendResult(await client.post<UazapiSendResponse>("/send/menu", body));
+    },
+
+    async votePoll(args: VotePollArgs): Promise<SendResult> {
+      // Resposta nativa: `replyid` aponta para a enquete e `text` começa com
+      // `>` seguido da posição da opção (ver /send/text na spec da UAZAPI).
+      return toSendResult(
+        await client.post<UazapiSendResponse>("/send/text", {
+          number: args.to,
+          replyid: args.pollMessageId,
+          text: `>${args.optionIndex}`,
+        }),
+      );
     },
 
     async sendReaction(args: SendReactionArgs): Promise<SendResult> {

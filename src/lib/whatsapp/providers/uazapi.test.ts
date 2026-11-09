@@ -142,6 +142,20 @@ describe("createUazapiProvider", () => {
     });
   });
 
+  it("vota numa enquete como resposta nativa: replyid da enquete e texto >N", async () => {
+    const provider = createUazapiProvider(config);
+    await provider.votePoll({
+      to: "120363430218111835@g.us",
+      pollMessageId: "ACEA1CB69B37D1697880C40BD3E9C872",
+      optionIndex: 2,
+    });
+    expect(post).toHaveBeenCalledWith("/send/text", {
+      number: "120363430218111835@g.us",
+      replyid: "ACEA1CB69B37D1697880C40BD3E9C872",
+      text: ">2",
+    });
+  });
+
   it("envia reação com o emoji no campo text", async () => {
     // Nomenclatura contra-intuitiva da UAZAPI: `text` é o emoji e
     // `id` é a mensagem-alvo.

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import {
   Dialog,
@@ -26,7 +27,28 @@ export function PollMessage({ message }: { message: Message }) {
   const [open, setOpen] = useState(false);
   const [votes, setVotes] = useState<PollVoteRow[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [voting, setVoting] = useState(false);
   const payload = message.interactive_payload;
+
+  // Vota com o número conectado da conta (uma escolha por vez). A contagem
+  // chega pelo realtime, porque a rota grava o resultado na própria mensagem.
+  async function handleVote(optionIndex: number) {
+    setVoting(true);
+    try {
+      const res = await fetch(`/api/whatsapp/messages/${message.id}/poll-vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optionIndex }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (res.ok) toast.success(t("voteSent"));
+      else toast.error(data.error ?? t("voteFailed"));
+    } catch {
+      toast.error(t("voteFailed"));
+    } finally {
+      setVoting(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +74,19 @@ export function PollMessage({ message }: { message: Message }) {
   return (
     <div className="flex w-full max-w-[260px] flex-col gap-1">
       <InteractivePreview payload={payload} pollResults={message.poll_results} />
+      <div className="flex flex-col gap-1">
+        {payload.options.map((option, i) => (
+          <button
+            key={`${option}-${i}`}
+            type="button"
+            disabled={voting}
+            onClick={() => void handleVote(i + 1)}
+            className="rounded-lg bg-card py-1.5 text-center text-sm font-medium text-primary shadow-sm ring-1 ring-border disabled:opacity-50"
+          >
+            {t("voteAs", { option })}
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         onClick={() => {

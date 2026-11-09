@@ -135,6 +135,16 @@ export interface SendPollArgs {
   contextMessageId?: string;
 }
 
+/**
+ * Voto em enquete. `optionIndex` começa em 1 (posição da opção na enquete).
+ * A UAZAPI aceita um voto por requisição (documentação de `/send/text`).
+ */
+export interface VotePollArgs {
+  to: string;
+  pollMessageId: string;
+  optionIndex: number;
+}
+
 export interface SendReactionArgs {
   to: string;
   targetMessageId: string;
@@ -190,6 +200,8 @@ export interface WhatsAppProvider {
   sendInteractiveList(args: SendInteractiveListArgs): Promise<SendResult>;
   /** Enquete. Lança ProviderUnsupportedError onde o canal não tem enquete (Meta). */
   sendPoll(args: SendPollArgs): Promise<SendResult>;
+  /** Vota numa enquete com o número conectado. Lança ProviderUnsupportedError onde não há voto (Meta). */
+  votePoll(args: VotePollArgs): Promise<SendResult>;
   sendReaction(args: SendReactionArgs): Promise<SendResult>;
   sendTemplate(args: SendTemplateArgs): Promise<SendResult>;
   /**
