@@ -7,9 +7,12 @@ import { InteractivePreview } from "@/components/interactive/interactive-preview
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import {
   groupVotersByOption,
@@ -28,6 +31,9 @@ export function PollMessage({ message }: { message: Message }) {
   const [votes, setVotes] = useState<PollVoteRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [voting, setVoting] = useState(false);
+  const [voteOpen, setVoteOpen] = useState(false);
+  // Pela UAZAPI só vai uma opção por voto, então no CRM marca-se uma por vez.
+  const [selected, setSelected] = useState<number | null>(null);
   const payload = message.interactive_payload;
 
   // Vota com o número conectado da conta (uma escolha por vez). A contagem
@@ -41,8 +47,12 @@ export function PollMessage({ message }: { message: Message }) {
         body: JSON.stringify({ optionIndex }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (res.ok) toast.success(t("voteSent"));
-      else toast.error(data.error ?? t("voteFailed"));
+      if (res.ok) {
+        toast.success(t("voteSent"));
+        setVoteOpen(false);
+      } else {
+        toast.error(data.error ?? t("voteFailed"));
+      }
     } catch {
       toast.error(t("voteFailed"));
     } finally {
@@ -77,19 +87,16 @@ export function PollMessage({ message }: { message: Message }) {
       {/* Votar só em enquete recebida de outra pessoa. Em enquete enviada pelo
           CRM o WhatsApp não exibe o voto da própria conta (ver CLAUDE.md). */}
       {message.sender_type === "customer" ? (
-      <div className="flex flex-col gap-1">
-        {payload.options.map((option, i) => (
-          <button
-            key={`${option}-${i}`}
-            type="button"
-            disabled={voting}
-            onClick={() => void handleVote(i + 1)}
-            className="rounded-lg bg-card py-1.5 text-center text-sm font-medium text-primary shadow-sm ring-1 ring-border disabled:opacity-50"
-          >
-            {t("voteAs", { option })}
-          </button>
-        ))}
-      </div>
+        <button
+          type="button"
+          onClick={() => {
+            setSelected(null);
+            setVoteOpen(true);
+          }}
+          className="rounded-lg bg-card py-2 text-center text-sm font-medium text-primary shadow-sm ring-1 ring-border"
+        >
+          {t("vote")}
+        </button>
       ) : null}
       <button
         type="button"
@@ -140,6 +147,52 @@ export function PollMessage({ message }: { message: Message }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {message.sender_type === "customer" ? (
+        <Dialog open={voteOpen} onOpenChange={setVoteOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{payload.body}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">{t("voteHint")}</p>
+            <ul className="flex max-h-[50vh] flex-col overflow-y-auto">
+              {payload.options.map((option, i) => {
+                const checked = selected === i + 1;
+                return (
+                  <li key={`${option}-${i}`}>
+                    <button
+                      type="button"
+                      disabled={voting}
+                      onClick={() => setSelected(checked ? null : i + 1)}
+                      className="flex w-full items-center gap-3 border-b border-border py-3 text-left text-sm"
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "flex h-5 w-5 shrink-0 items-center justify-center border-2",
+                          payload.selectable_count > 1 ? "rounded-sm" : "rounded-full",
+                          checked ? "border-primary bg-primary" : "border-muted-foreground",
+                        )}
+                      >
+                        {checked ? <span className="h-2 w-2 rounded-full bg-background" /> : null}
+                      </span>
+                      <span className="break-words">{option}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <DialogFooter>
+              <Button
+                disabled={selected === null || voting}
+                onClick={() => selected !== null && void handleVote(selected)}
+              >
+                {t("voteSubmit")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
