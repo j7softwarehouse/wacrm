@@ -96,6 +96,10 @@ export function createMetaProvider(config: MetaProviderConfig): WhatsAppProvider
       throw new ProviderUnsupportedError("meta", "sendPoll");
     },
 
+    async votePoll(): Promise<SendResult> {
+      throw new ProviderUnsupportedError("meta", "votePoll");
+    },
+
     async sendReaction(args: SendReactionArgs): Promise<SendResult> {
       return sendReactionMessage({
         ...creds,
