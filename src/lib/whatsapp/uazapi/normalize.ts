@@ -110,6 +110,56 @@ function mapContentType(
   return hasFile ? "document" : "text";
 }
 
+interface PollCreation {
+  name: string;
+  options: string[];
+  selectableCount: number;
+}
+
+/**
+ * Enquete criada (`PollCreationMessage*`). O formato real, capturado em
+ * 2026-11-09: `content.pollCreationMessageV3 = { name, options: [{ optionName }],
+ * selectableOptionsCount }`. `selectableOptionsCount: 0` = várias respostas.
+ */
+export function extractPollCreation(d: Record<string, unknown>): PollCreation | null {
+  const messageType = typeof d.messageType === "string" ? d.messageType : "";
+  if (!messageType.startsWith("PollCreationMessage")) return null;
+
+  const content = d.content && typeof d.content === "object"
+    ? (d.content as Record<string, unknown>)
+    : null;
+  const creation = [
+    content?.pollCreationMessageV3,
+    content?.pollCreationMessageV2,
+    content?.pollCreationMessage,
+  ].find((c): c is Record<string, unknown> => !!c && typeof c === "object");
+  if (!creation) return null;
+
+  const name =
+    typeof creation.name === "string" && creation.name.trim()
+      ? creation.name.trim()
+      : typeof d.text === "string"
+        ? d.text.trim()
+        : "";
+  const rawOptions = Array.isArray(creation.options) ? creation.options : [];
+  const options = rawOptions
+    .map((o) =>
+      o && typeof o === "object" && typeof (o as Record<string, unknown>).optionName === "string"
+        ? ((o as Record<string, unknown>).optionName as string).trim()
+        : "",
+    )
+    .filter(Boolean);
+  if (!name || options.length < 2) return null;
+
+  const count =
+    typeof creation.selectableOptionsCount === "number" ? creation.selectableOptionsCount : 0;
+  return {
+    name,
+    options,
+    selectableCount: count > 0 ? Math.min(count, options.length) : options.length,
+  };
+}
+
 export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
   if (!event || typeof event !== "object") return null;
 
@@ -122,6 +172,12 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
 
   const d = extractMessageData(e);
   if (!d) return null;
+
+  // Voto em enquete chega como `PollUpdateMessage`, com a opção escolhida
+  // em `vote` (texto, já descriptografado pela UAZAPI). Não é mensagem de
+  // conversa: sem esta trava vira bolha vazia. A contagem por opção entra
+  // com a tabela de votos (Etapa 3).
+  if (d.messageType === "PollUpdateMessage") return null;
 
   if (d.wasSentByApi === true) return null;
   if (d.fromMe === true) return null;
@@ -218,7 +274,11 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
     (typeof d.content === "string" && d.content) ||
     undefined;
 
-  const contentType = mapContentType(d.messageType, Boolean(mediaUrlRaw));
+  // Enquete criada por alguém: a pergunta vira o texto e as opções vão junto.
+  const pollCreation = extractPollCreation(d);
+  const contentType = pollCreation
+    ? "interactive"
+    : mapContentType(d.messageType, Boolean(mediaUrlRaw));
 
   // O WhatsApp criptografa toda mídia ponta-a-ponta: sem `mediaKey` os
   // bytes do CDN são inúteis, então só empacota a referência quando as
@@ -235,8 +295,11 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
 
   const content: InboundContent = {
     type: contentType,
-    text,
+    text: pollCreation ? pollCreation.name : text,
     mediaUrl,
+    poll: pollCreation
+      ? { options: pollCreation.options, selectableCount: pollCreation.selectableCount }
+      : undefined,
   };
 
   // `buttonOrListid` carrega o título do botão/linha tocado — é o que
@@ -254,5 +317,52 @@ export function normalizeUazapiEvent(event: unknown): NormalizedInbound | null {
     replyToProviderMessageId:
       typeof d.quoted === "string" && d.quoted ? d.quoted : undefined,
     group,
+  };
+}
+
+/** Voto em enquete, já ligado à enquete original. */
+export interface PollVoteEvent {
+  /** WhatsApp id da enquete — bate com `messages.message_id`. */
+  pollProviderMessageId: string;
+  /** JID do votante: telefone quando existe, senão o @lid. */
+  voterJid: string;
+  voterName?: string;
+  /** Opções marcadas agora. Vazio = o votante desmarcou tudo. */
+  options: string[];
+}
+
+/**
+ * Voto em enquete (`PollUpdateMessage`). Devolve null para qualquer outro
+ * evento. `vote` é o texto da opção escolhida, já descriptografado pela
+ * UAZAPI. Múltiplas opções: o separador ainda não foi confirmado com um
+ * teste real — aqui assumimos vírgula.
+ */
+export function normalizeUazapiPollVote(event: unknown): PollVoteEvent | null {
+  if (!event || typeof event !== "object") return null;
+  const e = event as Record<string, unknown>;
+
+  const eventType = extractEventType(e);
+  if (eventType !== "message" && eventType !== "messages") return null;
+
+  const d = extractMessageData(e);
+  if (!d || d.messageType !== "PollUpdateMessage") return null;
+
+  const pollProviderMessageId = asString(d.quoted);
+  if (!pollProviderMessageId) return null;
+
+  const voterJid = asString(d.sender_pn) ?? asString(d.sender);
+  if (!voterJid) return null;
+
+  const rawVote = typeof d.vote === "string" ? d.vote : "";
+  const options = rawVote
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  return {
+    pollProviderMessageId,
+    voterJid,
+    voterName: asString(d.senderName),
+    options,
   };
 }

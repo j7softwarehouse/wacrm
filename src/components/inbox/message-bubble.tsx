@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import { PollMessage } from "@/components/inbox/poll-message";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -409,6 +410,9 @@ function MessageContent({
       //    migration 035 backfilled the column): show the body text plainly —
       //    it is our own message, NOT a customer tap.
       if (message.interactive_payload) {
+        if (message.interactive_payload.kind === "poll") {
+          return <PollMessage message={message} />;
+        }
         return <InteractivePreview payload={message.interactive_payload} />;
       }
       if (message.sender_type === "customer") {

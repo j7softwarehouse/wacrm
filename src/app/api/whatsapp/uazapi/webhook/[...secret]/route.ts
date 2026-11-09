@@ -13,7 +13,9 @@ import {
   extractMessageData,
   FILE_BEARING_TYPES,
   normalizeUazapiEvent,
+  normalizeUazapiPollVote,
 } from "@/lib/whatsapp/uazapi/normalize";
+import { applyPollVote } from "@/lib/whatsapp/poll-votes";
 import { isGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
@@ -420,6 +422,19 @@ export async function handleEvent(channel: WhatsAppChannel, body: unknown) {
   if (!body || typeof body !== "object") return;
   const envelope = body as Record<string, unknown>;
   const eventName = extractEventType(envelope);
+
+  // Voto em enquete não é mensagem de conversa: grava na tabela de votos e
+  // atualiza a contagem da enquete. Erro aqui não pode virar 500, senão a
+  // UAZAPI reentrega o mesmo voto em loop.
+  const pollVote = normalizeUazapiPollVote(envelope);
+  if (pollVote) {
+    try {
+      await applyPollVote(supabaseAdmin(), pollVote, channel.account_id);
+    } catch (err) {
+      console.error("[uazapi webhook] falha ao gravar voto de enquete:", err);
+    }
+    return;
+  }
 
   // "connection" foi capturado ao vivo (payload simples, {status}).
   // "messages_update" TAMBÉM foi (2026-09-11, evento de exclusão) — o

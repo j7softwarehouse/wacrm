@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeUazapiEvent } from "./normalize";
+import { extractPollCreation, normalizeUazapiEvent, normalizeUazapiPollVote } from "./normalize";
 
 // Capturado de uma entrega real em produção (2026-07-29) — a doc da
 // UAZAPI nunca bateu com isso (ver comentário no topo de normalize.ts).
@@ -218,5 +218,139 @@ describe("normalizeUazapiEvent — formato legado (event/data), fallback", () =>
     const result = normalizeUazapiEvent(alternativo);
     expect(result!.from).toBe("5511777777777");
     expect(result!.providerMessageId).toBe("3EB0XYZ");
+  });
+});
+
+describe("normalizeUazapiEvent — voto de enquete", () => {
+  // Formato real capturado em 2026-11-09 (grupo de teste): o voto chega
+  // como PollUpdateMessage, com a opção escolhida em `vote`.
+  const voto = {
+    ...eventoReal,
+    message: {
+      ...eventoReal.message,
+      chatid: "120363430218111835@g.us",
+      content: { pollCreationMessageKey: { ID: "3EB06AD21B8E65D1F47C00" } },
+      isGroup: true,
+      messageType: "PollUpdateMessage",
+      quoted: "3EB06AD21B8E65D1F47C00",
+      sender_pn: "553183839660@s.whatsapp.net",
+      type: "poll",
+      vote: "Segunda",
+    },
+  };
+
+  it("não trata voto como mensagem (sem bolha vazia)", () => {
+    expect(normalizeUazapiEvent(voto)).toBeNull();
+  });
+
+  it("continua normalizando mensagem comum no mesmo formato", () => {
+    expect(normalizeUazapiEvent(eventoReal)).not.toBeNull();
+  });
+});
+
+describe("normalizeUazapiPollVote", () => {
+  const votoReal = {
+    EventType: "messages",
+    message: {
+      messageType: "PollUpdateMessage",
+      quoted: "3EB06AD21B8E65D1F47C00",
+      sender: "192268724080890@lid",
+      sender_pn: "553183839660@s.whatsapp.net",
+      senderName: "Ramon -J7 tecnologia",
+      type: "poll",
+      vote: "Segunda",
+    },
+  };
+
+  it("lê o voto ligado à enquete original e ao votante", () => {
+    expect(normalizeUazapiPollVote(votoReal)).toEqual({
+      pollProviderMessageId: "3EB06AD21B8E65D1F47C00",
+      voterJid: "553183839660@s.whatsapp.net",
+      voterName: "Ramon -J7 tecnologia",
+      options: ["Segunda"],
+    });
+  });
+
+  it("voto vazio significa que a pessoa desmarcou tudo", () => {
+    const desmarcou = {
+      ...votoReal,
+      message: { ...votoReal.message, vote: "" },
+    };
+    expect(normalizeUazapiPollVote(desmarcou)?.options).toEqual([]);
+  });
+
+  it("usa o @lid quando não há telefone", () => {
+    const semTelefone = {
+      ...votoReal,
+      message: { ...votoReal.message, sender_pn: "" },
+    };
+    expect(normalizeUazapiPollVote(semTelefone)?.voterJid).toBe(
+      "192268724080890@lid",
+    );
+  });
+
+  it("não lê mensagem comum como voto", () => {
+    expect(normalizeUazapiPollVote(eventoReal)).toBeNull();
+  });
+});
+
+describe("extractPollCreation — enquete criada por membro", () => {
+  // Formato real capturado em 2026-11-09 (grupo de teste): pollCreationMessageV3
+  // com opções em `optionName` e `selectableOptionsCount: 0` (várias respostas).
+  const criacao = {
+    messageType: "PollCreationMessageV3",
+    text: "Teste final 2",
+    content: {
+      messageContextInfo: { messageSecret: "segredo" },
+      pollCreationMessageV3: {
+        name: "Teste final 2",
+        options: [{ optionName: "Sim" }, { optionName: "Não" }, { optionName: "Talvez" }],
+        selectableOptionsCount: 0,
+      },
+    },
+  };
+
+  it("lê pergunta, opções e múltipla escolha quando selectableOptionsCount é 0", () => {
+    expect(extractPollCreation(criacao)).toEqual({
+      name: "Teste final 2",
+      options: ["Sim", "Não", "Talvez"],
+      selectableCount: 3,
+    });
+  });
+
+  it("respeita o limite quando a enquete é de escolha única", () => {
+    const unica = {
+      ...criacao,
+      content: {
+        pollCreationMessageV3: { ...criacao.content.pollCreationMessageV3, selectableOptionsCount: 1 },
+      },
+    };
+    expect(extractPollCreation(unica)?.selectableCount).toBe(1);
+  });
+
+  it("não trata mensagem comum como criação de enquete", () => {
+    expect(extractPollCreation({ messageType: "Conversation", content: "oi" })).toBeNull();
+  });
+
+  it("normaliza a criação como mensagem interativa com as opções", () => {
+    const evento = {
+      EventType: "messages",
+      message: {
+        ...criacao,
+        chatid: "120363430218111835@g.us",
+        isGroup: true,
+        messageid: "AC17C2D2473BD4D62F03A53B929F307D",
+        sender_pn: "553183839660@s.whatsapp.net",
+        sender: "192268724080890@lid",
+        senderName: "Ramon -J7 tecnologia",
+        fromMe: false,
+        wasSentByApi: false,
+        messageTimestamp: 1794251541000,
+      },
+    };
+    const res = normalizeUazapiEvent(evento);
+    expect(res?.content.type).toBe("interactive");
+    expect(res?.content.text).toBe("Teste final 2");
+    expect(res?.content.poll).toEqual({ options: ["Sim", "Não", "Talvez"], selectableCount: 3 });
   });
 });
