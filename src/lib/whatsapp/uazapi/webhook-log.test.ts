@@ -64,6 +64,14 @@ describe("summarizeWebhookEvent", () => {
     expect(row.payload_keys).toContain("updates.0.key.id");
   });
 
+  it("messages_update: pega o ID em event.MessageIDs[0]", () => {
+    const row = summarizeWebhookEvent({
+      EventType: "messages",
+      event: { MessageIDs: ["AC1C3E977CEF0DCC927FF4B30E5BF152"], Type: "read" },
+    });
+    expect(row.message_id).toBe("AC1C3E977CEF0DCC927FF4B30E5BF152");
+  });
+
   it("evento de histórico sem mensagem devolve campos nulos, sem lançar", () => {
     const row = summarizeWebhookEvent({ EventType: "history", event: "status" });
     expect(row.event_type).toBe("history");

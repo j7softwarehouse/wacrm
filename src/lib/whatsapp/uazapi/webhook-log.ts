@@ -116,6 +116,7 @@ export function summarizeWebhookEvent(body: unknown): WebhookEventLogRow {
         ["event", "messageid"],
         ["data", "key", "id"],
         ["updates", "0", "key", "id"],
+        ["event", "MessageIDs", "0"],
       ]),
     payload_keys: describePayloadKeys(body),
     chat_id:
