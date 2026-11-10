@@ -44,6 +44,8 @@ describe("summarizeWebhookEvent", () => {
       from_me: false,
       is_group: true,
       payload_keys: expect.any(String),
+      history_status: null,
+      history_received: null,
     });
   });
 
@@ -70,6 +72,24 @@ describe("summarizeWebhookEvent", () => {
       event: { MessageIDs: ["AC1C3E977CEF0DCC927FF4B30E5BF152"], Type: "read" },
     });
     expect(row.message_id).toBe("AC1C3E977CEF0DCC927FF4B30E5BF152");
+  });
+
+  it("history: grava status curto e contador, nunca texto livre", () => {
+    const row = summarizeWebhookEvent({
+      EventType: "history",
+      event: { status: "completed", received_messages: 3 },
+    });
+    expect(row.history_status).toBe("completed");
+    expect(row.history_received).toBe(3);
+  });
+
+  it("history: rejeita status com texto livre e contador inválido", () => {
+    const row = summarizeWebhookEvent({
+      EventType: "history",
+      event: { status: "Mensagem do cliente com espaços e 123", received_messages: "3" },
+    });
+    expect(row.history_status).toBeNull();
+    expect(row.history_received).toBeNull();
   });
 
   it("evento de histórico sem mensagem devolve campos nulos, sem lançar", () => {
