@@ -19,6 +19,7 @@ import { applyPollVote } from "@/lib/whatsapp/poll-votes";
 import { isGroupEnabled } from "@/lib/whatsapp/groups/resolve-group-conversation";
 import { getProviderForChannel } from "@/lib/whatsapp/providers/resolve";
 import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
+import { summarizeWebhookEvent } from "@/lib/whatsapp/uazapi/webhook-log";
 import type { WhatsAppChannel } from "@/types";
 
 export const maxDuration = 60;
@@ -74,17 +75,61 @@ export async function POST(
   // Responde 200 imediatamente e processa depois: a UAZAPI reentrega
   // em caso de timeout, e reentrega significa histórico duplicado.
   after(async () => {
+    // Registro de auditoria ANTES de qualquer processamento: se a lógica
+    // abaixo falhar, o evento continua gravado. Falha do próprio log é
+    // engolida — nunca pode impedir o processamento do evento.
+    const logId = await recordWebhookEvent(channel.id as string, body);
     try {
       await handleEvent(channel as WhatsAppChannel, body);
     } catch (err) {
-      console.error(
-        "[uazapi/webhook] falha ao processar evento:",
-        err instanceof Error ? err.message : err,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[uazapi/webhook] falha ao processar evento:", message);
+      await markWebhookEventError(logId, message);
     }
   });
 
   return NextResponse.json({ ok: true });
+}
+
+/** Grava um resumo do evento em `webhook_events`. Devolve o id da linha
+ *  ou `null` se o log falhou (o evento segue sendo processado). */
+async function recordWebhookEvent(
+  channelId: string,
+  body: unknown,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin()
+      .from("webhook_events")
+      .insert({ channel_id: channelId, ...summarizeWebhookEvent(body) })
+      .select("id")
+      .single();
+    if (error) {
+      console.error("[uazapi/webhook] falha ao gravar log:", error.message);
+      return null;
+    }
+    return (data?.id as string | undefined) ?? null;
+  } catch (err) {
+    console.error(
+      "[uazapi/webhook] falha ao gravar log:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+async function markWebhookEventError(
+  logId: string | null,
+  message: string,
+): Promise<void> {
+  if (!logId) return;
+  try {
+    await supabaseAdmin()
+      .from("webhook_events")
+      .update({ error: message.slice(0, 500) })
+      .eq("id", logId);
+  } catch {
+    // Melhor esforço: o erro já está no console.
+  }
 }
 
 /** Uma linha de `messages` que pertence a este canal, com os campos
