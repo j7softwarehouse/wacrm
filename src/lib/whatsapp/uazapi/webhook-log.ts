@@ -18,6 +18,27 @@ export interface WebhookEventLogRow {
   is_group: boolean | null;
   /** Só os NOMES das chaves do payload (ex.: "updates.0.key.id"), sem valores. */
   payload_keys: string | null;
+  /** Evento `history`: status do lote (código curto, ex.: "completed"). */
+  history_status: string | null;
+  /** Evento `history`: quantidade de mensagens recebidas no lote. */
+  history_received: number | null;
+}
+
+/** Código curto de status (letras, números e _), sem texto livre. */
+function asStatusCode(value: unknown): string | null {
+  return typeof value === "string" && /^[a-zA-Z_]{1,40}$/.test(value)
+    ? value
+    : null;
+}
+
+/** Contador não negativo; rejeita texto e valores absurdos. */
+function asCount(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value < 1_000_000
+    ? value
+    : null;
 }
 
 const MAX_KEYS = 60;
@@ -119,6 +140,12 @@ export function summarizeWebhookEvent(body: unknown): WebhookEventLogRow {
         ["event", "MessageIDs", "0"],
       ]),
     payload_keys: describePayloadKeys(body),
+    history_status: asStatusCode(
+      asDict(root.event)?.status ?? root.status,
+    ),
+    history_received: asCount(
+      asDict(root.event)?.received_messages ?? root.received_messages,
+    ),
     chat_id:
       asString(message.chatid) ??
       asString(chat.wa_chatid) ??
