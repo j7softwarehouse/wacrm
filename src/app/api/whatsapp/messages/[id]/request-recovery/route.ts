@@ -177,6 +177,7 @@ export async function POST(
         {
           error:
             'Ainda não há mensagem mais recente nesta conversa para ancorar a recuperação. Tente novamente depois que chegar uma mensagem nova.',
+          code: 'no_anchor',
         },
         { status: 400 },
       );

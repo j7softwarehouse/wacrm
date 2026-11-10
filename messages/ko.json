@@ -319,7 +319,9 @@
       "closeMedia": "닫기",
       "participant": "참가자",
       "forwardedTag": "전달됨",
-      "removeMarker": "표시 제거"
+      "removeMarker": "표시 제거",
+      "undecryptable": "이 CRM에서는 메시지를 볼 수 없습니다 — 휴대폰에서 WhatsApp을 열어 확인하세요",
+      "tryRecover": "복구 시도"
     },
     "actions": {
       "reply": "답장",
@@ -338,7 +340,9 @@
       "forward": "전달",
       "requestRecovery": "WhatsApp에서 복구 시도",
       "requestRecoverySent": "WhatsApp에 요청을 보냈습니다. 성공하면 잠시 후 여기에 메시지가 나타납니다 — 보장되지는 않습니다.",
-      "requestRecoveryError": "복구를 요청할 수 없습니다.",
+      "requestRecoveryError": "지금은 복구를 요청할 수 없습니다. 문제가 계속되면 J7 Software House에 문의하세요.",
+      "requestRecoveryForbidden": "계정 관리자만 메시지 복구를 요청할 수 있습니다.",
+      "requestRecoveryNoAnchor": "이 대화에 더 최근 메시지가 아직 없습니다. 새 메시지가 도착하면 다시 시도하세요.",
       "selectForForward": "전달할 항목 선택",
       "selectedForForwardCount": "{count}개 선택됨",
       "selectionLimitReached": "한 번에 최대 {max}개까지 가능합니다.",

@@ -326,8 +326,20 @@ async function applyHistoryRecovery(
   // bolha de imagem, por exemplo), então só preenche quando o tipo bate.
   if (!isPlaceholder && normalized.content.type !== row.content_type) return;
 
+  // Mesma regra do ramo de mensagens novas em handleEvent: mídia de grupo
+  // NÃO habilitado não é baixada (gastaria CPU e deixaria arquivo órfão no
+  // Storage). Só o download é pulado; a troca do texto do placeholder segue.
+  const skipMedia =
+    !!normalized.group &&
+    !(await isGroupEnabled(
+      supabaseAdmin(),
+      channel.account_id,
+      channel.id,
+      normalized.group.groupJid,
+    ));
+
   let mediaUrl: string | undefined;
-  if (normalized.content.mediaUrl) {
+  if (normalized.content.mediaUrl && !skipMedia) {
     try {
       const provider = await getProviderForChannel(supabaseAdmin(), channel.id);
       mediaUrl =

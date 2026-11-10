@@ -544,6 +544,78 @@ describe("handleEvent — evento 'history' (recuperação de mensagem Undecrypta
     expect(messagesTable[0].media_url).toBeNull();
   });
 
+  it("placeholder gravado como TEXTO (formato de produção) vira imagem quando a recuperação traz a mídia", async () => {
+    // Em produção a uazapi grava o placeholder como content_type 'text' mesmo
+    // quando o texto diz [image]. A recuperação precisa corrigir o tipo também.
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB0IMGTEXTROW0001",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: "[Undecryptable] [media] [image] Não foi possível descriptografar a mensagem. Abra o WhatsApp no seu celular para visualizá-la.",
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0IMGTEXTROW0001",
+        chatid: "5511999999999@s.whatsapp.net",
+        isGroup: false,
+        fromMe: false,
+        messageType: "ImageMessage",
+        messageTimestamp: 1789135598000,
+        sender_pn: "5511999999999@s.whatsapp.net",
+        senderName: "Fulana",
+        content: { URL: "https://cdn.whatsapp.net/x.enc", mediaKey: "a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5MTIzNDU2", mimetype: "image/jpeg" },
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(messagesTable[0].content_type).toBe("image");
+    expect(messagesTable[0].content_text ?? "").not.toMatch(/^\[undecryptable\]/i);
+    expect(messagesTable[0].media_url).toBe("https://storage/x.jpg");
+  });
+
+  it("recuperação de mídia de GRUPO desabilitado não baixa o arquivo, mas ainda troca o placeholder", async () => {
+    messagesTable = [
+      {
+        id: "msg-1",
+        message_id: "3EB0GRPIMG0000000001",
+        conversation_id: "conv-1",
+        content_type: "text",
+        content_text: "[Undecryptable] [media] [image] Não foi possível descriptografar a mensagem.",
+        media_url: null,
+        sender_type: "customer",
+      },
+    ];
+    mocks.isGroupEnabled.mockResolvedValueOnce(false);
+    const body = historyMessagesEvent([
+      {
+        messageid: "3EB0GRPIMG0000000001",
+        chatid: "120363000000000000@g.us",
+        isGroup: true,
+        fromMe: false,
+        messageType: "ImageMessage",
+        messageTimestamp: 1789135598000,
+        sender_pn: "5511999999999@s.whatsapp.net",
+        senderName: "Fulana",
+        content: { URL: "https://cdn.whatsapp.net/x.enc", mediaKey: "a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5MTIzNDU2", mimetype: "image/jpeg" },
+        wasSentByApi: false,
+      },
+    ]);
+
+    await handleEvent(CHANNEL, body);
+
+    expect(mocks.isGroupEnabled).toHaveBeenCalled();
+    expect(mocks.resolveInboundMediaUrl).not.toHaveBeenCalled();
+    expect(messagesTable[0].media_url).toBeNull();
+    expect(messagesTable[0].content_text ?? "").not.toMatch(/^\[undecryptable\]/i);
+  });
+
   it("mensagem de MÍDIA recuperada resolve a URL e limpa o content_text", async () => {
     messagesTable = [
       {

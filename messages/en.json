@@ -325,7 +325,9 @@
       "closeMedia": "Close",
       "participant": "Participant",
       "forwardedTag": "Forwarded",
-      "removeMarker": "Remove marker"
+      "removeMarker": "Remove marker",
+      "undecryptable": "Message not available in this CRM — open WhatsApp on your phone to view it",
+      "tryRecover": "Try to recover"
     },
     "actions": {
       "reply": "Reply",
@@ -344,7 +346,9 @@
       "forward": "Forward",
       "requestRecovery": "Try to recover from WhatsApp",
       "requestRecoverySent": "Request sent to WhatsApp. If it works, the message shows up here shortly — not guaranteed.",
-      "requestRecoveryError": "Could not request recovery.",
+      "requestRecoveryError": "Could not request recovery right now. If the problem continues, contact J7 Software House.",
+      "requestRecoveryForbidden": "Only account admins can request message recovery.",
+      "requestRecoveryNoAnchor": "There is no newer message in this conversation yet. Try again when a new message arrives.",
       "selectForForward": "Select for forwarding",
       "selectedForForwardCount": "{count, plural, =1 {1 selected} other {# selected}}",
       "selectionLimitReached": "Maximum of {max} messages at a time.",

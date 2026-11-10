@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { statusTickClass } from "@/lib/inbox/status-tick";
 import { splitHighlight } from "@/lib/inbox/message-search";
 import { canRemoveMarker, markerChipText } from "@/lib/inbox/message-markers";
+import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
 import type { Message, MessageMarker, MessageReaction } from "@/types";
 import {
   Clock,
@@ -20,6 +21,8 @@ import {
   Forward,
   Bookmark,
   X,
+  EyeOff,
+  RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -56,6 +59,11 @@ interface MessageBubbleProps {
    *  "×" aparece: só o dono do marcador, ou admin+. */
   isAccountAdmin?: boolean;
   onRemoveMarker?: (markerCreatedBy: string) => void;
+  /** Presente só quando a mensagem pode pedir recuperação (decidido pelo
+   *  chamador com `canRequestMessageRecovery`). Ausente = sem botão. */
+  onRequestRecovery?: () => void;
+  /** True enquanto o pedido de recuperação desta mensagem está em andamento. */
+  recoveryPending?: boolean;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -83,6 +91,20 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
     <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
       <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span>{t("unavailable", { label })}</span>
+    </div>
+  );
+}
+
+/**
+ * Estado único para mensagem que o CRM não conseguiu decifrar e que não
+ * tem mídia real. Vale para qualquer tipo de conteúdo: a uazapi grava o
+ * placeholder como texto, então o tipo sozinho não diz nada.
+ */
+function UndecryptableNotice({ t }: { t: ReturnType<typeof useTranslations> }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      <EyeOff className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span>{t("undecryptable")}</span>
     </div>
   );
 }
@@ -278,7 +300,7 @@ function ForwardableText({
 }
 
 function MessageContent({
-  message,
+  message: original,
   t,
   highlightQuery = "",
 }: {
@@ -286,13 +308,23 @@ function MessageContent({
   t: ReturnType<typeof useTranslations>;
   highlightQuery?: string;
 }) {
-  if (message.deleted_at) {
+  if (original.deleted_at) {
     return (
       <p className="text-sm italic text-muted-foreground">
         {t("deletedMessage")}
       </p>
     );
   }
+
+  const isPlaceholder = isUndecryptablePlaceholder(original.content_text);
+  if (isPlaceholder && !original.media_url) {
+    return <UndecryptableNotice t={t} />;
+  }
+  // Com mídia real, o placeholder não pode sobrepor o arquivo nem aparecer
+  // como legenda ou nome de documento: some o texto e a mídia segue normal.
+  const message: Message = isPlaceholder
+    ? { ...original, content_text: undefined }
+    : original;
 
   switch (message.content_type) {
     case "text":
@@ -458,6 +490,8 @@ export function MessageBubble({
   markerAuthorName,
   isAccountAdmin = false,
   onRemoveMarker,
+  onRequestRecovery,
+  recoveryPending = false,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -565,6 +599,20 @@ export function MessageBubble({
           {isAgent && <StatusIcon status={message.status} />}
         </div>
       </div>
+      {/* Botão fixo de recuperação: fica sempre visível para quem pode usá-lo
+          (não depende de hover, como a barra de ações). Só aparece quando o
+          chamador passou `onRequestRecovery`. */}
+      {onRequestRecovery && (
+        <button
+          type="button"
+          onClick={onRequestRecovery}
+          disabled={recoveryPending}
+          className="mt-1 inline-flex items-center gap-1 self-start text-[11px] font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+        >
+          <RotateCcw className="h-3 w-3" />
+          {t("tryRecover")}
+        </button>
+      )}
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions
           reactions={reactions}

@@ -67,7 +67,11 @@ import { findMessageMatches } from "@/lib/inbox/message-search";
 import { MessageActions } from "./message-actions";
 import { ForwardDialog } from "./forward-dialog";
 import { MAX_FORWARD_MESSAGES } from "@/lib/whatsapp/forward-limits";
-import { isUndecryptablePlaceholder } from "@/lib/inbox/undecryptable";
+import {
+  canRequestMessageRecovery,
+  recoveryErrorKey,
+  type RecoveryErrorKey,
+} from "@/lib/inbox/undecryptable";
 import { shouldShowAuthor, type AuthorableMessage } from "./message-author";
 import {
   MessageComposer,
@@ -199,6 +203,16 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus }[] = [
  * Defined once at module scope so the two render paths can't drift —
  * if we ever switch the asset, both spots update together.
  */
+/** Chave i18n (namespace Inbox.actions) para cada erro da rota de recuperação. */
+const RECOVERY_ERROR_MESSAGE_KEYS: Record<
+  RecoveryErrorKey,
+  "requestRecoveryForbidden" | "requestRecoveryNoAnchor" | "requestRecoveryError"
+> = {
+  forbidden: "requestRecoveryForbidden",
+  noAnchor: "requestRecoveryNoAnchor",
+  failed: "requestRecoveryError",
+};
+
 const DOODLE_BG_CLASSES =
   "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
 
@@ -226,7 +240,7 @@ export function MessageThread({
   const tBubble = useTranslations("Inbox.bubble");
   const tActions = useTranslations("Inbox.actions");
 
-  const { user, canEditSettings, canSendMessages, isAdmin, isOwner } = useAuth();
+  const { user, canEditSettings, canSendMessages, isAdmin, isOwner, accountRole } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1408,28 +1422,42 @@ export function MessageThread({
   );
 
   // Pede ao WhatsApp que reenvie uma mensagem "[Undecryptable]". Sem
-  // atualização otimista: se o WhatsApp conseguir mesmo reenviar, a
-  // mensagem recuperada chega depois por um evento de webhook próprio
-  // (ainda não tratado — ver comentário em .../uazapi/webhook/route.ts),
-  // não como resposta desta chamada.
+  // atualização otimista: a mensagem recuperada, se o WhatsApp de fato
+  // reenviar, chega depois pelo evento `history` do webhook (tratado em
+  // src/app/api/whatsapp/uazapi/webhook/[...secret]/route.ts, função
+  // applyHistoryRecovery), não como resposta desta chamada.
+  // Ids com pedido em andamento: desabilitam o botão da bolha enquanto a
+  // rota responde, para não disparar um history-sync real duas vezes.
+  const [recoveringIds, setRecoveringIds] = useState<Set<string>>(() => new Set());
   const handleRequestRecovery = useCallback(
     async (messageId: string) => {
+      if (recoveringIds.has(messageId)) return;
+      setRecoveringIds((prev) => new Set(prev).add(messageId));
       try {
         const res = await fetch(`/api/whatsapp/messages/${messageId}/request-recovery`, {
           method: "POST",
         });
-        const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error(payload?.error || tActions("requestRecoveryError"));
+          // Mensagem vem do mapa de chaves i18n, nunca do texto da rota
+          // (ele pode citar o fornecedor ou vir em inglês).
+          const payload = await res.json().catch(() => ({}));
+          const key = recoveryErrorKey(res.status, payload?.code);
+          toast.error(tActions(RECOVERY_ERROR_MESSAGE_KEYS[key]));
           return;
         }
         toast.success(tActions("requestRecoverySent"));
       } catch (err) {
         console.error("Failed to request message recovery:", err);
         toast.error(tActions("requestRecoveryError"));
+      } finally {
+        setRecoveringIds((prev) => {
+          const next = new Set(prev);
+          next.delete(messageId);
+          return next;
+        });
       }
     },
-    [tActions],
+    [tActions, recoveringIds],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -2061,14 +2089,16 @@ export function MessageThread({
                         : !!msg.media_url;
                     const canForwardMsg =
                       !msg.deleted_at && isForwardableType && hasContentToForward;
-                    // Admin-only: a ação pede reenvio de verdade ao
+                    // Admin/owner: a ação pede reenvio de verdade ao
                     // WhatsApp (ver comentário da rota
-                    // .../messages/[id]/request-recovery), não é uma
-                    // ação de atendimento do dia a dia.
-                    const canRequestRecovery =
-                      isAccountAdmin &&
-                      msg.sender_type === "customer" &&
-                      isUndecryptablePlaceholder(msg.content_text);
+                    // .../messages/[id]/request-recovery). A mesma função
+                    // decide o botão da bolha e o da barra de ações.
+                    const canRequestRecovery = canRequestMessageRecovery({
+                      role: accountRole,
+                      senderType: msg.sender_type,
+                      contentText: msg.content_text,
+                      deletedAt: msg.deleted_at,
+                    });
                     const msgMarkers = markersByMessageId.get(msg.id);
                     const myMarker = user
                       ? msgMarkers?.find((m) => m.created_by === user.id) ?? null
@@ -2125,6 +2155,12 @@ export function MessageThread({
                           onRemoveMarker={(markerUserId) =>
                             void handleUnmarkMessage(msg.id, markerUserId)
                           }
+                          onRequestRecovery={
+                            canRequestRecovery
+                              ? () => void handleRequestRecovery(msg.id)
+                              : undefined
+                          }
+                          recoveryPending={recoveringIds.has(msg.id)}
                         />
                       </MessageActions>
                     );
