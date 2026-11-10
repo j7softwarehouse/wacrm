@@ -16,6 +16,57 @@ export interface WebhookEventLogRow {
   message_timestamp: string | null;
   from_me: boolean | null;
   is_group: boolean | null;
+  /** Só os NOMES das chaves do payload (ex.: "updates.0.key.id"), sem valores. */
+  payload_keys: string | null;
+}
+
+const MAX_KEYS = 60;
+const MAX_DEPTH = 4;
+
+/** Lista caminhos de chaves do payload, sem nenhum valor. Serve para
+ *  descobrir o formato real de eventos que ainda não conhecemos. */
+export function describePayloadKeys(body: unknown): string | null {
+  const out: string[] = [];
+  const walk = (value: unknown, path: string, depth: number) => {
+    if (out.length >= MAX_KEYS || depth > MAX_DEPTH) return;
+    if (Array.isArray(value)) {
+      if (value.length > 0) walk(value[0], `${path}.0`, depth + 1);
+      return;
+    }
+    const dict = asDict(value);
+    if (!dict) return;
+    for (const key of Object.keys(dict)) {
+      if (out.length >= MAX_KEYS) return;
+      const next = path ? `${path}.${key}` : key;
+      out.push(next);
+      walk(dict[key], next, depth + 1);
+    }
+  };
+  walk(body, "", 0);
+  return out.length > 0 ? out.join(",") : null;
+}
+
+/** Primeira string não vazia entre os caminhos informados. */
+function firstString(root: Dict, paths: string[][]): string | null {
+  for (const path of paths) {
+    let cur: unknown = root;
+    for (const key of path) {
+      if (Array.isArray(cur)) {
+        const index = Number(key);
+        cur = Number.isInteger(index) ? cur[index] : undefined;
+        continue;
+      }
+      const dict = asDict(cur);
+      if (!dict) {
+        cur = undefined;
+        break;
+      }
+      cur = dict[key];
+    }
+    const found = asString(cur);
+    if (found) return found;
+  }
+  return null;
 }
 
 type Dict = Record<string, unknown>;
@@ -60,7 +111,13 @@ export function summarizeWebhookEvent(body: unknown): WebhookEventLogRow {
     message_id:
       asString(message.messageid) ??
       asString(message.id) ??
-      asString(root.messageid),
+      firstString(root, [
+        ["messageid"],
+        ["event", "messageid"],
+        ["data", "key", "id"],
+        ["updates", "0", "key", "id"],
+      ]),
+    payload_keys: describePayloadKeys(body),
     chat_id:
       asString(message.chatid) ??
       asString(chat.wa_chatid) ??

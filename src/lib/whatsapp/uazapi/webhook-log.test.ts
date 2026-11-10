@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizeWebhookEvent } from "./webhook-log";
+import { describePayloadKeys, summarizeWebhookEvent } from "./webhook-log";
+
+describe("describePayloadKeys", () => {
+  it("lista caminhos de chaves sem valores", () => {
+    const keys = describePayloadKeys({
+      EventType: "messages_update",
+      updates: [{ key: { id: "3EB0SECRETO", fromMe: true }, status: 3 }],
+    });
+    expect(keys).toBe("EventType,updates,updates.0.key,updates.0.key.id,updates.0.key.fromMe,updates.0.status");
+    expect(keys).not.toContain("3EB0SECRETO");
+  });
+
+  it("corpo sem objeto devolve null", () => {
+    expect(describePayloadKeys(null)).toBeNull();
+    expect(describePayloadKeys("texto")).toBeNull();
+  });
+});
 
 describe("summarizeWebhookEvent", () => {
   it("extrai só metadados de uma mensagem de mídia", () => {
@@ -27,6 +43,7 @@ describe("summarizeWebhookEvent", () => {
       message_timestamp: new Date(1794318009000).toISOString(),
       from_me: false,
       is_group: true,
+      payload_keys: expect.any(String),
     });
   });
 
@@ -36,6 +53,15 @@ describe("summarizeWebhookEvent", () => {
       message: { messageTimestamp: 1794318009 },
     });
     expect(row.message_timestamp).toBe(new Date(1794318009000).toISOString());
+  });
+
+  it("messages_update: pega o ID em updates[0].key.id quando não há message", () => {
+    const row = summarizeWebhookEvent({
+      EventType: "messages_update",
+      updates: [{ key: { id: "3EB0ATUALIZADO" }, status: 3 }],
+    });
+    expect(row.message_id).toBe("3EB0ATUALIZADO");
+    expect(row.payload_keys).toContain("updates.0.key.id");
   });
 
   it("evento de histórico sem mensagem devolve campos nulos, sem lançar", () => {
